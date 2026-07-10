@@ -17,9 +17,8 @@ class Config:
         self.QUEUE_LIMIT = int(getenv("QUEUE_LIMIT", 20))
         self.PLAYLIST_LIMIT = int(getenv("PLAYLIST_LIMIT", 20))
 
-        self.SESSION1 = getenv("SESSION", None)
-        self.SESSION2 = getenv("SESSION2", None)
-        self.SESSION3 = getenv("SESSION3", None)
+        first_session = getenv("SESSION")
+        self.SESSIONS = (first_session,) if first_session else ()
 
         self.SUPPORT_CHANNEL = getenv("SUPPORT_CHANNEL", "https://t.me/fallenx")
         self.SUPPORT_CHAT = getenv("SUPPORT_CHAT", "https://t.me/DevilsHeavenMF")
@@ -43,7 +42,7 @@ class Config:
     def check(self):
         missing = [
             var
-            for var in ["API_ID", "API_HASH", "BOT_TOKEN", "OWNER_ID", "SESSION1"]
+            for var in ["API_ID", "API_HASH", "BOT_TOKEN", "OWNER_ID"]
             if not getattr(self, var)
         ]
         if missing:

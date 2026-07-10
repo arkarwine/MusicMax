@@ -20,7 +20,7 @@ async def _watcher_vc(_, m: types.Message):
 async def auto_leave():
     while True:
         await asyncio.sleep(3600)
-        for ub in userbot.clients:
+        for ub in userbot.clients.values():
             try:
                 chats = [dialog.chat.id async for dialog in ub.get_dialogs()
                             if dialog.chat.type in [

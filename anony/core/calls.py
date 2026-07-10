@@ -20,7 +20,7 @@ from anony.helpers import Media, Track, buttons
 
 class TgCall(PyTgCalls):
     def __init__(self):
-        self.clients = []
+        self.clients: dict[int, PyTgCalls] = {}
 
     async def pause(self, chat_id: int) -> bool:
         client = await db.get_assistant(chat_id)
@@ -274,7 +274,7 @@ class TgCall(PyTgCalls):
 
 
     async def ping(self) -> float:
-        pings = [client.ping for client in self.clients]
+        pings = [client.ping for client in self.clients.values()]
         return round(sum(pings) / len(pings), 2) if pings else 0.0
 
 
@@ -296,11 +296,17 @@ class TgCall(PyTgCalls):
                     await self.stop(update.chat_id)
 
 
+    async def add_client(self, slot: int, ub) -> PyTgCalls:
+        if slot in self.clients:
+            return self.clients[slot]
+        client = PyTgCalls(ub, cache_duration=100)
+        await client.start()
+        self.clients[slot] = client
+        await self.decorators(client)
+        return client
+
     async def boot(self) -> None:
         PyTgCallsSession.notice_displayed = True
-        for ub in userbot.clients:
-            client = PyTgCalls(ub, cache_duration=100)
-            await client.start()
-            self.clients.append(client)
-            await self.decorators(client)
+        for slot, ub in userbot.clients.items():
+            await self.add_client(slot, ub)
         logger.info("PyTgCalls client(s) started.")

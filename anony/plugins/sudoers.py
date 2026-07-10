@@ -24,6 +24,7 @@ async def _sudo(_, m: types.Message):
 
         app.sudoers.add(user.id)
         await db.add_sudo(user.id)
+        await app.register_sudo_commands([user.id])
         await m.reply_text(m.lang["sudo_added"].format(user.mention))
     else:
         if user.id not in app.sudoers:
@@ -31,6 +32,12 @@ async def _sudo(_, m: types.Message):
 
         app.sudoers.discard(user.id)
         await db.del_sudo(user.id)
+        try:
+            await app.delete_bot_commands(
+                scope=types.BotCommandScopeChat(chat_id=user.id)
+            )
+        except Exception:
+            pass
         await m.reply_text(m.lang["sudo_removed"].format(user.mention))
 
 

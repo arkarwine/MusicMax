@@ -6,6 +6,7 @@
 import asyncio
 import json
 import sqlite3
+from contextlib import suppress
 from dataclasses import fields, is_dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -50,6 +51,8 @@ class SQLiteDB:
             start = time()
             self.path.parent.mkdir(parents=True, exist_ok=True)
             self.connection = await aiosqlite.connect(self.path)
+            with suppress(OSError):
+                self.path.chmod(0o600)
             await self.conn.execute("PRAGMA journal_mode = WAL")
             await self.conn.execute("PRAGMA foreign_keys = ON")
             await self.conn.executescript(
@@ -62,6 +65,16 @@ class SQLiteDB:
                 CREATE TABLE IF NOT EXISTS assistants (
                     chat_id INTEGER PRIMARY KEY,
                     num INTEGER NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS assistant_sessions (
+                    slot INTEGER PRIMARY KEY AUTOINCREMENT,
+                    session_string TEXT NOT NULL UNIQUE,
+                    enabled INTEGER NOT NULL DEFAULT 1,
+                    source TEXT NOT NULL DEFAULT 'runtime',
+                    user_id INTEGER,
+                    username TEXT,
+                    display_name TEXT,
+                    created_at INTEGER NOT NULL DEFAULT (unixepoch())
                 );
                 CREATE TABLE IF NOT EXISTS blacklist (
                     kind TEXT NOT NULL CHECK (kind IN ('chat', 'user')),
@@ -132,6 +145,8 @@ class SQLiteDB:
                 await self.conn.backup(target)
         finally:
             target.close()
+        with suppress(OSError):
+            destination.chmod(0o600)
 
         backups = sorted(backup_dir.glob("anonxmusic-*.db"), reverse=True)
         for old_backup in backups[max(keep, 1):]:
@@ -327,7 +342,14 @@ class SQLiteDB:
             await self.conn.commit()
 
     async def set_assistant(self, chat_id: int) -> int:
-        num = randint(1, len(userbot.clients))
+        from anony import anon
+
+        slots = tuple(
+            slot for slot in userbot.clients if slot in anon.clients
+        )
+        if not slots:
+            raise RuntimeError("No assistant sessions are active")
+        num = slots[randint(0, len(slots) - 1)]
         await self.conn.execute(
             "INSERT INTO assistants (chat_id, num) VALUES (?, ?) "
             "ON CONFLICT(chat_id) DO UPDATE SET num = excluded.num",
@@ -340,24 +362,135 @@ class SQLiteDB:
     async def get_assistant(self, chat_id: int):
         from anony import anon
 
-        if chat_id not in self.assistant:
+        num = self.assistant.get(chat_id)
+        if num is None:
             cursor = await self.conn.execute(
                 "SELECT num FROM assistants WHERE chat_id = ?", (chat_id,)
             )
             row = await cursor.fetchone()
             num = row[0] if row else None
-            if not num or num > len(anon.clients):
-                num = await self.set_assistant(chat_id)
-            self.assistant[chat_id] = num
-        return anon.clients[self.assistant[chat_id] - 1]
+        if not num or num not in anon.clients:
+            num = await self.set_assistant(chat_id)
+        self.assistant[chat_id] = num
+        return anon.clients[num]
 
     async def get_client(self, chat_id: int):
         if chat_id not in self.assistant:
             await self.get_assistant(chat_id)
         num = self.assistant[chat_id]
-        if num > len(userbot.clients):
+        if num not in userbot.clients:
             num = await self.set_assistant(chat_id)
-        return userbot.clients[num - 1]
+        return userbot.clients[num]
+
+    async def ensure_assistant_session(
+        self,
+        session_string: str,
+        source: str = "runtime",
+    ) -> int:
+        await self.conn.execute(
+            "INSERT OR IGNORE INTO assistant_sessions "
+            "(session_string, source) VALUES (?, ?)",
+            (session_string, source),
+        )
+        if source == "environment":
+            await self.conn.execute(
+                "UPDATE assistant_sessions SET source = 'environment' "
+                "WHERE session_string = ?",
+                (session_string,),
+            )
+        await self.conn.commit()
+        cursor = await self.conn.execute(
+            "SELECT slot FROM assistant_sessions WHERE session_string = ?",
+            (session_string,),
+        )
+        row = await cursor.fetchone()
+        if not row:
+            raise RuntimeError("Assistant session could not be stored")
+        return row[0]
+
+    async def get_assistant_sessions(self) -> list[dict]:
+        cursor = await self.conn.execute(
+            "SELECT slot, session_string, enabled, source, user_id, username, "
+            "display_name, created_at FROM assistant_sessions ORDER BY slot"
+        )
+        return [
+            {
+                "slot": row[0],
+                "session_string": row[1],
+                "enabled": bool(row[2]),
+                "source": row[3],
+                "user_id": row[4],
+                "username": row[5],
+                "display_name": row[6],
+                "created_at": row[7],
+            }
+            for row in await cursor.fetchall()
+        ]
+
+    async def get_assistant_session(self, slot: int) -> dict | None:
+        return next(
+            (
+                session
+                for session in await self.get_assistant_sessions()
+                if session["slot"] == slot
+            ),
+            None,
+        )
+
+    async def update_assistant_session(
+        self,
+        slot: int,
+        *,
+        enabled: bool | None = None,
+        user_id: int | None = None,
+        username: str | None = None,
+        display_name: str | None = None,
+    ) -> None:
+        updates = []
+        values = []
+        for column, value in (
+            ("enabled", None if enabled is None else int(enabled)),
+            ("user_id", user_id),
+            ("username", username),
+            ("display_name", display_name),
+        ):
+            if value is not None:
+                updates.append(f"{column} = ?")
+                values.append(value)
+        if not updates:
+            return
+        values.append(slot)
+        await self.conn.execute(
+            f"UPDATE assistant_sessions SET {', '.join(updates)} WHERE slot = ?",
+            values,
+        )
+        await self.conn.commit()
+
+    async def release_assistant_slot(self, slot: int) -> None:
+        await self.conn.execute("DELETE FROM assistants WHERE num = ?", (slot,))
+        await self.conn.execute(
+            "UPDATE playback_sessions SET assistant_num = NULL "
+            "WHERE assistant_num = ?",
+            (slot,),
+        )
+        await self.conn.commit()
+        for chat_id, assigned in list(self.assistant.items()):
+            if assigned == slot:
+                self.assistant.pop(chat_id, None)
+
+    async def delete_assistant_session(self, slot: int) -> None:
+        await self.release_assistant_slot(slot)
+        await self.conn.execute(
+            "DELETE FROM assistant_sessions WHERE slot = ?", (slot,)
+        )
+        await self.conn.commit()
+
+    def active_chats_for_assistant(self, slot: int) -> list[int]:
+        return [
+            chat_id
+            for chat_id in self.active_calls
+            if self.assistant.get(chat_id) == slot
+        ]
 
     async def add_blacklist(self, chat_id: int) -> None:
         kind = "chat" if chat_id < 0 else "user"

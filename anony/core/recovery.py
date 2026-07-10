@@ -45,7 +45,7 @@ class PlaybackRecovery:
             queue.restore(chat_id, items)
             db.loop[chat_id] = session["loop"]
             assistant_num = session["assistant_num"]
-            if assistant_num and assistant_num <= len(userbot.clients):
+            if assistant_num in userbot.clients:
                 db.assistant[chat_id] = assistant_num
             position = max(session["position"], 0)
             if items[0].duration_sec and position >= items[0].duration_sec - 5:

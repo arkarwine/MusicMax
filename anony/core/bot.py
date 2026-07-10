@@ -35,7 +35,7 @@ class Bot(pyrogram.Client):
         self.username = self.me.username
         self.mention = self.me.mention
 
-        commands = [
+        self.commands = [
             ("play", "Play a song or link"),
             ("vplay", "Play a video"),
             ("pause", "Pause playback"),
@@ -55,14 +55,46 @@ class Bot(pyrogram.Client):
             await self.set_bot_commands(
                 [
                     pyrogram.types.BotCommand(command, description)
-                    for command, description in commands
+                    for command, description in self.commands
                 ]
             )
-            logger.info("Registered %s Telegram bot commands.", len(commands))
+            logger.info("Registered %s Telegram bot commands.", len(self.commands))
         except Exception:
             logger.warning("Could not register Telegram bot commands.", exc_info=True)
 
         logger.info(f"Bot started as @{self.username}")
+
+    async def register_sudo_commands(self, user_ids) -> None:
+        sudo_commands = [
+            ("sessions", "List assistant sessions"),
+            ("session", "Inspect an assistant session"),
+            ("addsession", "Add an assistant session"),
+            ("enablesession", "Enable an assistant session"),
+            ("disablesession", "Disable an assistant session"),
+            ("restartsession", "Reconnect an assistant session"),
+            ("removesession", "Remove an assistant session"),
+            ("status", "Show advanced bot status"),
+            ("logs", "Get the application log"),
+        ]
+        commands = [
+            pyrogram.types.BotCommand(command, description)
+            for command, description in self.commands + sudo_commands
+        ]
+        registered = 0
+        for user_id in user_ids:
+            try:
+                await self.set_bot_commands(
+                    commands,
+                    scope=pyrogram.types.BotCommandScopeChat(chat_id=user_id),
+                )
+                registered += 1
+            except Exception:
+                logger.debug(
+                    "Could not register sudo commands for user %s",
+                    user_id,
+                    exc_info=True,
+                )
+        logger.info("Registered sudo command menus for %s user(s).", registered)
 
     async def exit(self):
         """

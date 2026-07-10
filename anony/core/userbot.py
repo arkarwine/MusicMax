@@ -8,74 +8,190 @@ from pyrogram import Client
 from anony import config, logger
 
 
-class Userbot(Client):
-    def __init__(self):
-        """
-        Initializes the userbot with multiple clients.
+class Userbot:
+    """Manage an unlimited set of assistant sessions in stable numeric slots."""
 
-        This method sets up clients for the userbot using predefined session strings.
-        Each client is assigned a unique name based on the key in the `clients` dictionary.
-        """
-        self.clients = []
-        clients = {"one": "SESSION1", "two": "SESSION2", "three": "SESSION3"}
-        for key, string_key in clients.items():
-            name = f"AnonyUB{key[-1]}"
-            session = getattr(config, string_key)
-            setattr(
-                self,
-                key,
-                Client(
-                    name=name,
-                    api_id=config.API_ID,
-                    api_hash=config.API_HASH,
-                    session_string=session,
-                ),
+    def __init__(self) -> None:
+        self.clients: dict[int, Client] = {}
+
+    async def _start_client(
+        self,
+        slot: int,
+        session_string: str,
+        attach_calls: bool,
+    ) -> Client:
+        if slot in self.clients:
+            return self.clients[slot]
+
+        client = Client(
+            name=f"AnonyUB{slot}",
+            api_id=config.API_ID,
+            api_hash=config.API_HASH,
+            session_string=session_string,
+        )
+        await client.start()
+        client.id = client.me.id
+        client.name = client.me.first_name
+        client.username = client.me.username
+        client.mention = client.me.mention
+
+        duplicate = next(
+            (
+                active_slot
+                for active_slot, active in self.clients.items()
+                if active.id == client.id
+            ),
+            None,
+        )
+        if duplicate is not None:
+            await client.stop()
+            raise ValueError(
+                f"This account is already active in session {duplicate}."
             )
 
-    async def boot_client(self, num: int, ub: Client):
-        """
-        Boot a client and perform initial setup.
-        Args:
-            num (int): The client number to boot (1, 2, or 3).
-            ub (Client): The userbot client instance.
-        """
-        clients = {
-            1: self.one,
-            2: self.two,
-            3: self.three,
-        }
-        client = clients[num]
-        await client.start()
-        client.id = ub.me.id
-        client.name = ub.me.first_name
-        client.username = ub.me.username
-        client.mention = ub.me.mention
-        self.clients.append(client)
+        self.clients[slot] = client
         try:
-            await ub.join_chat("fallenx")
+            if attach_calls:
+                from anony import anon
+
+                await anon.add_client(slot, client)
         except Exception:
-            pass
-        logger.info(f"Assistant {num} started as @{client.username}")
+            self.clients.pop(slot, None)
+            await client.stop()
+            raise
 
-    async def boot(self):
-        """
-        Asynchronously starts the assistants.
-        """
-        if config.SESSION1:
-            await self.boot_client(1, self.one)
-        if config.SESSION2:
-            await self.boot_client(2, self.two)
-        if config.SESSION3:
-            await self.boot_client(3, self.three)
+        from anony import db
 
-    async def exit(self):
-        """
-        Asynchronously stops the assistants.
-        """
-        if config.SESSION1:
-            await self.one.stop()
-        if config.SESSION2:
-            await self.two.stop()
-        if config.SESSION3:
-            await self.three.stop()
+        await db.update_assistant_session(
+            slot,
+            enabled=True,
+            user_id=client.id,
+            username=client.username or "",
+            display_name=client.name or "",
+        )
+        logger.info("Assistant session %s started as @%s", slot, client.username)
+        return client
+
+    async def boot(self) -> None:
+        from anony import db
+
+        for session_string in config.SESSIONS:
+            await db.ensure_assistant_session(session_string, source="environment")
+
+        sessions = await db.get_assistant_sessions()
+        if not sessions:
+            raise SystemExit(
+                "No assistant session is configured. Set SESSION for the first start."
+            )
+
+        for session in sessions:
+            if not session["enabled"]:
+                continue
+            try:
+                await self._start_client(
+                    session["slot"],
+                    session["session_string"],
+                    attach_calls=False,
+                )
+            except Exception:
+                logger.exception(
+                    "Assistant session %s could not start", session["slot"]
+                )
+                await db.update_assistant_session(session["slot"], enabled=False)
+
+        if not self.clients:
+            raise SystemExit("No assistant session could be started.")
+        logger.info("Started %s assistant session(s).", len(self.clients))
+
+    async def add_session(self, session_string: str) -> tuple[int, Client]:
+        from anony import db
+
+        slot = await db.ensure_assistant_session(session_string, source="runtime")
+        session = await db.get_assistant_session(slot)
+        if slot in self.clients:
+            return slot, self.clients[slot]
+        try:
+            client = await self._start_client(
+                slot,
+                session["session_string"],
+                attach_calls=True,
+            )
+        except Exception:
+            if session["source"] == "runtime":
+                await db.delete_assistant_session(slot)
+            raise
+        return slot, client
+
+    async def enable_session(self, slot: int) -> Client:
+        from anony import db
+
+        session = await db.get_assistant_session(slot)
+        if not session:
+            raise KeyError(slot)
+        return await self._start_client(
+            slot,
+            session["session_string"],
+            attach_calls=True,
+        )
+
+    async def _stop_session(self, slot: int) -> None:
+        from anony import anon
+
+        anon.clients.pop(slot, None)
+        client = self.clients.pop(slot, None)
+        if client:
+            await client.stop()
+
+    async def disable_session(self, slot: int, delete: bool = False) -> None:
+        from anony import db
+
+        session = await db.get_assistant_session(slot)
+        if not session:
+            raise KeyError(slot)
+        active_chats = db.active_chats_for_assistant(slot)
+        if active_chats:
+            raise RuntimeError(
+                "Session is currently playing in: "
+                + ", ".join(map(str, active_chats))
+            )
+        if slot in self.clients and len(self.clients) == 1:
+            raise RuntimeError("At least one assistant session must remain active.")
+
+        await self._stop_session(slot)
+        if delete:
+            await db.delete_assistant_session(slot)
+        else:
+            await db.release_assistant_slot(slot)
+            await db.update_assistant_session(slot, enabled=False)
+
+    async def restart_session(self, slot: int) -> Client:
+        from anony import db
+
+        session = await db.get_assistant_session(slot)
+        if not session:
+            raise KeyError(slot)
+        active_chats = db.active_chats_for_assistant(slot)
+        if active_chats:
+            raise RuntimeError(
+                "Session is currently playing in: "
+                + ", ".join(map(str, active_chats))
+            )
+        await self._stop_session(slot)
+        return await self._start_client(
+            slot,
+            session["session_string"],
+            attach_calls=True,
+        )
+
+    async def exit(self) -> None:
+        for slot in list(self.clients):
+            client = self.clients.pop(slot)
+            try:
+                await client.stop()
+            except Exception:
+                logger.warning(
+                    "Assistant session %s did not stop cleanly",
+                    slot,
+                    exc_info=True,
+                )
         logger.info("Assistants stopped.")

@@ -43,6 +43,7 @@ async def main():
     app.sudoers.update(sudoers)
     app.bl_users.update(await db.get_blacklisted())
     logger.info(f"Loaded {len(app.sudoers)} sudo users.")
+    await app.register_sudo_commands(app.sudoers)
 
     await recovery.restore_queues()
     tasks.append(asyncio.create_task(recovery.run_startup()))
