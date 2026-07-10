@@ -6,7 +6,7 @@
 import asyncio
 import json
 import sqlite3
-from dataclasses import asdict, is_dataclass
+from dataclasses import fields, is_dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from random import randint
@@ -177,10 +177,37 @@ class SQLiteDB:
         )
         await self.conn.commit()
 
+    @staticmethod
+    def _json_value(value):
+        """Convert Telegram wrapper values into plain JSON-safe values."""
+        if value is None or isinstance(value, (bool, int, float)):
+            return value
+        if isinstance(value, str):
+            return str(value)
+        if isinstance(value, Path):
+            return str(value)
+        if isinstance(value, (list, tuple, set)):
+            return [SQLiteDB._json_value(item) for item in value]
+        if isinstance(value, dict):
+            return {
+                str(key): SQLiteDB._json_value(item)
+                for key, item in value.items()
+            }
+        return str(value)
+
     async def save_queue(self, chat_id: int, items: list) -> None:
         rows = []
         for position, item in enumerate(items):
-            payload = asdict(item) if is_dataclass(item) else dict(vars(item))
+            if is_dataclass(item):
+                payload = {
+                    field.name: self._json_value(getattr(item, field.name))
+                    for field in fields(item)
+                }
+            else:
+                payload = {
+                    key: self._json_value(value)
+                    for key, value in vars(item).items()
+                }
             rows.append(
                 (chat_id, position, type(item).__name__.lower(), json.dumps(payload))
             )
