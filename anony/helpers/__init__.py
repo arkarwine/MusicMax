@@ -6,6 +6,7 @@
 from ._admins import admin_check, can_manage_vc, is_admin, reload_admins
 from ._dataclass import Media, Track
 from ._exec import format_exception, meval
+from ._feedback import Feedback
 from ._inline import Inline
 from ._queue import Queue
 from ._thumbnails import Thumbnail
@@ -25,4 +26,5 @@ __all__ = [
 ]
 
 buttons = Inline()
+feedback = Feedback()
 utils = Utilities()

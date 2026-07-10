@@ -3,6 +3,7 @@
 # This file is part of AnonXMusic
 
 import asyncio
+from html import escape
 from pyrogram import enums, filters, types
 
 from anony import app, config, db, lang
@@ -14,7 +15,10 @@ from anony.helpers import buttons, utils
 async def _help(_, m: types.Message):
     await m.reply_text(
         text=m.lang["help_menu"],
-        reply_markup=buttons.help_markup(m.lang),
+        reply_markup=buttons.help_markup(
+            m.lang,
+            sudo=bool(m.from_user and m.from_user.id in app.sudoers),
+        ),
         quote=True,
     )
 
@@ -33,9 +37,12 @@ async def start(_, message: types.Message):
 
     private = message.chat.type == enums.ChatType.PRIVATE
     _text = (
-        message.lang["start_pm"].format(message.from_user.first_name, app.name)
+        message.lang["start_pm"].format(
+            escape(message.from_user.first_name or "there"),
+            escape(app.name),
+        )
         if private
-        else message.lang["start_gp"].format(app.name)
+        else message.lang["start_gp"].format(escape(app.name))
     )
 
     key = buttons.start_key(message.lang, private)
@@ -63,11 +70,19 @@ async def start(_, message: types.Message):
 async def settings(_, message: types.Message):
     admin_only = await db.get_play_mode(message.chat.id)
     cmd_delete = await db.get_cmd_delete(message.chat.id)
+    feedback_cleanup = await db.get_feedback_cleanup(message.chat.id)
+    default_video = await db.get_default_video(message.chat.id)
     _language = await db.get_lang(message.chat.id)
     await message.reply_text(
-        text=message.lang["start_settings"].format(message.chat.title),
+        text=message.lang["start_settings"].format(escape(message.chat.title)),
         reply_markup=buttons.settings_markup(
-            message.lang, admin_only, cmd_delete, _language, message.chat.id
+            message.lang,
+            admin_only,
+            cmd_delete,
+            feedback_cleanup,
+            default_video,
+            _language,
+            message.chat.id,
         ),
         quote=True,
     )
@@ -88,7 +103,9 @@ async def _new_member(_, message: types.Message):
         await db.add_chat(message.chat.id)
     from anony.plugins.setup import build_setup_text
 
+    setup_text, ready = await build_setup_text(message)
     await message.reply_text(
-        message.lang["welcome_group"] + "\n\n" + await build_setup_text(message),
+        message.lang["welcome_group"] + "\n\n" + setup_text,
+        reply_markup=buttons.setup_markup(message.lang, ready),
         disable_notification=True,
     )

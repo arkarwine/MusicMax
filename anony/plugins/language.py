@@ -6,7 +6,7 @@
 from pyrogram import filters, types
 
 from anony import app, db, lang
-from anony.helpers import admin_check, buttons
+from anony.helpers import admin_check, buttons, feedback
 
 
 @app.on_message(filters.command(["lang", "language"]) & ~app.bl_users)
@@ -37,10 +37,14 @@ async def _lang_cb(_, query: types.CallbackQuery):
     _lang = data[1]
     current = await db.get_lang(query.message.chat.id)
     if current == _lang:
-        return await query.answer(
-            query.lang["lang_same"].format(current), show_alert=True
+        return await feedback.toast(
+            query, query.lang["lang_same"].format(current)
         )
 
-    await query.answer(query.lang["lang_change"].format(_lang), show_alert=True)
     await db.set_lang(query.message.chat.id, _lang)
-    await query.edit_message_text(query.lang["lang_changed"].format(_lang))
+    selected = lang.languages[_lang]
+    await feedback.toast(query, selected["lang_changed"].format(_lang))
+    await query.edit_message_text(
+        selected["lang_choose"],
+        reply_markup=buttons.lang_markup(_lang),
+    )

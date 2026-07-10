@@ -195,7 +195,7 @@ dependencies = [
 requires-dist = [
     { name = "aiohttp", specifier = "~=3.14.1" },
     { name = "aiosqlite", specifier = ">=0.22.1" },
-    { name = "kurigram", specifier = ">=2.2.21" },
+    { name = "kurigram", specifier = ">=2.2.22" },
     { name = "pillow", specifier = "~=12.2.0" },
     { name = "psutil", specifier = "~=7.2.2" },
     { name = "py-tgcalls", specifier = "~=2.2.11" },

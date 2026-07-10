@@ -9,7 +9,7 @@ from html import escape
 from functools import wraps
 from pathlib import Path
 
-from pyrogram import errors
+from pyrogram import enums, errors
 
 from anony import app, db, logger
 
@@ -92,7 +92,21 @@ class Language:
                     lang_code = await db.get_lang(chat.id)
                     lang_dict = self.languages.get(lang_code, lang_dict)
                     setattr(fallen, "lang", lang_dict)
-                    return await func(*args, **kwargs)
+                    result = await func(*args, **kwargs)
+                    if (
+                        hasattr(fallen, "command")
+                        and fallen.command
+                        and chat.type in {
+                            enums.ChatType.GROUP,
+                            enums.ChatType.SUPERGROUP,
+                        }
+                        and await db.get_cmd_delete(chat.id)
+                    ):
+                        try:
+                            await fallen.delete()
+                        except Exception:
+                            pass
+                    return result
                 except (errors.ChannelPrivate, errors.MessageIdInvalid, errors.MessageNotModified):
                     return
                 except (
@@ -128,15 +142,23 @@ class Language:
 
                     try:
                         if hasattr(fallen, "reply_text"):
-                            return await fallen.reply_text(
+                            sent = await fallen.reply_text(
                                 text, quote=True, disable_notification=True
                             )
+                            if not sudo:
+                                from anony.helpers import feedback
+
+                                await feedback.keep_or_clean(sent, error=True)
+                            return sent
                         callback_text = (
                             f"Could not finish that. Reference: {reference}"
                             if not sudo
                             else f"Failed: {type(ex).__name__}. Reference: {reference}"
                         )
-                        return await fallen.answer(callback_text, show_alert=False)
+                        return await fallen.answer(
+                            callback_text,
+                            show_alert=sudo,
+                        )
                     except Exception:
                         logger.exception(
                             "Could not deliver update failure feedback [ref=%s]",

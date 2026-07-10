@@ -7,7 +7,7 @@ import time
 import psutil
 
 from pyrogram import filters, types
-from anony import app, anon, boot, config, lang
+from anony import app, anon, boot, config, db, lang
 from anony.helpers import buttons
 
 
@@ -24,17 +24,19 @@ async def _ping(_, m: types.Message):
     if days:
         uptime = f"{days} days, {uptime}"
     latency = round((time.time() - start) * 1000, 2)
+    caption = m.lang["ping_user"].format(latency, uptime)
+    if m.from_user and m.from_user.id in app.sudoers:
+        caption += m.lang["ping_sudo_detail"].format(
+            psutil.cpu_percent(interval=0),
+            psutil.virtual_memory().percent,
+            psutil.disk_usage("/").percent,
+            await anon.ping(),
+            len(db.active_calls),
+        )
     await sent.edit_media(
         media=types.InputMediaPhoto(
             media=config.PING_IMG,
-            caption=m.lang["ping_pong"].format(
-                latency,
-                uptime,
-                psutil.cpu_percent(interval=0),
-                psutil.virtual_memory().percent,
-                psutil.disk_usage("/").percent,
-                await anon.ping(),
-            )
+            caption=caption,
         ),
         reply_markup=buttons.ping_markup(m.lang["support"]),
     )

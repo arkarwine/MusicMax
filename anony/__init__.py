@@ -54,7 +54,7 @@ from anony.core.youtube import YouTube  # noqa: E402
 tg = Telegram()
 yt = YouTube()
 
-from anony.helpers import Queue, Thumbnail  # noqa: E402
+from anony.helpers import Queue, Thumbnail, feedback  # noqa: E402
 queue = Queue()
 thumb = Thumbnail()
 
@@ -87,6 +87,7 @@ async def stop() -> None:
             logger.exception("Failed to stop %s cleanly; continuing shutdown.", name)
 
     await close_component("voice calls", anon.exit(), timeout=20)
+    await close_component("feedback cleanup", feedback.close())
     await close_component("bot", app.exit())
     await close_component("assistants", userbot.exit(), timeout=20)
     await close_component("database", db.close())

@@ -6,7 +6,7 @@
 from pyrogram import filters, types
 
 from anony import app, db, lang
-from anony.helpers import can_manage_vc
+from anony.helpers import can_manage_vc, feedback
 
 
 @app.on_message(filters.command(["loop"]) & filters.group & ~app.bl_users)
@@ -14,12 +14,12 @@ from anony.helpers import can_manage_vc
 @can_manage_vc
 async def _loop(_, m: types.Message):
     if not await db.get_call(m.chat.id):
-        return await m.reply_text(m.lang["not_playing"])
+        return await feedback.send(m, m.lang["not_playing"], error=True)
 
     chat_id = m.chat.id
     if len(m.command) < 2:
         if count := await db.get_loop(chat_id):
-            return await m.reply_text(m.lang["loop_count"].format(count))
+            return await feedback.send(m, m.lang["loop_count"].format(count))
         else:
             return await m.reply_text(m.lang["loop_usage"])
 
@@ -35,5 +35,5 @@ async def _loop(_, m: types.Message):
 
     await db.set_loop(m.chat.id, loop)
     if loop == 0:
-        return await m.reply_text(m.lang["loop_off"])
-    await m.reply_text(m.lang["loop_set"].format(loop))
+        return await feedback.send(m, m.lang["loop_off"])
+    await feedback.send(m, m.lang["loop_set"].format(loop))

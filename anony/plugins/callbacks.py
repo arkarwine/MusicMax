@@ -8,7 +8,7 @@ import re
 from pyrogram import errors, filters, types
 
 from anony import anon, app, db, lang, queue, tg, yt
-from anony.helpers import admin_check, buttons, can_manage_vc
+from anony.helpers import admin_check, buttons, can_manage_vc, feedback
 from anony.helpers._play import recover_playback
 
 
@@ -55,7 +55,7 @@ async def _controls(_, query: types.CallbackQuery):
             return await query.answer(
                 query.lang["play_already_paused"], show_alert=True
             )
-        await query.answer(query.lang["processing"], show_alert=False)
+        await feedback.toast(query, query.lang["pausing"])
         await anon.pause(chat_id)
         if qaction:
             return await query.edit_message_reply_markup(
@@ -67,7 +67,7 @@ async def _controls(_, query: types.CallbackQuery):
     elif action == "resume":
         if await db.playing(chat_id):
             return await query.answer(query.lang["play_not_paused"], show_alert=True)
-        await query.answer(query.lang["processing"], show_alert=False)
+        await feedback.toast(query, query.lang["resuming"])
         await anon.resume(chat_id)
         if qaction:
             return await query.edit_message_reply_markup(
@@ -76,10 +76,13 @@ async def _controls(_, query: types.CallbackQuery):
         reply = query.lang["play_resumed"].format(user)
 
     elif action == "skip":
-        await query.answer(query.lang["processing"], show_alert=False)
+        await feedback.toast(query, query.lang["skipping"])
         await anon.play_next(chat_id)
-        status = query.lang["skipped"]
-        reply = query.lang["play_skipped"].format(user)
+        try:
+            await query.message.delete()
+        except Exception:
+            pass
+        return
 
     elif action == "force":
         if len(args) < 4:
@@ -91,7 +94,7 @@ async def _controls(_, query: types.CallbackQuery):
         current = queue.get_current(chat_id)
         if not current:
             return await query.answer(query.lang["not_playing"], show_alert=False)
-        await query.answer(query.lang["processing"], show_alert=False)
+        await feedback.toast(query, query.lang["playing_now"])
         m_id = current.message_id
         queue.force_add(chat_id, media, remove=pos)
         await db.save_queue(chat_id, queue.get_queue(chat_id))
@@ -113,37 +116,41 @@ async def _controls(_, query: types.CallbackQuery):
         media = queue.get_current(chat_id)
         if not media:
             return await query.answer(query.lang["not_playing"], show_alert=False)
-        await query.answer(query.lang["processing"], show_alert=False)
+        await feedback.toast(query, query.lang["replaying"])
         media.user = user
         await anon.replay(chat_id)
-        status = query.lang["replayed"]
-        reply = query.lang["play_replayed"].format(user)
+        try:
+            await query.message.delete()
+        except Exception:
+            pass
+        return
 
     elif action == "stop":
-        await query.answer(query.lang["processing"], show_alert=False)
+        await feedback.toast(query, query.lang["stopping"])
         await anon.stop(chat_id)
         status = query.lang["stopped"]
         reply = query.lang["play_stopped"].format(user)
 
     try:
-        if action in ["skip", "replay", "stop"]:
-            await query.message.reply_text(reply, quote=False)
-            await query.message.delete()
+        content = query.message.caption or query.message.text
+        message_html = getattr(content, "html", str(content or ""))
+        mtext = re.sub(
+            r"\n\n<blockquote><i>.*?</i></blockquote>",
+            "",
+            message_html,
+            flags=re.DOTALL,
+        )
+        keyboard = buttons.controls(
+            chat_id,
+            status=status if action != "resume" else None,
+            remove=action == "stop",
+            playing=action != "pause",
+        )
+        updated = f"{mtext}\n\n<blockquote><i>{reply}</i></blockquote>"
+        if query.message.caption is not None:
+            await query.message.edit_caption(updated, reply_markup=keyboard)
         else:
-            content = query.message.caption or query.message.text
-            message_html = getattr(content, "html", str(content or ""))
-            mtext = re.sub(
-                r"\n\n<blockquote>.*?</blockquote>",
-                "",
-                message_html,
-                flags=re.DOTALL,
-            )
-            keyboard = buttons.controls(
-                chat_id, status=status if action != "resume" else None
-            )
-            await query.edit_message_text(
-                f"{mtext}\n\n<blockquote>{reply}</blockquote>", reply_markup=keyboard
-            )
+            await query.edit_message_text(updated, reply_markup=keyboard)
     except (errors.MessageIdInvalid, errors.MessageNotModified, errors.QueryIdInvalid):
         return
 
@@ -154,10 +161,19 @@ async def _help(_, query: types.CallbackQuery):
     data = query.data.split()
     if len(data) == 1:
         return await query.answer(url=f"https://t.me/{app.username}?start=help")
+    if data[1] not in {
+        "back", "close", "admins", "auth", "blist", "lang",
+        "ping", "play", "queue", "stats", "sudo",
+    }:
+        return await feedback.toast(query, query.lang["play_expired"])
 
     if data[1] == "back":
         return await query.edit_message_text(
-            text=query.lang["help_menu"], reply_markup=buttons.help_markup(query.lang)
+            text=query.lang["help_menu"],
+            reply_markup=buttons.help_markup(
+                query.lang,
+                sudo=query.from_user.id in app.sudoers,
+            ),
         )
     elif data[1] == "close":
         try:
@@ -166,9 +182,15 @@ async def _help(_, query: types.CallbackQuery):
         except Exception:
             return
 
+    if data[1] == "sudo" and query.from_user.id not in app.sudoers:
+        return await feedback.toast(query, query.lang["play_expired"])
     await query.edit_message_text(
         text=query.lang[f"help_{data[1]}"],
-        reply_markup=buttons.help_markup(query.lang, True),
+        reply_markup=buttons.help_markup(
+            query.lang,
+            True,
+            sudo=query.from_user.id in app.sudoers,
+        ),
     )
 
 
@@ -179,11 +201,11 @@ async def _settings_cb(_, query: types.CallbackQuery):
     cmd = query.data.split()
     if len(cmd) == 1:
         return await query.answer()
-    await query.answer(query.lang["processing"], show_alert=True)
-
     chat_id = query.message.chat.id
     _admin = await db.get_play_mode(chat_id)
     _delete = await db.get_cmd_delete(chat_id)
+    _cleanup = await db.get_feedback_cleanup(chat_id)
+    _video = await db.get_default_video(chat_id)
     _language = await db.get_lang(chat_id)
 
     if cmd[1] == "delete":
@@ -192,11 +214,22 @@ async def _settings_cb(_, query: types.CallbackQuery):
     elif cmd[1] == "play":
         await db.set_play_mode(chat_id, _admin)
         _admin = not _admin
+    elif cmd[1] == "cleanup":
+        _cleanup = not _cleanup
+        await db.set_feedback_cleanup(chat_id, _cleanup)
+    elif cmd[1] == "video":
+        _video = not _video
+        await db.set_default_video(chat_id, _video)
+    else:
+        return await feedback.toast(query)
+    await feedback.toast(query, query.lang["setting_saved"])
     await query.edit_message_reply_markup(
         reply_markup=buttons.settings_markup(
             query.lang,
             _admin,
             _delete,
+            _cleanup,
+            _video,
             _language,
             chat_id,
         )

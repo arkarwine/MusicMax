@@ -3,24 +3,26 @@
 # This file is part of AnonXMusic
 
 
+from html import escape
+
 from pyrogram import filters, types
 
 from anony import app, config, db, lang, queue, thumb
-from anony.helpers import Track, buttons
+from anony.helpers import Track, buttons, feedback
 
 
 @app.on_message(filters.command(["queue", "playing"]) & filters.group & ~app.bl_users)
 @lang.language()
 async def _queue_func(_, m: types.Message):
     if not await db.get_call(m.chat.id) and not queue.get_current(m.chat.id):
-        return await m.reply_text(m.lang["not_playing"])
+        return await feedback.send(m, m.lang["not_playing"], error=True)
 
     _reply = await m.reply_text(m.lang["queue_fetching"])
     _queue = queue.get_queue(m.chat.id)
     if not _queue:
         await db.remove_call(m.chat.id)
         await db.clear_playback(m.chat.id)
-        return await _reply.edit_text(m.lang["not_playing"])
+        return await feedback.edit(_reply, m.lang["not_playing"], error=True)
     _media = _queue[0]
     _thumb = (
         await thumb.generate(_media)
@@ -28,10 +30,10 @@ async def _queue_func(_, m: types.Message):
         else config.DEFAULT_THUMB
     ) if config.THUMB_GEN else None
     _text = m.lang["queue_curr"].format(
-        _media.url,
-        _media.title[:50],
-        _media.duration,
-        _media.user,
+        escape(_media.url or "", quote=True),
+        escape((_media.title or m.lang["unknown_track"])[:50]),
+        escape(_media.duration or "--:--"),
+        _media.user or m.lang["someone"],
     )
     _queue.pop(0)
 
@@ -41,7 +43,9 @@ async def _queue_func(_, m: types.Message):
             if i == 15:
                 break
             _text += m.lang["queue_item"].format(
-                i + 1, media.title, media.duration
+                i + 1,
+                escape(media.title or m.lang["unknown_track"]),
+                escape(media.duration or "--:--"),
             )
         _text += "</blockquote>"
 

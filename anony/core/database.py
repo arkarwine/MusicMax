@@ -29,6 +29,8 @@ class SQLiteDB:
         self.admin_play = []
         self.blacklisted = []
         self.cmd_delete = []
+        self.default_video = {}
+        self.feedback_cleanup = {}
         self.loop = {}
         self.notified = []
         self.logger = False
@@ -84,7 +86,9 @@ class SQLiteDB:
                 CREATE TABLE IF NOT EXISTS chats (
                     chat_id INTEGER PRIMARY KEY,
                     cmd_delete INTEGER NOT NULL DEFAULT 0,
-                    admin_play INTEGER NOT NULL DEFAULT 0
+                    admin_play INTEGER NOT NULL DEFAULT 0,
+                    default_video INTEGER NOT NULL DEFAULT 0,
+                    feedback_cleanup INTEGER NOT NULL DEFAULT 1
                 );
                 CREATE TABLE IF NOT EXISTS languages (
                     chat_id INTEGER PRIMARY KEY,
@@ -119,6 +123,17 @@ class SQLiteDB:
                     ON queue_items (chat_id, item_order);
                 """
             )
+            await self._ensure_column(
+                "chats", "default_video", "INTEGER NOT NULL DEFAULT 0"
+            )
+            cleanup_added = await self._ensure_column(
+                "chats", "feedback_cleanup", "INTEGER NOT NULL DEFAULT 1"
+            )
+            if cleanup_added:
+                # Existing groups retain their previous message behavior.
+                await self.conn.execute(
+                    "UPDATE chats SET feedback_cleanup = 0"
+                )
             await self.conn.commit()
             logger.info(f"Database connection successful. ({time() - start:.2f}s)")
             await self.load_cache()
@@ -127,6 +142,21 @@ class SQLiteDB:
                 await self.connection.close()
                 self.connection = None
             raise SystemExit(f"Database connection failed: {type(e).__name__}") from e
+
+    async def _ensure_column(
+        self,
+        table: str,
+        column: str,
+        definition: str,
+    ) -> bool:
+        cursor = await self.conn.execute(f"PRAGMA table_info({table})")
+        columns = {row[1] for row in await cursor.fetchall()}
+        if column not in columns:
+            await self.conn.execute(
+                f"ALTER TABLE {table} ADD COLUMN {column} {definition}"
+            )
+            return True
+        return False
 
     async def close(self) -> None:
         if self.connection is not None:
@@ -534,6 +564,8 @@ class SQLiteDB:
     async def rm_chat(self, chat_id: int) -> None:
         if await self.is_chat(chat_id):
             self.chats.remove(chat_id)
+            self.default_video.pop(chat_id, None)
+            self.feedback_cleanup.pop(chat_id, None)
             await self.conn.execute("DELETE FROM chats WHERE chat_id = ?", (chat_id,))
             await self.conn.commit()
 
@@ -561,6 +593,44 @@ class SQLiteDB:
             "INSERT INTO chats (chat_id, cmd_delete) VALUES (?, ?) "
             "ON CONFLICT(chat_id) DO UPDATE SET cmd_delete = excluded.cmd_delete",
             (chat_id, int(delete)),
+        )
+        await self.conn.commit()
+
+    async def get_default_video(self, chat_id: int) -> bool:
+        if chat_id not in self.default_video:
+            cursor = await self.conn.execute(
+                "SELECT default_video FROM chats WHERE chat_id = ?", (chat_id,)
+            )
+            row = await cursor.fetchone()
+            self.default_video[chat_id] = bool(row[0]) if row else False
+        return self.default_video[chat_id]
+
+    async def set_default_video(self, chat_id: int, video: bool) -> None:
+        self.default_video[chat_id] = video
+        await self.conn.execute(
+            "INSERT INTO chats (chat_id, default_video) VALUES (?, ?) "
+            "ON CONFLICT(chat_id) DO UPDATE SET "
+            "default_video = excluded.default_video",
+            (chat_id, int(video)),
+        )
+        await self.conn.commit()
+
+    async def get_feedback_cleanup(self, chat_id: int) -> bool:
+        if chat_id not in self.feedback_cleanup:
+            cursor = await self.conn.execute(
+                "SELECT feedback_cleanup FROM chats WHERE chat_id = ?", (chat_id,)
+            )
+            row = await cursor.fetchone()
+            self.feedback_cleanup[chat_id] = bool(row[0]) if row else True
+        return self.feedback_cleanup[chat_id]
+
+    async def set_feedback_cleanup(self, chat_id: int, enabled: bool) -> None:
+        self.feedback_cleanup[chat_id] = enabled
+        await self.conn.execute(
+            "INSERT INTO chats (chat_id, feedback_cleanup) VALUES (?, ?) "
+            "ON CONFLICT(chat_id) DO UPDATE SET "
+            "feedback_cleanup = excluded.feedback_cleanup",
+            (chat_id, int(enabled)),
         )
         await self.conn.commit()
 

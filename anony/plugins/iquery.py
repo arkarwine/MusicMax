@@ -3,6 +3,8 @@
 # This file is part of AnonXMusic
 
 
+from html import escape
+
 from py_yt import VideosSearch
 from pyrogram import types
 
@@ -34,7 +36,7 @@ async def inline_query_handler(_, query: types.InlineQuery):
 
         answers = []
         for video in results:
-            title = (video.get("title") or "Unknown Title").title()
+            title = video.get("title") or "Unknown title"
             duration = video.get("duration", "N/A")
             views = video.get("viewCount", {}).get("short", "N/A")
             thumbnails = video.get("thumbnails") or [{}]
@@ -44,14 +46,14 @@ async def inline_query_handler(_, query: types.InlineQuery):
             link = video.get("link", "https://youtube.com")
             published = video.get("publishedTime", "N/A")
 
-            description = f"{views} | {duration} | {channel} | {published}"
+            description = f"{duration} · {channel} · {views} views"
             caption = (
-                f"<b>Title:</b> <a href='{link}'>{title[:250]}</a>\n\n"
-                f"<b>Duration:</b> {duration}\n"
-                f"<b>Views:</b> <code>{views}</code>\n"
-                f"<b>Channel:</b> <a href='{channellink}'>{channel}</a>\n"
-                f"<b>Published:</b> {published}\n\n"
-                f"<u><i>Fetched by {app.name}</i></u>"
+                f"🎵 <b><a href='{escape(link, quote=True)}'>"
+                f"{escape(title[:250])}</a></b>\n"
+                f"<blockquote>{escape(duration)} · "
+                f"<a href='{escape(channellink, quote=True)}'>"
+                f"{escape(channel)}</a> · {escape(views)} views</blockquote>\n"
+                f"<i>{escape(published)}</i>"
             )
 
             answers.append(

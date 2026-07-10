@@ -4,11 +4,12 @@
 
 
 from pathlib import Path
+from html import escape
 
 from pyrogram import filters, types
 
 from anony import anon, app, config, db, lang, queue, tg, yt
-from anony.helpers import buttons, utils
+from anony.helpers import buttons, feedback, utils
 from anony.helpers._play import checkUB
 
 
@@ -16,7 +17,7 @@ def playlist_to_queue(chat_id: int, tracks: list) -> str:
     text = "<blockquote expandable>"
     for track in tracks:
         pos = queue.add(chat_id, track)
-        text += f"<b>{pos}.</b> {track.title}\n"
+        text += f"<b>{pos}.</b> {escape(track.title or 'Unknown track')}\n"
     text = text[:1948] + "</blockquote>"
     return text
 
@@ -56,7 +57,9 @@ async def play_hndlr(
             )
 
             if not tracks:
-                return await sent.edit_text(m.lang["playlist_error"])
+                return await feedback.edit(
+                    sent, m.lang["playlist_error"], error=True
+                )
 
             file = tracks[0]
             tracks.remove(file)
@@ -65,28 +68,36 @@ async def play_hndlr(
             file = await yt.search(url, sent.id, video=video)
 
         if not file:
-            return await sent.edit_text(
-                m.lang["play_not_found"].format(config.SUPPORT_CHAT)
+            return await feedback.edit(
+                sent,
+                m.lang["play_not_found"].format(config.SUPPORT_CHAT),
+                error=True,
             )
 
     elif len(m.command) >= 2:
         query = " ".join(
-            argument for argument in m.command[1:] if argument not in {"-f", "-v"}
+            argument
+            for argument in m.command[1:]
+            if argument not in {"-f", "-v", "-a"}
         )
         if not query:
-            return await sent.edit_text(m.lang["play_usage"])
+            return await feedback.edit(sent, m.lang["play_usage"], error=True)
         file = await yt.search(query, sent.id, video=video)
         if not file:
-            return await sent.edit_text(
-                m.lang["play_not_found"].format(config.SUPPORT_CHAT)
+            return await feedback.edit(
+                sent,
+                m.lang["play_not_found"].format(config.SUPPORT_CHAT),
+                error=True,
             )
 
     if not file:
-        return await sent.edit_text(m.lang["play_usage"])
+        return await feedback.edit(sent, m.lang["play_usage"], error=True)
 
     if file.duration_sec > config.DURATION_LIMIT:
-        return await sent.edit_text(
-            m.lang["play_duration_limit"].format(config.DURATION_LIMIT // 60)
+        return await feedback.edit(
+            sent,
+            m.lang["play_duration_limit"].format(config.DURATION_LIMIT // 60),
+            error=True,
         )
 
     if await db.is_logger():
@@ -108,9 +119,9 @@ async def play_hndlr(
         if position != 0 or active:
             text = m.lang["play_queued"].format(
                 position,
-                file.url,
-                file.title,
-                file.duration,
+                escape(file.url or "", quote=True),
+                escape(file.title or m.lang["unknown_track"]),
+                escape(file.duration or "--:--"),
                 m.from_user.mention,
             )
             if not active:

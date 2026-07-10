@@ -6,6 +6,7 @@
 import os
 import platform
 import sys
+from html import escape
 
 import psutil
 from pyrogram import __version__, filters, types
@@ -24,13 +25,10 @@ async def _stats(_, m: types.Message):
     )
 
     pid = os.getpid()
-    _utext = m.lang["stats_user"].format(
-        app.name,
+    _utext = m.lang["stats_user_v2"].format(
+        escape(app.name),
         len(userbot.clients),
-        config.AUTO_LEAVE,
-        len(db.blacklisted),
-        len(app.bl_users),
-        len(app.sudoers),
+        len(db.active_calls),
         len(await db.get_chats()),
         len(await db.get_users()),
     )

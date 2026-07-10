@@ -8,7 +8,7 @@ import time
 from pyrogram import filters, types
 
 from anony import app, db, lang
-from anony.helpers import admin_check, is_admin, utils
+from anony.helpers import admin_check, feedback, is_admin, utils
 
 
 @app.on_message(filters.command(["auth", "unauth"]) & filters.group & ~app.bl_users)
@@ -26,12 +26,12 @@ async def _auth(_, m: types.Message):
             return await m.reply_text(m.lang["auth_already"].format(user.mention))
 
         await db.add_auth(m.chat.id, user.id)
-        await m.reply_text(m.lang["auth_added"].format(user.mention))
+        await feedback.send(m, m.lang["auth_added"].format(user.mention))
     else:
         if not await db.is_auth(m.chat.id, user.id):
             return await m.reply_text(m.lang["auth_not"].format(user.mention))
         await db.rm_auth(m.chat.id, user.id)
-        await m.reply_text(m.lang["auth_removed"].format(user.mention))
+        await feedback.send(m, m.lang["auth_removed"].format(user.mention))
 
 
 @app.on_message(filters.command(["authlist"]) & filters.group & ~app.bl_users)
@@ -60,4 +60,4 @@ async def _admincache(_, m: types.Message):
     rel_hist[m.from_user.id] = time.time() + 600
     sent = await m.reply_text(m.lang["admin_cache_reloading"])
     await db.get_admins(m.chat.id, reload=True)
-    await sent.edit_text(m.lang["admin_cache_reloaded"])
+    await feedback.edit(sent, m.lang["admin_cache_reloaded"])

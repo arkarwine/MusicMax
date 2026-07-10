@@ -4,6 +4,7 @@
 
 
 import asyncio
+from html import escape
 
 from ntgcalls import (ConnectionNotFound, TelegramServerError,
                       RTMPStreamingUnsupported, ConnectionError)
@@ -86,12 +87,12 @@ class TgCall(PyTgCalls):
         _thumb,
     ) -> None:
         text = _lang["play_media"].format(
-            media.url,
-            media.title,
-            media.duration,
-            media.user,
+            escape(media.url or "", quote=True),
+            escape(media.title or _lang["unknown_track"]),
+            escape(media.duration or "--:--"),
+            media.user or _lang["someone"],
         )
-        keyboard = buttons.controls(chat_id)
+        keyboard = buttons.controls(chat_id, playing=True)
         try:
             if _thumb:
                 await message.edit_media(

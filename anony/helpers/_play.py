@@ -8,7 +8,7 @@ import asyncio
 from pyrogram import enums, errors, types
 
 from anony import app, config, db, logger, queue, yt
-from anony.helpers import utils
+from anony.helpers import feedback, utils
 
 
 async def _prime_assistant_peer(client, chat_id: int, username: str | None) -> bool:
@@ -197,7 +197,7 @@ async def recover_playback(m: types.Message) -> bool:
 def checkUB(play):
     async def wrapper(_, m: types.Message):
         if not m.from_user:
-            return await m.reply_text(m.lang["play_user_invalid"])
+            return await feedback.send(m, m.lang["play_user_invalid"], error=True)
 
         chat_id = m.chat.id
         if m.chat.type != enums.ChatType.SUPERGROUP:
@@ -205,18 +205,35 @@ def checkUB(play):
             return await app.leave_chat(chat_id)
 
         arguments = m.command[1:]
-        query_arguments = [arg for arg in arguments if arg not in {"-f", "-v"}]
+        query_arguments = [
+            arg for arg in arguments if arg not in {"-f", "-v", "-a"}
+        ]
         if not m.reply_to_message and not query_arguments:
-            return await m.reply_text(m.lang["play_usage"])
+            return await feedback.send(m, m.lang["play_usage"], error=True)
 
         if len(queue.get_queue(chat_id)) >= config.QUEUE_LIMIT:
-            return await m.reply_text(m.lang["play_queue_full"].format(config.QUEUE_LIMIT))
+            return await feedback.send(
+                m,
+                m.lang["play_queue_full"].format(config.QUEUE_LIMIT),
+                error=True,
+            )
 
         force = m.command[0].endswith("force") or "-f" in arguments
-        video = (m.command[0].startswith("v") or "-v" in arguments) and config.VIDEO_PLAY
+        explicit_audio = "-a" in arguments
+        explicit_video = m.command[0].startswith("v") or "-v" in arguments
+        default_video = await db.get_default_video(chat_id)
+        video = (
+            not explicit_audio
+            and (explicit_video or default_video)
+            and config.VIDEO_PLAY
+        )
         url = utils.get_url(m)
         if url and yt.invalid(url):
-            return await m.reply_text(m.lang["play_not_found"].format(config.SUPPORT_CHAT))
+            return await feedback.send(
+                m,
+                m.lang["play_not_found"].format(config.SUPPORT_CHAT),
+                error=True,
+            )
         m3u8 = url and not yt.valid(url)
 
         play_mode = await db.get_play_mode(chat_id)
@@ -227,7 +244,7 @@ def checkUB(play):
                 and not await db.is_auth(chat_id, m.from_user.id)
                 and m.from_user.id not in app.sudoers
             ):
-                return await m.reply_text(m.lang["play_admin"])
+                return await feedback.send(m, m.lang["play_admin"], error=True)
 
         if chat_id not in db.active_calls:
             if not await ensure_assistant(m):
