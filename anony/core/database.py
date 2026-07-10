@@ -297,6 +297,26 @@ class SQLiteDB:
         )
         await self.conn.commit()
 
+    async def get_log_chat(self) -> int | None:
+        cursor = await self.conn.execute(
+            "SELECT value FROM settings WHERE key = 'log_chat_id'"
+        )
+        row = await cursor.fetchone()
+        return int(row[0]) if row and row[0] else None
+
+    async def set_log_chat(self, chat_id: int | None) -> None:
+        if chat_id is None:
+            await self.conn.execute(
+                "DELETE FROM settings WHERE key = 'log_chat_id'"
+            )
+        else:
+            await self.conn.execute(
+                "INSERT INTO settings (key, value) VALUES ('log_chat_id', ?) "
+                "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                (str(chat_id),),
+            )
+        await self.conn.commit()
+
     async def get_play_mode(self, chat_id: int) -> bool:
         if chat_id not in self.admin_play:
             cursor = await self.conn.execute(

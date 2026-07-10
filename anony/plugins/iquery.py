@@ -6,7 +6,7 @@
 from py_yt import VideosSearch
 from pyrogram import types
 
-from anony import app
+from anony import app, logger
 from anony.helpers import buttons
 
 
@@ -14,7 +14,19 @@ from anony.helpers import buttons
 async def inline_query_handler(_, query: types.InlineQuery):
     text = query.query.strip().lower()
     if not text:
-        return
+        return await app.answer_inline_query(
+            query.id,
+            results=[
+                types.InlineQueryResultArticle(
+                    title="Search for a song",
+                    description="Type a song title, artist, or YouTube link.",
+                    input_message_content=types.InputTextMessageContent(
+                        "Type a song title, artist, or YouTube link to search."
+                    ),
+                )
+            ],
+            cache_time=5,
+        )
 
     try:
         search = VideosSearch(text, limit=15)
@@ -54,4 +66,17 @@ async def inline_query_handler(_, query: types.InlineQuery):
         if answers:
             await app.answer_inline_query(query.id, results=answers, cache_time=5)
     except Exception:
-        pass
+        logger.exception("Inline search failed for user %s", query.from_user.id)
+        await app.answer_inline_query(
+            query.id,
+            results=[
+                types.InlineQueryResultArticle(
+                    title="Search is temporarily unavailable",
+                    description="Please try again in a moment.",
+                    input_message_content=types.InputTextMessageContent(
+                        "I couldn't complete that search. Please try again in a moment."
+                    ),
+                )
+            ],
+            cache_time=1,
+        )

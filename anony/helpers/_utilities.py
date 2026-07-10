@@ -7,7 +7,7 @@ import re
 
 from pyrogram import enums, types
 
-from anony import app
+from anony import app, db, logger
 
 
 class Utilities:
@@ -92,7 +92,7 @@ class Utilities:
         title: str,
         duration: str,
     ) -> None:
-        if m.chat.id == app.logger:
+        if not app.logger or not await db.is_logger() or m.chat.id == app.logger:
             return
         _text = m.lang["play_log"].format(
             app.name,
@@ -104,26 +104,30 @@ class Utilities:
             title,
             duration,
         )
-        await app.send_message(chat_id=app.logger, text=_text)
+        try:
+            await app.send_message(chat_id=app.logger, text=_text)
+        except Exception:
+            logger.exception("Failed to send play log to chat %s", app.logger)
 
     async def send_log(self, m: types.Message, chat: bool = False) -> None:
+        if not app.logger or not await db.is_logger() or m.chat.id == app.logger:
+            return
         if chat:
             user = m.from_user
-            return await app.send_message(
-                chat_id=app.logger,
-                text=m.lang["log_chat"].format(
-                    m.chat.id,
-                    m.chat.title,
-                    user.id if user else 0,
-                    user.mention if user else "Anonymous",
-                ),
+            text = m.lang["log_chat"].format(
+                m.chat.id,
+                m.chat.title,
+                user.id if user else 0,
+                user.mention if user else "Anonymous",
             )
-
-        await app.send_message(
-            chat_id=app.logger,
-            text=m.lang["log_user"].format(
+        else:
+            username = f"@{m.from_user.username}" if m.from_user.username else "No username"
+            text = m.lang["log_user"].format(
                 m.from_user.id,
-                f"@{m.from_user.username}",
+                username,
                 m.from_user.mention,
-            ),
-        )
+            )
+        try:
+            await app.send_message(chat_id=app.logger, text=text)
+        except Exception:
+            logger.exception("Failed to send activity log to chat %s", app.logger)

@@ -24,6 +24,7 @@ async def idle():
 
 async def main():
     await db.connect()
+    app.logger = await db.get_log_chat()
     await app.boot()
     await userbot.boot()
     await anon.boot()

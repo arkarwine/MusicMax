@@ -25,11 +25,6 @@
             "value": "data/anonxmusic.db",
             "required": false
         },
-        "LOGGER_ID": {
-            "description": "Your log group ID, add your bot there and promote as an admin.",
-            "value": "",
-            "required": true
-        },
         "OWNER_ID": {
             "description": "The user id of user whom you would like to add as OWNER.",
             "value": "",

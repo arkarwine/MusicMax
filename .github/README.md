@@ -117,12 +117,13 @@ API_ID=123456
 API_HASH=abcdef1234567890
 BOT_TOKEN=123456:ABC-DEF
 OWNER_ID=123456789
-LOGGER_ID=-1001234567890
 DATABASE_PATH=data/anonxmusic.db
 SESSION=BQgfh...AA
 ```
 
 > 📝 Check <a href="https://github.com/AnonymousX1025/AnonXMusic/blob/master/config.py">config.py</a> for all available options.
+
+Activity logging is disabled by default. A sudo user can configure and enable it at runtime by running <code>/setlog</code> in the destination group, or <code>/setlog &lt;chat_id|@username&gt;</code> from another chat. Use <code>/logger off</code> to pause delivery without forgetting the destination.
 </details>
 
 <hr>

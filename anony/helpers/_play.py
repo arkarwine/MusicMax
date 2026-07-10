@@ -44,7 +44,7 @@ def checkUB(play):
             if (
                 m.from_user.id not in adminlist
                 and not await db.is_auth(chat_id, m.from_user.id)
-                and not m.from_user.id in app.sudoers
+                and m.from_user.id not in app.sudoers
             ):
                 return await m.reply_text(m.lang["play_admin"])
 
@@ -85,9 +85,12 @@ def checkUB(play):
                             invite_link = await app.export_chat_invite_link(chat_id)
                     except errors.ChatAdminRequired:
                         return await m.reply_text(m.lang["admin_required"])
-                    except Exception as ex:
+                    except Exception:
+                        logger.exception(
+                            "Could not create an assistant invite for chat %s", chat_id
+                        )
                         return await m.reply_text(
-                            m.lang["play_invite_error"].format(type(ex).__name__)
+                            m.lang["play_invite_error"].format("Invite unavailable")
                         )
 
                 umm = await m.reply_text(m.lang["play_invite"].format(app.name))
@@ -102,14 +105,18 @@ def checkUB(play):
                         await app.approve_chat_join_request(chat_id, client.id)
                     except errors.HideRequesterMissing:
                         pass
-                    except Exception as ex:
-                        return await umm.edit_text(
-                            m.lang["play_invite_error"].format(type(ex).__name__)
+                    except Exception:
+                        logger.exception(
+                            "Could not approve assistant join request for chat %s",
+                            chat_id,
                         )
-                except Exception as ex:
-                    logger.error(f"Error joining chat - {chat_id}: {ex}")
+                        return await umm.edit_text(
+                            m.lang["play_invite_error"].format("Approval unavailable")
+                        )
+                except Exception:
+                    logger.exception("Assistant could not join chat %s", chat_id)
                     return await umm.edit_text(
-                        m.lang["play_invite_error"].format(type(ex).__name__)
+                        m.lang["play_invite_error"].format("Join unavailable")
                     )
 
                 await umm.delete()

@@ -38,8 +38,6 @@ class Userbot(Client):
         Args:
             num (int): The client number to boot (1, 2, or 3).
             ub (Client): The userbot client instance.
-        Raises:
-            SystemExit: If the client fails to send a message in the log group.
         """
         clients = {
             1: self.one,
@@ -48,11 +46,6 @@ class Userbot(Client):
         }
         client = clients[num]
         await client.start()
-        try:
-            await client.send_message(config.LOGGER_ID, "Assistant Started")
-        except Exception:
-            raise SystemExit(f"Assistant {num} failed to send message in log group.")
-
         client.id = ub.me.id
         client.name = ub.me.first_name
         client.username = ub.me.username
