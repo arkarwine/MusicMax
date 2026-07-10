@@ -71,9 +71,24 @@ async def stop() -> None:
         except asyncio.exceptions.CancelledError:
             pass
 
-    await app.exit()
-    await userbot.exit()
-    await db.close()
-    await thumb.close()
+    for chat_id in list(db.active_calls):
+        media = queue.get_current(chat_id)
+        if media:
+            await db.save_queue(chat_id, queue.get_queue(chat_id))
+            state = "playing" if await db.playing(chat_id) else "paused"
+            await db.save_playback(chat_id, state, media.time)
+
+    async def close_component(name: str, operation, timeout: int = 10) -> None:
+        try:
+            await asyncio.wait_for(operation, timeout=timeout)
+        except TimeoutError:
+            logger.warning("Timed out while stopping %s; continuing shutdown.", name)
+        except Exception:
+            logger.exception("Failed to stop %s cleanly; continuing shutdown.", name)
+
+    await close_component("bot", app.exit())
+    await close_component("assistants", userbot.exit(), timeout=20)
+    await close_component("database", db.close())
+    await close_component("thumbnail downloader", thumb.close())
 
     logger.info("Stopped.\n")

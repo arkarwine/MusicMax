@@ -30,11 +30,13 @@ class TgCall(PyTgCalls):
         await db.playing(chat_id, paused=False)
         return await client.resume(chat_id)
 
-    async def stop(self, chat_id: int) -> None:
+    async def stop(self, chat_id: int, clear_persistence: bool = True) -> None:
         client = await db.get_assistant(chat_id)
         queue.clear(chat_id)
         await db.remove_call(chat_id)
         await db.set_loop(chat_id, 0)
+        if clear_persistence:
+            await db.clear_playback(chat_id)
 
         try:
             await client.leave_call(chat_id, close=False)
@@ -48,6 +50,7 @@ class TgCall(PyTgCalls):
         message: Message,
         media: Media | Track,
         seek_time: int = 0,
+        recovering: bool = False,
     ) -> None:
         client = await db.get_assistant(chat_id)
         _lang = await lang.get_lang(chat_id)
@@ -79,9 +82,11 @@ class TgCall(PyTgCalls):
                 stream=stream,
                 config=types.GroupCallConfig(auto_start=False),
             )
-            if not seek_time:
-                media.time = 1
+            if not seek_time or recovering:
+                media.time = max(seek_time, 1)
                 await db.add_call(chat_id)
+                await db.save_queue(chat_id, queue.get_queue(chat_id))
+                await db.save_playback(chat_id, "playing", seek_time)
                 text = _lang["play_media"].format(
                     media.url,
                     media.title,
@@ -134,8 +139,13 @@ class TgCall(PyTgCalls):
             await message.edit_text(_lang["error_no_file"].format(config.SUPPORT_CHAT))
             await self.play_next(chat_id)
         except exceptions.NoActiveGroupCall:
-            await self.stop(chat_id)
-            await message.edit_text(_lang["error_no_call"])
+            if recovering:
+                await db.remove_call(chat_id)
+                await db.mark_playback_waiting(chat_id, media.time)
+                await message.edit_text(_lang["recovery_waiting"])
+            else:
+                await self.stop(chat_id)
+                await message.edit_text(_lang["error_no_call"])
         except exceptions.NoAudioSourceFound:
             await message.edit_text(_lang["error_no_audio"])
             await self.play_next(chat_id)
@@ -168,6 +178,7 @@ class TgCall(PyTgCalls):
         media = queue.get_next(chat_id)
         if not media:
             return await self.stop(chat_id)
+        await db.save_queue(chat_id, queue.get_queue(chat_id))
 
         try:
             if media.message_id:

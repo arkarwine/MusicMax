@@ -4,6 +4,7 @@
 
 
 import asyncio
+from pathlib import Path
 
 from pyrogram import enums, errors, types
 
@@ -91,6 +92,79 @@ async def _invite_assistant(client, m: types.Message) -> bool:
     return False
 
 
+async def ensure_assistant(m: types.Message) -> bool:
+    chat_id = m.chat.id
+    client = await db.get_client(chat_id)
+    needs_invite = False
+    try:
+        member = await app.get_chat_member(chat_id, client.id)
+        if member.status in [
+            enums.ChatMemberStatus.BANNED,
+            enums.ChatMemberStatus.RESTRICTED,
+        ]:
+            try:
+                await app.unban_chat_member(chat_id=chat_id, user_id=client.id)
+            except Exception:
+                await m.reply_text(
+                    m.lang["play_banned"].format(
+                        app.name,
+                        client.id,
+                        client.mention,
+                        f"@{client.username}" if client.username else None,
+                    )
+                )
+                return False
+            needs_invite = True
+        elif member.status == enums.ChatMemberStatus.LEFT:
+            needs_invite = True
+    except errors.ChatAdminRequired:
+        await m.reply_text(m.lang["admin_required"])
+        return False
+    except (errors.UserNotParticipant, errors.PeerIdInvalid):
+        needs_invite = True
+
+    if needs_invite:
+        return await _invite_assistant(client, m)
+    if not await _prime_assistant_peer(client, chat_id, m.chat.username):
+        logger.warning("Assistant could not resolve peer for chat %s", chat_id)
+        await m.reply_text(m.lang["play_peer_error"])
+        return False
+    return True
+
+
+async def recover_playback(m: types.Message) -> bool:
+    from anony import anon
+    from anony.helpers import Track
+
+    media = queue.get_current(m.chat.id)
+    if not media or not await ensure_assistant(m):
+        return False
+
+    sent = await m.reply_text(m.lang["recovery_resuming"])
+    remote_file = bool(
+        media.file_path and media.file_path.startswith(("http://", "https://"))
+    )
+    if not remote_file and (
+        not media.file_path or not Path(media.file_path).exists()
+    ):
+        if isinstance(media, Track):
+            media.file_path = await yt.download(media.id, video=media.video)
+        if not media.file_path:
+            await db.mark_playback_waiting(m.chat.id, media.time)
+            await sent.edit_text(m.lang["recovery_file_missing"])
+            return False
+
+    media.message_id = sent.id
+    await anon.play_media(
+        m.chat.id,
+        sent,
+        media,
+        seek_time=media.time,
+        recovering=True,
+    )
+    return await db.get_call(m.chat.id)
+
+
 def checkUB(play):
     async def wrapper(_, m: types.Message):
         if not m.from_user:
@@ -127,41 +201,8 @@ def checkUB(play):
                 return await m.reply_text(m.lang["play_admin"])
 
         if chat_id not in db.active_calls:
-            client = await db.get_client(chat_id)
-            needs_invite = False
-            try:
-                member = await app.get_chat_member(chat_id, client.id)
-                if member.status in [
-                    enums.ChatMemberStatus.BANNED,
-                    enums.ChatMemberStatus.RESTRICTED,
-                ]:
-                    try:
-                        await app.unban_chat_member(
-                            chat_id=chat_id, user_id=client.id
-                        )
-                    except Exception:
-                        return await m.reply_text(
-                            m.lang["play_banned"].format(
-                                app.name,
-                                client.id,
-                                client.mention,
-                                f"@{client.username}" if client.username else None,
-                            )
-                        )
-                    needs_invite = True
-                elif member.status == enums.ChatMemberStatus.LEFT:
-                    needs_invite = True
-            except errors.ChatAdminRequired:
-                return await m.reply_text(m.lang["admin_required"])
-            except (errors.UserNotParticipant, errors.PeerIdInvalid):
-                needs_invite = True
-
-            if needs_invite:
-                if not await _invite_assistant(client, m):
-                    return
-            elif not await _prime_assistant_peer(client, chat_id, m.chat.username):
-                logger.warning("Assistant could not resolve peer for chat %s", chat_id)
-                return await m.reply_text(m.lang["play_peer_error"])
+            if not await ensure_assistant(m):
+                return
 
         if await db.get_cmd_delete(chat_id):
             try:

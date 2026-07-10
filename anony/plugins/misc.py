@@ -47,6 +47,8 @@ async def track_time():
                 continue
             media = queue.get_current(chat_id)
             if not media:
+                await db.remove_call(chat_id)
+                await db.clear_playback(chat_id)
                 continue
             media.time += 1
 
@@ -65,6 +67,7 @@ async def update_timer(length=10, sleep=12):
                 if not duration or not message_id or not media.time:
                     continue
                 played = media.time
+                await db.checkpoint_playback(chat_id, played)
                 remaining = max(duration - played, 0)
                 pos = min(int((played / duration) * length), length - 1)
                 timer = "—" * pos + "◉" + "—" * (length - pos - 1)
@@ -128,9 +131,23 @@ async def vc_watcher(sleep=15):
                 logger.exception("Auto-end check failed for chat %s", chat_id)
 
 
+async def backup_database():
+    await asyncio.sleep(60)
+    while True:
+        try:
+            path = await db.backup()
+            logger.info("Created database backup: %s", path)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Scheduled database backup failed")
+        await asyncio.sleep(86400)
+
+
 if config.AUTO_END:
     tasks.append(asyncio.create_task(vc_watcher()))
 if config.AUTO_LEAVE:
     tasks.append(asyncio.create_task(auto_leave()))
 tasks.append(asyncio.create_task(track_time()))
 tasks.append(asyncio.create_task(update_timer()))
+tasks.append(asyncio.create_task(backup_database()))

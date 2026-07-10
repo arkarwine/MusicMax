@@ -9,6 +9,7 @@ from pyrogram import errors, filters, types
 
 from anony import anon, app, db, lang, queue, tg, yt
 from anony.helpers import admin_check, buttons, can_manage_vc
+from anony.helpers._play import recover_playback
 
 
 @app.on_callback_query(filters.regex("cancel_dl") & ~app.bl_users)
@@ -24,7 +25,8 @@ async def cancel_dl(_, query: types.CallbackQuery):
 async def _controls(_, query: types.CallbackQuery):
     args = query.data.split()
     if len(args) < 3 or args[1] not in {
-        "status", "pause", "resume", "skip", "force", "replay", "stop"
+        "status", "pause", "resume", "skip", "force", "replay", "stop",
+        "confirm_stop", "cancel_stop",
     }:
         return await query.answer(query.lang["play_expired"], show_alert=False)
     action, chat_id = args[1], int(args[2])
@@ -32,6 +34,11 @@ async def _controls(_, query: types.CallbackQuery):
     user = query.from_user.mention
 
     if not await db.get_call(chat_id):
+        if action == "resume" and queue.get_current(chat_id):
+            await query.answer(query.lang["processing"], show_alert=False)
+            query.message.lang = query.lang
+            await recover_playback(query.message)
+            return
         try:
             return await query.answer(query.lang["not_playing"], show_alert=True)
         except errors.QueryIdInvalid:
@@ -43,13 +50,24 @@ async def _controls(_, query: types.CallbackQuery):
 
     if action == "status":
         return await query.answer()
-    await query.answer(query.lang["processing"], show_alert=True)
+
+    if action == "stop":
+        await query.answer(query.lang["stop_confirm"], show_alert=False)
+        return await query.edit_message_reply_markup(
+            reply_markup=buttons.confirm_stop(chat_id)
+        )
+    if action == "cancel_stop":
+        await query.answer(query.lang["stop_cancelled"], show_alert=False)
+        return await query.edit_message_reply_markup(
+            reply_markup=buttons.controls(chat_id)
+        )
 
     if action == "pause":
         if not await db.playing(chat_id):
             return await query.answer(
                 query.lang["play_already_paused"], show_alert=True
             )
+        await query.answer(query.lang["processing"], show_alert=False)
         await anon.pause(chat_id)
         if qaction:
             return await query.edit_message_reply_markup(
@@ -61,6 +79,7 @@ async def _controls(_, query: types.CallbackQuery):
     elif action == "resume":
         if await db.playing(chat_id):
             return await query.answer(query.lang["play_not_paused"], show_alert=True)
+        await query.answer(query.lang["processing"], show_alert=False)
         await anon.resume(chat_id)
         if qaction:
             return await query.edit_message_reply_markup(
@@ -69,6 +88,7 @@ async def _controls(_, query: types.CallbackQuery):
         reply = query.lang["play_resumed"].format(user)
 
     elif action == "skip":
+        await query.answer(query.lang["processing"], show_alert=False)
         await anon.play_next(chat_id)
         status = query.lang["skipped"]
         reply = query.lang["play_skipped"].format(user)
@@ -83,8 +103,10 @@ async def _controls(_, query: types.CallbackQuery):
         current = queue.get_current(chat_id)
         if not current:
             return await query.answer(query.lang["not_playing"], show_alert=False)
+        await query.answer(query.lang["processing"], show_alert=False)
         m_id = current.message_id
         queue.force_add(chat_id, media, remove=pos)
+        await db.save_queue(chat_id, queue.get_queue(chat_id))
         try:
             await app.delete_messages(
                 chat_id=chat_id, message_ids=[m_id, media.message_id], revoke=True
@@ -103,18 +125,20 @@ async def _controls(_, query: types.CallbackQuery):
         media = queue.get_current(chat_id)
         if not media:
             return await query.answer(query.lang["not_playing"], show_alert=False)
+        await query.answer(query.lang["processing"], show_alert=False)
         media.user = user
         await anon.replay(chat_id)
         status = query.lang["replayed"]
         reply = query.lang["play_replayed"].format(user)
 
-    elif action == "stop":
+    elif action == "confirm_stop":
+        await query.answer(query.lang["processing"], show_alert=False)
         await anon.stop(chat_id)
         status = query.lang["stopped"]
         reply = query.lang["play_stopped"].format(user)
 
     try:
-        if action in ["skip", "replay", "stop"]:
+        if action in ["skip", "replay", "confirm_stop"]:
             await query.message.reply_text(reply, quote=False)
             await query.message.delete()
         else:

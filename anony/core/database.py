@@ -3,6 +3,11 @@
 # This file is part of AnonXMusic
 
 
+import asyncio
+import json
+import sqlite3
+from dataclasses import asdict, is_dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from random import randint
 from time import time
@@ -16,6 +21,7 @@ class SQLiteDB:
     def __init__(self):
         self.path = Path(config.DATABASE_PATH).expanduser()
         self.connection: aiosqlite.Connection | None = None
+        self.write_lock = asyncio.Lock()
 
         self.admin_list = {}
         self.active_calls = {}
@@ -81,6 +87,23 @@ class SQLiteDB:
                 CREATE TABLE IF NOT EXISTS users (
                     user_id INTEGER PRIMARY KEY
                 );
+                CREATE TABLE IF NOT EXISTS playback_sessions (
+                    chat_id INTEGER PRIMARY KEY,
+                    assistant_num INTEGER,
+                    state TEXT NOT NULL DEFAULT 'waiting',
+                    position_seconds INTEGER NOT NULL DEFAULT 0,
+                    loop_remaining INTEGER NOT NULL DEFAULT 0,
+                    updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+                );
+                CREATE TABLE IF NOT EXISTS queue_items (
+                    chat_id INTEGER NOT NULL,
+                    item_order INTEGER NOT NULL,
+                    item_type TEXT NOT NULL,
+                    payload TEXT NOT NULL,
+                    PRIMARY KEY (chat_id, item_order)
+                );
+                CREATE INDEX IF NOT EXISTS queue_items_chat
+                    ON queue_items (chat_id, item_order);
                 """
             )
             await self.conn.commit()
@@ -98,6 +121,23 @@ class SQLiteDB:
             self.connection = None
         logger.info("Database connection closed.")
 
+    async def backup(self, keep: int = 7) -> Path:
+        backup_dir = self.path.parent / "backups"
+        backup_dir.mkdir(parents=True, exist_ok=True)
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+        destination = backup_dir / f"anonxmusic-{stamp}.db"
+        target = sqlite3.connect(destination)
+        try:
+            async with self.write_lock:
+                await self.conn.backup(target)
+        finally:
+            target.close()
+
+        backups = sorted(backup_dir.glob("anonxmusic-*.db"), reverse=True)
+        for old_backup in backups[max(keep, 1):]:
+            old_backup.unlink(missing_ok=True)
+        return destination
+
     async def get_call(self, chat_id: int) -> bool:
         return chat_id in self.active_calls
 
@@ -110,6 +150,12 @@ class SQLiteDB:
     async def playing(self, chat_id: int, paused: bool = None) -> bool | None:
         if paused is not None:
             self.active_calls[chat_id] = int(not paused)
+            await self.conn.execute(
+                "UPDATE playback_sessions SET state = ?, updated_at = unixepoch() "
+                "WHERE chat_id = ?",
+                ("paused" if paused else "playing", chat_id),
+            )
+            await self.conn.commit()
         return bool(self.active_calls.get(chat_id, 0))
 
     async def get_admins(self, chat_id: int, reload: bool = False) -> list[int]:
@@ -124,6 +170,103 @@ class SQLiteDB:
 
     async def set_loop(self, chat_id: int, count: int) -> None:
         self.loop[chat_id] = count
+        await self.conn.execute(
+            "UPDATE playback_sessions SET loop_remaining = ?, updated_at = unixepoch() "
+            "WHERE chat_id = ?",
+            (count, chat_id),
+        )
+        await self.conn.commit()
+
+    async def save_queue(self, chat_id: int, items: list) -> None:
+        rows = []
+        for position, item in enumerate(items):
+            payload = asdict(item) if is_dataclass(item) else dict(vars(item))
+            rows.append(
+                (chat_id, position, type(item).__name__.lower(), json.dumps(payload))
+            )
+
+        async with self.write_lock:
+            await self.conn.execute("DELETE FROM queue_items WHERE chat_id = ?", (chat_id,))
+            if rows:
+                await self.conn.executemany(
+                    "INSERT INTO queue_items "
+                    "(chat_id, item_order, item_type, payload) VALUES (?, ?, ?, ?)",
+                    rows,
+                )
+            await self.conn.commit()
+
+    async def save_playback(
+        self,
+        chat_id: int,
+        state: str,
+        position: int = 0,
+    ) -> None:
+        assistant_num = self.assistant.get(chat_id)
+        await self.conn.execute(
+            "INSERT INTO playback_sessions "
+            "(chat_id, assistant_num, state, position_seconds, loop_remaining, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, unixepoch()) "
+            "ON CONFLICT(chat_id) DO UPDATE SET "
+            "assistant_num = excluded.assistant_num, state = excluded.state, "
+            "position_seconds = excluded.position_seconds, "
+            "loop_remaining = excluded.loop_remaining, updated_at = unixepoch()",
+            (chat_id, assistant_num, state, max(position, 0), self.loop.get(chat_id, 0)),
+        )
+        await self.conn.commit()
+
+    async def checkpoint_playback(self, chat_id: int, position: int) -> None:
+        await self.conn.execute(
+            "UPDATE playback_sessions SET position_seconds = ?, updated_at = unixepoch() "
+            "WHERE chat_id = ?",
+            (max(position, 0), chat_id),
+        )
+        await self.conn.commit()
+
+    async def mark_playback_waiting(self, chat_id: int, position: int = 0) -> None:
+        await self.save_playback(chat_id, "waiting", position)
+
+    async def clear_playback(self, chat_id: int) -> None:
+        async with self.write_lock:
+            await self.conn.execute(
+                "DELETE FROM playback_sessions WHERE chat_id = ?", (chat_id,)
+            )
+            await self.conn.execute("DELETE FROM queue_items WHERE chat_id = ?", (chat_id,))
+            await self.conn.commit()
+
+    async def get_recovery_sessions(self) -> list[dict]:
+        cursor = await self.conn.execute(
+            "SELECT chat_id, assistant_num, state, position_seconds, loop_remaining "
+            "FROM playback_sessions ORDER BY updated_at"
+        )
+        sessions = []
+        for chat_id, assistant_num, state, position, loop in await cursor.fetchall():
+            items_cursor = await self.conn.execute(
+                "SELECT item_type, payload FROM queue_items "
+                "WHERE chat_id = ? ORDER BY item_order",
+                (chat_id,),
+            )
+            items = [
+                {"type": item_type, "payload": json.loads(payload)}
+                for item_type, payload in await items_cursor.fetchall()
+            ]
+            sessions.append(
+                {
+                    "chat_id": chat_id,
+                    "assistant_num": assistant_num,
+                    "state": state,
+                    "position": position,
+                    "loop": loop,
+                    "items": items,
+                }
+            )
+        return sessions
+
+    async def get_playback_state(self, chat_id: int) -> str | None:
+        cursor = await self.conn.execute(
+            "SELECT state FROM playback_sessions WHERE chat_id = ?", (chat_id,)
+        )
+        row = await cursor.fetchone()
+        return row[0] if row else None
 
     async def _get_auth(self, chat_id: int) -> set[int]:
         if chat_id not in self.auth:

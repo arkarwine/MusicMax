@@ -95,24 +95,37 @@ async def play_hndlr(
     file.user = mention
     if force:
         queue.force_add(m.chat.id, file)
+        await db.save_queue(m.chat.id, queue.get_queue(m.chat.id))
+        if not await db.get_call(m.chat.id):
+            await db.save_playback(m.chat.id, "waiting", file.time)
     else:
         position = queue.add(m.chat.id, file)
+        await db.save_queue(m.chat.id, queue.get_queue(m.chat.id))
+        if not await db.get_call(m.chat.id):
+            await db.save_playback(m.chat.id, "waiting", file.time)
 
-        if position != 0 or await db.get_call(m.chat.id):
+        active = await db.get_call(m.chat.id)
+        if position != 0 or active:
+            text = m.lang["play_queued"].format(
+                position,
+                file.url,
+                file.title,
+                file.duration,
+                m.from_user.mention,
+            )
+            if not active:
+                text += "\n\n" + m.lang["recovery_waiting"]
             await sent.edit_text(
-                m.lang["play_queued"].format(
-                    position,
-                    file.url,
-                    file.title,
-                    file.duration,
-                    m.from_user.mention,
-                ),
-                reply_markup=buttons.play_queued(
-                    m.chat.id, file.id, m.lang["play_now"]
+                text,
+                reply_markup=(
+                    buttons.play_queued(m.chat.id, file.id, m.lang["play_now"])
+                    if active
+                    else buttons.recovery(m.chat.id, m.lang["resume_queue"])
                 ),
             )
             if tracks:
                 added = playlist_to_queue(m.chat.id, tracks)
+                await db.save_queue(m.chat.id, queue.get_queue(m.chat.id))
                 await app.send_message(
                     chat_id=m.chat.id,
                     text=m.lang["playlist_queued"].format(len(tracks)) + added,
@@ -131,6 +144,7 @@ async def play_hndlr(
     if not tracks:
         return
     added = playlist_to_queue(m.chat.id, tracks)
+    await db.save_queue(m.chat.id, queue.get_queue(m.chat.id))
     await app.send_message(
         chat_id=m.chat.id,
         text=m.lang["playlist_queued"].format(len(tracks)) + added,

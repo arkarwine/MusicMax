@@ -32,6 +32,7 @@ async def _seek(_, m: types.Message):
     media = queue.get_current(m.chat.id)
     if not media:
         await db.remove_call(m.chat.id)
+        await db.clear_playback(m.chat.id)
         return await m.reply_text(m.lang["not_playing"])
     if not media.duration_sec:
         return await m.reply_text(m.lang["play_seek_no_dur"])
@@ -50,6 +51,7 @@ async def _seek(_, m: types.Message):
 
     await anon.play_media(m.chat.id, sent, media, start_from)
     media.time = start_from
+    await db.checkpoint_playback(m.chat.id, start_from)
     await sent.edit_text(
         m.lang["play_seeked"].format(stype, start_from, m.from_user.mention)
     )

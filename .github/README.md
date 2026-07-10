@@ -124,6 +124,8 @@ SESSION=BQgfh...AA
 > 📝 Check <a href="https://github.com/AnonymousX1025/AnonXMusic/blob/master/config.py">config.py</a> for all available options.
 
 Activity logging is disabled by default. A sudo user can configure and enable it at runtime by running <code>/setlog</code> in the destination group, or <code>/setlog &lt;chat_id|@username&gt;</code> from another chat. Use <code>/logger off</code> to pause delivery without forgetting the destination.
+
+Playback queues, current positions, pause state, loop counts, and assistant assignments are saved in SQLite. After a restart, active playback is restored when possible; otherwise the queue remains available through <code>/resume</code>. Consistent backups are kept under <code>data/backups</code>, and sudo users can create one with <code>/backupdb</code>. Group admins can run <code>/setup</code> for a nontechnical readiness check, while <code>/status</code> provides sudo-only diagnostics.
 </details>
 
 <hr>

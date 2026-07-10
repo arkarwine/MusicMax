@@ -12,13 +12,14 @@ from anony.helpers import Track, buttons
 @app.on_message(filters.command(["queue", "playing"]) & filters.group & ~app.bl_users)
 @lang.language()
 async def _queue_func(_, m: types.Message):
-    if not await db.get_call(m.chat.id):
+    if not await db.get_call(m.chat.id) and not queue.get_current(m.chat.id):
         return await m.reply_text(m.lang["not_playing"])
 
     _reply = await m.reply_text(m.lang["queue_fetching"])
     _queue = queue.get_queue(m.chat.id)
     if not _queue:
         await db.remove_call(m.chat.id)
+        await db.clear_playback(m.chat.id)
         return await _reply.edit_text(m.lang["not_playing"])
     _media = _queue[0]
     _thumb = (

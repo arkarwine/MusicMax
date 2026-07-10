@@ -69,3 +69,8 @@ class Queue:
     def clear(self, chat_id: int) -> None:
         """Clear the entire queue."""
         self.queues[chat_id].clear()
+
+    def restore(self, chat_id: int, items: list[MediaItem]) -> None:
+        """Replace an in-memory queue with a persisted snapshot."""
+        self.queues[chat_id].clear()
+        self.queues[chat_id].extend(items)
