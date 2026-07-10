@@ -4,6 +4,7 @@
 
 
 from pathlib import Path
+from html import escape
 
 from pyrogram import enums, filters, types
 
@@ -43,6 +44,17 @@ async def _status(_, m: types.Message):
     cookie_dir = Path(yt.cookie_dir)
     cookies = len(list(cookie_dir.glob("*.txt"))) if cookie_dir.exists() else 0
     sessions = await db.get_recovery_sessions()
+    recovery = await db.get_recovery_report()
+    recovery_text = (
+        "\n".join(
+            f"{item['chat_id']}: {item['stage']} "
+            f"(attempts={item['attempts']})"
+            + (f" - {item['detail'][:160]}" if item["detail"] else "")
+            for item in recovery
+        )
+        if recovery
+        else "none"
+    )
     text = m.lang["status_sudo"].format(
         "connected" if db.connection else "disconnected",
         len(userbot.clients),
@@ -51,6 +63,7 @@ async def _status(_, m: types.Message):
         app.logger or "none",
         len(sessions),
         len(db.active_calls),
+        escape(recovery_text),
     )
     await m.reply_text(text, disable_notification=True)
 

@@ -4,7 +4,6 @@
 
 
 import asyncio
-from pathlib import Path
 
 from pyrogram import enums, errors, types
 
@@ -190,36 +189,9 @@ async def ensure_assistant(m: types.Message) -> bool:
 
 
 async def recover_playback(m: types.Message) -> bool:
-    from anony import anon
-    from anony.helpers import Track
+    from anony.core.recovery import recovery
 
-    media = queue.get_current(m.chat.id)
-    if not media or not await ensure_assistant(m):
-        return False
-
-    sent = await m.reply_text(m.lang["recovery_resuming"])
-    remote_file = bool(
-        media.file_path and media.file_path.startswith(("http://", "https://"))
-    )
-    if not remote_file and (
-        not media.file_path or not Path(media.file_path).exists()
-    ):
-        if isinstance(media, Track):
-            media.file_path = await yt.download(media.id, video=media.video)
-        if not media.file_path:
-            await db.mark_playback_waiting(m.chat.id, media.time)
-            await sent.edit_text(m.lang["recovery_file_missing"])
-            return False
-
-    media.message_id = sent.id
-    await anon.play_media(
-        m.chat.id,
-        sent,
-        media,
-        seek_time=media.time,
-        recovering=True,
-    )
-    return await db.get_call(m.chat.id)
+    return await recovery.recover(m.chat.id, source=m, desired_state="playing")
 
 
 def checkUB(play):
