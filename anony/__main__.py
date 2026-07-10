@@ -89,15 +89,14 @@ async def restore_playback() -> None:
                 seek_time=media.time,
                 recovering=True,
             )
-            if await db.get_call(chat_id):
-                ready = await anon.wait_for_state(
-                    chat_id,
-                    paused=session["state"] == "paused",
-                )
-                if not ready:
-                    await db.remove_call(chat_id)
-                    await db.mark_playback_waiting(chat_id, media.time)
-                    await status.edit_text(_lang["recovery_waiting"])
+            if await db.get_call(chat_id) and session["state"] == "paused":
+                if not await anon.wait_for_state(chat_id, paused=True):
+                    logger.warning(
+                        "Playback was restored in chat %s but could not be paused; "
+                        "leaving it playing.",
+                        chat_id,
+                    )
+                    await db.playing(chat_id, paused=False)
         except Exception:
             logger.exception("Could not restore playback for chat %s", chat_id)
             await db.mark_playback_waiting(chat_id, media.time)

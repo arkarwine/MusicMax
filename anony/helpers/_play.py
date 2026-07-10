@@ -219,13 +219,7 @@ async def recover_playback(m: types.Message) -> bool:
         seek_time=media.time,
         recovering=True,
     )
-    if await db.get_call(m.chat.id):
-        if await anon.wait_for_state(m.chat.id, paused=False):
-            return True
-        await db.remove_call(m.chat.id)
-        await db.mark_playback_waiting(m.chat.id, media.time)
-        await sent.edit_text(m.lang["recovery_waiting"])
-    return False
+    return await db.get_call(m.chat.id)
 
 
 def checkUB(play):
