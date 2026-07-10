@@ -104,13 +104,6 @@ class SQLiteDB:
                 );
                 CREATE INDEX IF NOT EXISTS queue_items_chat
                     ON queue_items (chat_id, item_order);
-                CREATE TABLE IF NOT EXISTS playback_recovery (
-                    chat_id INTEGER PRIMARY KEY,
-                    stage TEXT NOT NULL,
-                    detail TEXT NOT NULL DEFAULT '',
-                    attempts INTEGER NOT NULL DEFAULT 0,
-                    updated_at INTEGER NOT NULL DEFAULT (unixepoch())
-                );
                 """
             )
             await self.conn.commit()
@@ -265,62 +258,7 @@ class SQLiteDB:
                 "DELETE FROM playback_sessions WHERE chat_id = ?", (chat_id,)
             )
             await self.conn.execute("DELETE FROM queue_items WHERE chat_id = ?", (chat_id,))
-            await self.conn.execute(
-                "DELETE FROM playback_recovery WHERE chat_id = ?", (chat_id,)
-            )
             await self.conn.commit()
-
-    async def set_recovery_status(
-        self,
-        chat_id: int,
-        stage: str,
-        detail: str = "",
-        attempts: int = 0,
-    ) -> None:
-        """Persist recovery progress so silent startup failures remain inspectable."""
-        await self.conn.execute(
-            "INSERT INTO playback_recovery "
-            "(chat_id, stage, detail, attempts, updated_at) "
-            "VALUES (?, ?, ?, ?, unixepoch()) "
-            "ON CONFLICT(chat_id) DO UPDATE SET "
-            "stage = excluded.stage, detail = excluded.detail, "
-            "attempts = excluded.attempts, updated_at = unixepoch()",
-            (chat_id, stage, detail[:1000], max(attempts, 0)),
-        )
-        await self.conn.commit()
-
-    async def get_recovery_status(self, chat_id: int) -> dict | None:
-        cursor = await self.conn.execute(
-            "SELECT stage, detail, attempts, updated_at "
-            "FROM playback_recovery WHERE chat_id = ?",
-            (chat_id,),
-        )
-        row = await cursor.fetchone()
-        if not row:
-            return None
-        return {
-            "stage": row[0],
-            "detail": row[1],
-            "attempts": row[2],
-            "updated_at": row[3],
-        }
-
-    async def get_recovery_report(self, limit: int = 5) -> list[dict]:
-        cursor = await self.conn.execute(
-            "SELECT chat_id, stage, detail, attempts, updated_at "
-            "FROM playback_recovery ORDER BY updated_at DESC LIMIT ?",
-            (max(limit, 1),),
-        )
-        return [
-            {
-                "chat_id": row[0],
-                "stage": row[1],
-                "detail": row[2],
-                "attempts": row[3],
-                "updated_at": row[4],
-            }
-            for row in await cursor.fetchall()
-        ]
 
     async def get_recovery_sessions(self) -> list[dict]:
         cursor = await self.conn.execute(

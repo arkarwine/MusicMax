@@ -191,7 +191,7 @@ async def ensure_assistant(m: types.Message) -> bool:
 async def recover_playback(m: types.Message) -> bool:
     from anony.core.recovery import recovery
 
-    return await recovery.recover(m.chat.id, source=m, desired_state="playing")
+    return await recovery.play(m.chat.id, source=m)
 
 
 def checkUB(play):
