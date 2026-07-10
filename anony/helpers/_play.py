@@ -44,12 +44,35 @@ async def _prime_assistant_peer(client, chat_id: int, username: str | None) -> b
 
 async def _invite_assistant(client, m: types.Message) -> bool:
     chat_id = m.chat.id
+    temporary_link = None
+
+    async def fresh_invite() -> str:
+        nonlocal temporary_link
+        invite = await app.create_chat_invite_link(
+            chat_id,
+            name="Music assistant",
+            member_limit=1,
+        )
+        temporary_link = invite.invite_link
+        return temporary_link
+
+    async def revoke_invite() -> None:
+        if not temporary_link:
+            return
+        try:
+            await app.revoke_chat_invite_link(chat_id, temporary_link)
+        except Exception:
+            logger.debug(
+                "Could not revoke temporary invite for chat %s",
+                chat_id,
+                exc_info=True,
+            )
+
     if m.chat.username:
         invite_link = f"@{m.chat.username}"
     else:
         try:
-            chat = await app.get_chat(chat_id)
-            invite_link = chat.invite_link or await app.export_chat_invite_link(chat_id)
+            invite_link = await fresh_invite()
         except errors.ChatAdminRequired:
             await m.reply_text(m.lang["admin_required"])
             return False
@@ -61,7 +84,12 @@ async def _invite_assistant(client, m: types.Message) -> bool:
     status = await m.reply_text(m.lang["play_invite"].format(app.name))
     join_pending = False
     try:
-        await client.join_chat(invite_link)
+        try:
+            await client.join_chat(invite_link)
+        except (errors.InviteHashExpired, errors.InviteHashInvalid):
+            logger.info("Refreshing an invalid invite link for chat %s", chat_id)
+            invite_link = await fresh_invite()
+            await client.join_chat(invite_link)
     except errors.UserAlreadyParticipant:
         pass
     except errors.InviteRequestSent:
@@ -78,14 +106,20 @@ async def _invite_assistant(client, m: types.Message) -> bool:
                     "Could not approve assistant join request for chat %s", chat_id
                 )
                 break
+    except errors.ChatAdminRequired:
+        await revoke_invite()
+        await status.edit_text(m.lang["admin_required"])
+        return False
     except Exception:
         logger.exception("Assistant could not join chat %s", chat_id)
+        await revoke_invite()
         await status.edit_text(m.lang["play_invite_error"].format("Join unavailable"))
         return False
 
     for _ in range(5):
         if await _prime_assistant_peer(client, chat_id, m.chat.username):
             await status.delete()
+            await revoke_invite()
             return True
         await asyncio.sleep(1)
 
@@ -95,6 +129,7 @@ async def _invite_assistant(client, m: types.Message) -> bool:
     else:
         logger.error("Assistant could not resolve chat %s after joining", chat_id)
         await status.edit_text(m.lang["play_peer_error"])
+    await revoke_invite()
     return False
 
 
