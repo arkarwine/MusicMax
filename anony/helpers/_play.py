@@ -220,15 +220,11 @@ async def recover_playback(m: types.Message) -> bool:
         recovering=True,
     )
     if await db.get_call(m.chat.id):
-        try:
-            await anon.resume(m.chat.id)
-        except Exception:
-            logger.warning(
-                "Recovered playback for chat %s did not accept an explicit resume",
-                m.chat.id,
-                exc_info=True,
-            )
-        return True
+        if await anon.wait_for_state(m.chat.id, paused=False):
+            return True
+        await db.remove_call(m.chat.id)
+        await db.mark_playback_waiting(m.chat.id, media.time)
+        await sent.edit_text(m.lang["recovery_waiting"])
     return False
 
 

@@ -90,19 +90,14 @@ async def restore_playback() -> None:
                 recovering=True,
             )
             if await db.get_call(chat_id):
-                await asyncio.sleep(0.5)
-                if session["state"] == "paused":
-                    await anon.pause(chat_id)
-                else:
-                    try:
-                        await anon.resume(chat_id)
-                    except Exception:
-                        logger.warning(
-                            "Playback restored for chat %s, but the explicit resume "
-                            "signal was not accepted.",
-                            chat_id,
-                            exc_info=True,
-                        )
+                ready = await anon.wait_for_state(
+                    chat_id,
+                    paused=session["state"] == "paused",
+                )
+                if not ready:
+                    await db.remove_call(chat_id)
+                    await db.mark_playback_waiting(chat_id, media.time)
+                    await status.edit_text(_lang["recovery_waiting"])
         except Exception:
             logger.exception("Could not restore playback for chat %s", chat_id)
             await db.mark_playback_waiting(chat_id, media.time)

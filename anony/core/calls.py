@@ -3,6 +3,8 @@
 # This file is part of AnonXMusic
 
 
+import asyncio
+
 from ntgcalls import (ConnectionNotFound, TelegramServerError,
                       RTMPStreamingUnsupported, ConnectionError)
 from pyrogram.errors import (ChatSendMediaForbidden, ChatSendPhotosForbidden,
@@ -22,13 +24,44 @@ class TgCall(PyTgCalls):
 
     async def pause(self, chat_id: int) -> bool:
         client = await db.get_assistant(chat_id)
+        result = await client.pause(chat_id)
         await db.playing(chat_id, paused=True)
-        return await client.pause(chat_id)
+        return result
 
     async def resume(self, chat_id: int) -> bool:
         client = await db.get_assistant(chat_id)
+        result = await client.resume(chat_id)
         await db.playing(chat_id, paused=False)
-        return await client.resume(chat_id)
+        return result
+
+    async def wait_for_state(
+        self,
+        chat_id: int,
+        paused: bool,
+        attempts: int = 10,
+    ) -> bool:
+        """Apply a recovered state after the native call connection is ready."""
+        client = await db.get_assistant(chat_id)
+        operation = client.pause if paused else client.resume
+        for attempt in range(attempts):
+            try:
+                await operation(chat_id)
+                await db.playing(chat_id, paused=paused)
+                return True
+            except (ConnectionNotFound, exceptions.NotInCallError):
+                if attempt + 1 < attempts:
+                    await asyncio.sleep(1)
+            except Exception:
+                logger.warning(
+                    "Could not apply recovered playback state in chat %s",
+                    chat_id,
+                    exc_info=True,
+                )
+                return False
+        logger.warning(
+            "Recovered call connection did not become ready in chat %s", chat_id
+        )
+        return False
 
     async def stop(self, chat_id: int, clear_persistence: bool = True) -> None:
         client = await db.get_assistant(chat_id)
