@@ -20,10 +20,10 @@
             "value": "",
             "required": true
         },
-        "MONGO_URL": {
-            "description": "Get a mongodb url from https://cloud.mongodb.com.",
-            "value": "",
-            "required": true
+        "DATABASE_PATH": {
+            "description": "Path to the SQLite database file.",
+            "value": "data/anonxmusic.db",
+            "required": false
         },
         "LOGGER_ID": {
             "description": "Your log group ID, add your bot there and promote as an admin.",

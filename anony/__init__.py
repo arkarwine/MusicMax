@@ -19,7 +19,7 @@ logging.basicConfig(
 )
 logging.getLogger("httpx").setLevel(logging.ERROR)
 logging.getLogger("ntgcalls").setLevel(logging.CRITICAL)
-logging.getLogger("pymongo").setLevel(logging.ERROR)
+logging.getLogger("aiosqlite").setLevel(logging.ERROR)
 logging.getLogger("pyrogram").setLevel(logging.ERROR)
 logging.getLogger("pytgcalls").setLevel(logging.ERROR)
 logger = logging.getLogger(__name__)
@@ -43,8 +43,8 @@ ensure_dirs()
 from anony.core.userbot import Userbot
 userbot = Userbot()
 
-from anony.core.mongo import MongoDB
-db = MongoDB()
+from anony.core.database import SQLiteDB
+db = SQLiteDB()
 
 from anony.core.lang import Language
 lang = Language()
