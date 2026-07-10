@@ -49,7 +49,10 @@ async def restore_playback() -> None:
             db.assistant[chat_id] = assistant_num
 
         media = items[0]
-        media.time = session["position"]
+        position = session["position"]
+        if media.duration_sec and position >= media.duration_sec - 5:
+            position = 0
+        media.time = position
         restored += 1
         if session["state"] == "waiting":
             continue
@@ -86,8 +89,20 @@ async def restore_playback() -> None:
                 seek_time=media.time,
                 recovering=True,
             )
-            if await db.get_call(chat_id) and session["state"] == "paused":
-                await anon.pause(chat_id)
+            if await db.get_call(chat_id):
+                await asyncio.sleep(0.5)
+                if session["state"] == "paused":
+                    await anon.pause(chat_id)
+                else:
+                    try:
+                        await anon.resume(chat_id)
+                    except Exception:
+                        logger.warning(
+                            "Playback restored for chat %s, but the explicit resume "
+                            "signal was not accepted.",
+                            chat_id,
+                            exc_info=True,
+                        )
         except Exception:
             logger.exception("Could not restore playback for chat %s", chat_id)
             await db.mark_playback_waiting(chat_id, media.time)

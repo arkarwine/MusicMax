@@ -87,3 +87,9 @@ async def _new_member(_, message: types.Message):
         return
     await utils.send_log(message, True)
     await db.add_chat(message.chat.id)
+    from anony.plugins.setup import build_setup_text
+
+    await message.reply_text(
+        message.lang["welcome_group"] + "\n\n" + await build_setup_text(message),
+        disable_notification=True,
+    )

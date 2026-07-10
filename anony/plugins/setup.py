@@ -5,20 +5,14 @@
 
 from pathlib import Path
 
-from pyrogram import enums, errors, filters, types
+from pyrogram import enums, filters, types
 
 from anony import app, db, lang, queue, userbot, yt
 from anony.helpers import admin_check
+from anony.helpers._play import assistant_membership
 
 
-def _mark(ready: bool) -> str:
-    return "✅" if ready else "⚠️"
-
-
-@app.on_message(filters.command(["setup"]) & filters.group & ~app.bl_users)
-@lang.language()
-@admin_check
-async def _setup(_, m: types.Message):
+async def build_setup_text(m: types.Message) -> str:
     bot_member = await app.get_chat_member(m.chat.id, app.id)
     bot_admin = bot_member.status in {
         enums.ChatMemberStatus.OWNER,
@@ -28,30 +22,38 @@ async def _setup(_, m: types.Message):
         bot_member.privileges and bot_member.privileges.can_invite_users
     )
 
-    assistant_ready = False
     try:
-        assistant = await db.get_client(m.chat.id)
-        member = await app.get_chat_member(m.chat.id, assistant.id)
-        assistant_ready = member.status in {
-            enums.ChatMemberStatus.OWNER,
-            enums.ChatMemberStatus.ADMINISTRATOR,
-            enums.ChatMemberStatus.MEMBER,
-        }
-    except (errors.UserNotParticipant, errors.PeerIdInvalid):
-        pass
+        _, membership = await assistant_membership(m.chat.id, m.chat.username)
+        assistant_ready = membership == "ready"
+    except Exception:
+        assistant_ready = False
 
-    saved_tracks = len(queue.get_queue(m.chat.id))
-    text = m.lang["setup_admin"].format(
-        _mark(bot_admin),
-        _mark(can_invite),
-        _mark(assistant_ready),
-        saved_tracks,
+    lines = [
+        m.lang["setup_bot_ready"] if bot_admin else m.lang["setup_bot_missing"],
+        (
+            m.lang["setup_invite_ready"]
+            if can_invite
+            else m.lang["setup_invite_missing"]
+        ),
+        (
+            m.lang["setup_assistant_ready"]
+            if assistant_ready
+            else m.lang["setup_assistant_missing"]
+        ),
+    ]
+    text = m.lang["setup_admin"].format("\n".join(lines), len(queue.get_queue(m.chat.id)))
+    return text + (
+        m.lang["setup_ready"]
+        if bot_admin and can_invite and assistant_ready
+        else m.lang["setup_action_needed"]
     )
-    if not can_invite or not assistant_ready:
-        text += m.lang["setup_action_needed"]
-    else:
-        text += m.lang["setup_ready"]
-    await m.reply_text(text, disable_notification=True)
+
+
+@app.on_message(filters.command(["setup"]) & filters.group & ~app.bl_users)
+@lang.language()
+@admin_check
+async def _setup(_, m: types.Message):
+    await m.reply_text(await build_setup_text(m), disable_notification=True)
 
 
 @app.on_message(filters.command(["status"]) & app.sudoers)

@@ -26,7 +26,6 @@ async def _controls(_, query: types.CallbackQuery):
     args = query.data.split()
     if len(args) < 3 or args[1] not in {
         "status", "pause", "resume", "skip", "force", "replay", "stop",
-        "confirm_stop", "cancel_stop",
     }:
         return await query.answer(query.lang["play_expired"], show_alert=False)
     action, chat_id = args[1], int(args[2])
@@ -50,17 +49,6 @@ async def _controls(_, query: types.CallbackQuery):
 
     if action == "status":
         return await query.answer()
-
-    if action == "stop":
-        await query.answer(query.lang["stop_confirm"], show_alert=False)
-        return await query.edit_message_reply_markup(
-            reply_markup=buttons.confirm_stop(chat_id)
-        )
-    if action == "cancel_stop":
-        await query.answer(query.lang["stop_cancelled"], show_alert=False)
-        return await query.edit_message_reply_markup(
-            reply_markup=buttons.controls(chat_id)
-        )
 
     if action == "pause":
         if not await db.playing(chat_id):
@@ -131,14 +119,14 @@ async def _controls(_, query: types.CallbackQuery):
         status = query.lang["replayed"]
         reply = query.lang["play_replayed"].format(user)
 
-    elif action == "confirm_stop":
+    elif action == "stop":
         await query.answer(query.lang["processing"], show_alert=False)
         await anon.stop(chat_id)
         status = query.lang["stopped"]
         reply = query.lang["play_stopped"].format(user)
 
     try:
-        if action in ["skip", "replay", "confirm_stop"]:
+        if action in ["skip", "replay", "stop"]:
             await query.message.reply_text(reply, quote=False)
             await query.message.delete()
         else:

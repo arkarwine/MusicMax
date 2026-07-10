@@ -92,44 +92,60 @@ async def _invite_assistant(client, m: types.Message) -> bool:
     return False
 
 
+async def assistant_membership(
+    chat_id: int, username: str | None
+) -> tuple[object, str]:
+    """Return the selected assistant and its membership state."""
+    client = await db.get_client(chat_id)
+    if not await _prime_assistant_peer(client, chat_id, username):
+        return client, "unknown"
+
+    try:
+        member = await client.get_chat_member(chat_id, client.id)
+    except errors.UserNotParticipant:
+        return client, "absent"
+    except errors.PeerIdInvalid:
+        return client, "unknown"
+
+    if member.status in {
+        enums.ChatMemberStatus.OWNER,
+        enums.ChatMemberStatus.ADMINISTRATOR,
+        enums.ChatMemberStatus.MEMBER,
+    }:
+        return client, "ready"
+    if member.status == enums.ChatMemberStatus.RESTRICTED and getattr(
+        member, "is_member", False
+    ):
+        return client, "ready"
+    if member.status in {
+        enums.ChatMemberStatus.BANNED,
+        enums.ChatMemberStatus.RESTRICTED,
+        enums.ChatMemberStatus.LEFT,
+    }:
+        return client, "absent"
+    return client, "unknown"
+
+
 async def ensure_assistant(m: types.Message) -> bool:
     chat_id = m.chat.id
-    client = await db.get_client(chat_id)
-    needs_invite = False
-    try:
-        member = await app.get_chat_member(chat_id, client.id)
-        if member.status in [
-            enums.ChatMemberStatus.BANNED,
-            enums.ChatMemberStatus.RESTRICTED,
-        ]:
-            try:
-                await app.unban_chat_member(chat_id=chat_id, user_id=client.id)
-            except Exception:
-                await m.reply_text(
-                    m.lang["play_banned"].format(
-                        app.name,
-                        client.id,
-                        client.mention,
-                        f"@{client.username}" if client.username else None,
-                    )
-                )
-                return False
-            needs_invite = True
-        elif member.status == enums.ChatMemberStatus.LEFT:
-            needs_invite = True
-    except errors.ChatAdminRequired:
-        await m.reply_text(m.lang["admin_required"])
-        return False
-    except (errors.UserNotParticipant, errors.PeerIdInvalid):
-        needs_invite = True
-
-    if needs_invite:
-        return await _invite_assistant(client, m)
-    if not await _prime_assistant_peer(client, chat_id, m.chat.username):
+    client, membership = await assistant_membership(chat_id, m.chat.username)
+    if membership == "ready":
+        return True
+    if membership == "unknown":
         logger.warning("Assistant could not resolve peer for chat %s", chat_id)
         await m.reply_text(m.lang["play_peer_error"])
         return False
-    return True
+
+    try:
+        await app.unban_chat_member(chat_id=chat_id, user_id=client.id)
+    except errors.UserNotParticipant:
+        pass
+    except errors.ChatAdminRequired:
+        await m.reply_text(m.lang["admin_required"])
+        return False
+    except Exception:
+        logger.debug("Assistant did not require unbanning in chat %s", chat_id)
+    return await _invite_assistant(client, m)
 
 
 async def recover_playback(m: types.Message) -> bool:
@@ -162,7 +178,17 @@ async def recover_playback(m: types.Message) -> bool:
         seek_time=media.time,
         recovering=True,
     )
-    return await db.get_call(m.chat.id)
+    if await db.get_call(m.chat.id):
+        try:
+            await anon.resume(m.chat.id)
+        except Exception:
+            logger.warning(
+                "Recovered playback for chat %s did not accept an explicit resume",
+                m.chat.id,
+                exc_info=True,
+            )
+        return True
+    return False
 
 
 def checkUB(play):

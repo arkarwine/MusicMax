@@ -37,32 +37,18 @@ class Inline:
         if not remove:
             keyboard.append(
                 [
-                    self.ikb(text="▶ Resume", callback_data=f"controls resume {chat_id}"),
-                    self.ikb(text="⏸ Pause", callback_data=f"controls pause {chat_id}"),
-                    self.ikb(text="🔁 Replay", callback_data=f"controls replay {chat_id}"),
+                    self.ikb(text="▶️", callback_data=f"controls resume {chat_id}"),
+                    self.ikb(text="⏸️", callback_data=f"controls pause {chat_id}"),
+                    self.ikb(text="🔁", callback_data=f"controls replay {chat_id}"),
                 ],
             )
             keyboard.append(
                 [
-                    self.ikb(text="⏭ Skip", callback_data=f"controls skip {chat_id}"),
-                    self.ikb(text="⏹ Stop", callback_data=f"controls stop {chat_id}"),
+                    self.ikb(text="⏭️", callback_data=f"controls skip {chat_id}"),
+                    self.ikb(text="⏹️", callback_data=f"controls stop {chat_id}"),
                 ]
             )
         return self.ikm(keyboard)
-
-    def confirm_stop(self, chat_id: int) -> types.InlineKeyboardMarkup:
-        return self.ikm(
-            [[
-                self.ikb(
-                    text="Yes, stop",
-                    callback_data=f"controls confirm_stop {chat_id}",
-                ),
-                self.ikb(
-                    text="Keep playing",
-                    callback_data=f"controls cancel_stop {chat_id}",
-                ),
-            ]]
-        )
 
     def help_markup(
         self, _lang: dict, back: bool = False
