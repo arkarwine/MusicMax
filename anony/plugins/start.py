@@ -83,10 +83,9 @@ async def _new_member(_, message: types.Message):
         return await message.chat.leave()
 
     await asyncio.sleep(3)
-    if await db.is_chat(message.chat.id):
-        return
-    await utils.send_log(message, True)
-    await db.add_chat(message.chat.id)
+    if not await db.is_chat(message.chat.id):
+        await utils.send_log(message, True)
+        await db.add_chat(message.chat.id)
     from anony.plugins.setup import build_setup_text
 
     await message.reply_text(

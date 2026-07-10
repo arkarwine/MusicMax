@@ -59,23 +59,25 @@ async def _invite_assistant(client, m: types.Message) -> bool:
             return False
 
     status = await m.reply_text(m.lang["play_invite"].format(app.name))
+    join_pending = False
     try:
         await client.join_chat(invite_link)
     except errors.UserAlreadyParticipant:
         pass
     except errors.InviteRequestSent:
-        try:
-            await app.approve_chat_join_request(chat_id, client.id)
-        except errors.HideRequesterMissing:
-            pass
-        except Exception:
-            logger.exception(
-                "Could not approve assistant join request for chat %s", chat_id
-            )
-            await status.edit_text(
-                m.lang["play_invite_error"].format("Approval unavailable")
-            )
-            return False
+        join_pending = True
+        for _ in range(5):
+            try:
+                await app.approve_chat_join_request(chat_id, client.id)
+                join_pending = False
+                break
+            except (errors.HideRequesterMissing, errors.UserNotParticipant):
+                await asyncio.sleep(1)
+            except Exception:
+                logger.exception(
+                    "Could not approve assistant join request for chat %s", chat_id
+                )
+                break
     except Exception:
         logger.exception("Assistant could not join chat %s", chat_id)
         await status.edit_text(m.lang["play_invite_error"].format("Join unavailable"))
@@ -87,8 +89,12 @@ async def _invite_assistant(client, m: types.Message) -> bool:
             return True
         await asyncio.sleep(1)
 
-    logger.error("Assistant joined chat %s but could not resolve its peer", chat_id)
-    await status.edit_text(m.lang["play_peer_error"])
+    if join_pending:
+        logger.warning("Assistant join request is still pending in chat %s", chat_id)
+        await status.edit_text(m.lang["play_invite_pending"])
+    else:
+        logger.error("Assistant could not resolve chat %s after joining", chat_id)
+        await status.edit_text(m.lang["play_peer_error"])
     return False
 
 
@@ -98,7 +104,7 @@ async def assistant_membership(
     """Return the selected assistant and its membership state."""
     client = await db.get_client(chat_id)
     if not await _prime_assistant_peer(client, chat_id, username):
-        return client, "unknown"
+        return client, "absent"
 
     try:
         member = await client.get_chat_member(chat_id, client.id)

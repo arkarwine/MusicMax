@@ -7,9 +7,8 @@ from pathlib import Path
 
 from pyrogram import enums, filters, types
 
-from anony import app, db, lang, queue, userbot, yt
+from anony import app, db, lang, userbot, yt
 from anony.helpers import admin_check
-from anony.helpers._play import assistant_membership
 
 
 async def build_setup_text(m: types.Message) -> str:
@@ -22,31 +21,13 @@ async def build_setup_text(m: types.Message) -> str:
         bot_member.privileges and bot_member.privileges.can_invite_users
     )
 
-    try:
-        _, membership = await assistant_membership(m.chat.id, m.chat.username)
-        assistant_ready = membership == "ready"
-    except Exception:
-        assistant_ready = False
-
-    lines = [
-        m.lang["setup_bot_ready"] if bot_admin else m.lang["setup_bot_missing"],
-        (
-            m.lang["setup_invite_ready"]
-            if can_invite
-            else m.lang["setup_invite_missing"]
-        ),
-        (
-            m.lang["setup_assistant_ready"]
-            if assistant_ready
-            else m.lang["setup_assistant_missing"]
-        ),
-    ]
-    text = m.lang["setup_admin"].format("\n".join(lines), len(queue.get_queue(m.chat.id)))
-    return text + (
-        m.lang["setup_ready"]
-        if bot_admin and can_invite and assistant_ready
-        else m.lang["setup_action_needed"]
-    )
+    if not bot_admin:
+        requirement = m.lang["setup_bot_missing"]
+    elif not can_invite:
+        requirement = m.lang["setup_invite_missing"]
+    else:
+        return m.lang["setup_ready"]
+    return m.lang["setup_required"].format(requirement)
 
 
 @app.on_message(filters.command(["setup"]) & filters.group & ~app.bl_users)

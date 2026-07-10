@@ -35,6 +35,33 @@ class Bot(pyrogram.Client):
         self.username = self.me.username
         self.mention = self.me.mention
 
+        commands = [
+            ("play", "Play a song or link"),
+            ("vplay", "Play a video"),
+            ("pause", "Pause playback"),
+            ("resume", "Resume playback or a saved queue"),
+            ("skip", "Skip the current track"),
+            ("stop", "Stop playback and clear the queue"),
+            ("queue", "Show the current queue"),
+            ("loop", "Repeat the current track"),
+            ("seek", "Move forward in the current track"),
+            ("setup", "Check what this group still needs"),
+            ("settings", "Open group playback settings"),
+            ("language", "Change the group language"),
+            ("ping", "Check whether the bot is responsive"),
+            ("help", "Show commands and help"),
+        ]
+        try:
+            await self.set_bot_commands(
+                [
+                    pyrogram.types.BotCommand(command, description)
+                    for command, description in commands
+                ]
+            )
+            logger.info("Registered %s Telegram bot commands.", len(commands))
+        except Exception:
+            logger.warning("Could not register Telegram bot commands.", exc_info=True)
+
         logger.info(f"Bot started as @{self.username}")
 
     async def exit(self):
