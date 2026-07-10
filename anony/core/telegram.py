@@ -7,7 +7,7 @@ import asyncio
 import os
 import time
 
-from pyrogram import types
+from pyrogram import errors, types
 
 from anony import config
 from anony.helpers import Media, buttons, utils
@@ -48,11 +48,15 @@ class Telegram:
 
         media = msg.audio or msg.voice or msg.video or msg.document
         file_id = getattr(media, "file_unique_id", None)
-        file_ext = getattr(media, "file_name", "").split(".")[-1]
+        file_name = getattr(media, "file_name", None) or ""
+        mime_type = getattr(media, "mime_type", None) or ""
+        file_ext = file_name.rsplit(".", 1)[-1] if "." in file_name else None
+        if not file_ext:
+            file_ext = "ogg" if msg.voice else "mp4" if msg.video else "bin"
         file_size = getattr(media, "file_size", 0)
         file_title = getattr(media, "title", "Telegram File") or "Telegram File"
         duration = getattr(media, "duration", 0)
-        video = bool(getattr(media, "mime_type", "").startswith("video/"))
+        video = mime_type.startswith("video/") or bool(msg.video)
 
         if duration > config.DURATION_LIMIT:
             await sent.edit_text(sent.lang["play_duration_limit"].format(config.DURATION_LIMIT // 60))
@@ -71,9 +75,9 @@ class Telegram:
                 return
 
             self.last_edit[msg_id] = now
-            percent = current * 100 / total
+            percent = current * 100 / total if total else 0
             speed = current / (now - start_time or 1e-6)
-            eta = utils.format_eta(int((total - current) / speed))
+            eta = utils.format_eta(int((total - current) / speed)) if total else "unknown"
             text = sent.lang["dl_progress"].format(
                 utils.format_size(current),
                 utils.format_size(total),
@@ -82,9 +86,14 @@ class Telegram:
                 eta,
             )
 
-            await sent.edit_text(
-                text, reply_markup=buttons.cancel_dl(sent.lang["cancel"])
-            )
+            try:
+                await sent.edit_text(
+                    text, reply_markup=buttons.cancel_dl(sent.lang["cancel"])
+                )
+            except errors.MessageNotModified:
+                pass
+            except errors.FloodWait as wait:
+                await asyncio.sleep(wait.value)
 
         try:
             file_path = f"downloads/{file_id}.{file_ext}"
@@ -98,8 +107,12 @@ class Telegram:
                     msg.download(file_name=file_path, progress=progress)
                 )
                 self.active_tasks[msg_id] = task
-                await task
-                if file_id in self.active: self.active.remove(file_id)
+                downloaded = await task
+                if not downloaded or not os.path.exists(file_path):
+                    await sent.edit_text(sent.lang["error_no_file"].format(config.SUPPORT_CHAT))
+                    return None
+                if file_id in self.active:
+                    self.active.remove(file_id)
                 self.active_tasks.pop(msg_id, None)
                 await sent.edit_text(
                     sent.lang["dl_complete"].format(round(time.time() - start_time, 2))
@@ -120,7 +133,8 @@ class Telegram:
         finally:
             self.events.pop(msg_id, None)
             self.last_edit.pop(msg_id, None)
-            if file_id in self.active: self.active.remove(file_id)
+            if file_id in self.active:
+                self.active.remove(file_id)
 
 
     async def process_m3u8(self, url: str, msg_id: int, video: bool) -> Media:

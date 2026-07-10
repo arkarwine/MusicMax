@@ -17,6 +17,9 @@ async def _queue_func(_, m: types.Message):
 
     _reply = await m.reply_text(m.lang["queue_fetching"])
     _queue = queue.get_queue(m.chat.id)
+    if not _queue:
+        await db.remove_call(m.chat.id)
+        return await _reply.edit_text(m.lang["not_playing"])
     _media = _queue[0]
     _thumb = (
         await thumb.generate(_media)
@@ -47,7 +50,7 @@ async def _queue_func(_, m: types.Message):
             m.lang["playing"] if _playing else m.lang["paused"],
             _playing,
         )
-    if thumb:
+    if _thumb:
         await _reply.edit_media(
             media=types.InputMediaPhoto(
                 media=_thumb,

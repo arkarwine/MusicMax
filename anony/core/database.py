@@ -187,7 +187,7 @@ class SQLiteDB:
         num = self.assistant[chat_id]
         if num > len(userbot.clients):
             num = await self.set_assistant(chat_id)
-        return {1: userbot.one, 2: userbot.two, 3: userbot.three}.get(num)
+        return userbot.clients[num - 1]
 
     async def add_blacklist(self, chat_id: int) -> None:
         kind = "chat" if chat_id < 0 else "user"

@@ -23,7 +23,10 @@ async def _help(_, m: types.Message):
 @lang.language()
 async def start(_, message: types.Message):
     if message.from_user.id in app.bl_users and message.from_user.id not in db.notified:
-        return await message.reply_text(message.lang["bl_user_notify"])
+        db.notified.append(message.from_user.id)
+        return await message.reply_text(
+            message.lang["bl_user_notify"].format(config.SUPPORT_CHAT)
+        )
 
     if len(message.command) > 1 and message.command[1] == "help":
         return await _help(_, message)
@@ -73,13 +76,14 @@ async def settings(_, message: types.Message):
 @app.on_message(filters.new_chat_members, group=7)
 @lang.language()
 async def _new_member(_, message: types.Message):
+    if not any(member.id == app.id for member in message.new_chat_members):
+        return
+
     if message.chat.type != enums.ChatType.SUPERGROUP:
         return await message.chat.leave()
 
     await asyncio.sleep(3)
-    for member in message.new_chat_members:
-        if member.id == app.id:
-            if await db.is_chat(message.chat.id):
-                return
-            await utils.send_log(message, True)
-            await db.add_chat(message.chat.id)
+    if await db.is_chat(message.chat.id):
+        return
+    await utils.send_log(message, True)
+    await db.add_chat(message.chat.id)

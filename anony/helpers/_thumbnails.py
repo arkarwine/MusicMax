@@ -23,12 +23,19 @@ class Thumbnail:
 
     async def start(self) -> None:
         self.session = aiohttp.ClientSession()
+
     async def close(self) -> None:
-        await self.session.close()
+        if self.session is not None:
+            await self.session.close()
+            self.session = None
 
     async def save_thumb(self, output_path: str, url: str) -> str:
+        if self.session is None or not url:
+            raise RuntimeError("Thumbnail downloader is unavailable")
         async with self.session.get(url) as resp:
-            with open(output_path, "wb") as f: f.write(await resp.read())
+            resp.raise_for_status()
+            with open(output_path, "wb") as file:
+                file.write(await resp.read())
         return output_path
 
     async def generate(self, song: Track, size=(1280, 720)) -> str:
@@ -69,8 +76,10 @@ class Thumbnail:
             draw.text((1185, 650), song.duration, font=self.font1, fill=self.fill)
 
             image.save(output)
-            try: os.remove(temp)
-            except Exception: pass
+            try:
+                os.remove(temp)
+            except OSError:
+                pass
             return output
         except Exception:
             return config.DEFAULT_THUMB

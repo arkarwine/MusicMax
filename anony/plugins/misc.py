@@ -8,11 +8,10 @@ import asyncio
 
 from pyrogram import enums, errors, filters, types
 
-from anony import anon, app, config, db, lang, queue, tasks, userbot, yt
+from anony import anon, app, config, db, lang, logger, queue, tasks, userbot, yt
 from anony.helpers import buttons
 
 
-@app.on_message(filters.video_chat_started, group=19)
 @app.on_message(filters.video_chat_ended, group=20)
 async def _watcher_vc(_, m: types.Message):
     await anon.stop(m.chat.id)
@@ -104,14 +103,14 @@ async def vc_watcher(sleep=15):
     while True:
         await asyncio.sleep(sleep)
         for chat_id in list(db.active_calls):
-            client = await db.get_assistant(chat_id)
-            media = queue.get_current(chat_id)
-            if not media:
-                continue
-            participants = await client.get_participants(chat_id)
-            if len(participants) < 2 and media.time > 30:
-                _lang = await lang.get_lang(chat_id)
-                try:
+            try:
+                client = await db.get_assistant(chat_id)
+                media = queue.get_current(chat_id)
+                if not media:
+                    continue
+                participants = await client.get_participants(chat_id)
+                if len(participants) < 2 and media.time > 30:
+                    _lang = await lang.get_lang(chat_id)
                     sent = await app.edit_message_reply_markup(
                         chat_id=chat_id,
                         message_id=media.message_id,
@@ -121,8 +120,12 @@ async def vc_watcher(sleep=15):
                     )
                     await anon.stop(chat_id)
                     await sent.reply_text(_lang["auto_left"])
-                except errors.MessageIdInvalid:
-                    pass
+            except asyncio.CancelledError:
+                raise
+            except errors.MessageIdInvalid:
+                await anon.stop(chat_id)
+            except Exception:
+                logger.exception("Auto-end check failed for chat %s", chat_id)
 
 
 if config.AUTO_END:

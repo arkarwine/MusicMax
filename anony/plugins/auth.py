@@ -22,10 +22,14 @@ async def _auth(_, m: types.Message):
     if m.command[0] == "auth":
         if await is_admin(m.chat.id, user.id):
             return await m.reply_text(m.lang["auth_is_admin"])
+        if await db.is_auth(m.chat.id, user.id):
+            return await m.reply_text(m.lang["auth_already"].format(user.mention))
 
         await db.add_auth(m.chat.id, user.id)
         await m.reply_text(m.lang["auth_added"].format(user.mention))
     else:
+        if not await db.is_auth(m.chat.id, user.id):
+            return await m.reply_text(m.lang["auth_not"].format(user.mention))
         await db.rm_auth(m.chat.id, user.id)
         await m.reply_text(m.lang["auth_removed"].format(user.mention))
 
@@ -39,7 +43,7 @@ async def _authlist(_, m: types.Message):
         return await m.reply_text(m.lang["auth_empty"])
 
     auth_txt = m.lang["auth_list"].format(m.chat.title)
-    for i, user in enumerate(auth, start=1):
+    for i, user in enumerate(sorted(auth), start=1):
         auth_txt += f"\n{i}. <a href=tg://user?id={user}>{user}</a>"
     await m.reply_text(auth_txt)
 

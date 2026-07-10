@@ -11,6 +11,86 @@ from anony import app, config, db, logger, queue, yt
 from anony.helpers import utils
 
 
+async def _prime_assistant_peer(client, chat_id: int, username: str | None) -> bool:
+    """Ensure the assistant session knows the chat before PyTgCalls uses its ID."""
+    identifiers = [f"@{username}", chat_id] if username else [chat_id]
+    for identifier in identifiers:
+        try:
+            await client.get_chat(identifier)
+            await client.resolve_peer(chat_id)
+            return True
+        except errors.PeerIdInvalid:
+            continue
+        except Exception:
+            logger.debug(
+                "Assistant peer lookup failed for %s via %s",
+                chat_id,
+                identifier,
+                exc_info=True,
+            )
+
+    try:
+        async for dialog in client.get_dialogs():
+            if dialog.chat.id == chat_id:
+                await client.resolve_peer(chat_id)
+                return True
+    except Exception:
+        logger.debug(
+            "Assistant dialog refresh failed for chat %s", chat_id, exc_info=True
+        )
+    return False
+
+
+async def _invite_assistant(client, m: types.Message) -> bool:
+    chat_id = m.chat.id
+    if m.chat.username:
+        invite_link = f"@{m.chat.username}"
+    else:
+        try:
+            chat = await app.get_chat(chat_id)
+            invite_link = chat.invite_link or await app.export_chat_invite_link(chat_id)
+        except errors.ChatAdminRequired:
+            await m.reply_text(m.lang["admin_required"])
+            return False
+        except Exception:
+            logger.exception("Could not create an assistant invite for chat %s", chat_id)
+            await m.reply_text(m.lang["play_invite_error"].format("Invite unavailable"))
+            return False
+
+    status = await m.reply_text(m.lang["play_invite"].format(app.name))
+    try:
+        await client.join_chat(invite_link)
+    except errors.UserAlreadyParticipant:
+        pass
+    except errors.InviteRequestSent:
+        try:
+            await app.approve_chat_join_request(chat_id, client.id)
+        except errors.HideRequesterMissing:
+            pass
+        except Exception:
+            logger.exception(
+                "Could not approve assistant join request for chat %s", chat_id
+            )
+            await status.edit_text(
+                m.lang["play_invite_error"].format("Approval unavailable")
+            )
+            return False
+    except Exception:
+        logger.exception("Assistant could not join chat %s", chat_id)
+        await status.edit_text(m.lang["play_invite_error"].format("Join unavailable"))
+        return False
+
+    for _ in range(5):
+        if await _prime_assistant_peer(client, chat_id, m.chat.username):
+            await status.delete()
+            return True
+        await asyncio.sleep(1)
+
+    logger.error("Assistant joined chat %s but could not resolve its peer", chat_id)
+    await status.edit_text(m.lang["play_peer_error"])
+    return False
+
+
 def checkUB(play):
     async def wrapper(_, m: types.Message):
         if not m.from_user:
@@ -21,18 +101,16 @@ def checkUB(play):
             await m.reply_text(m.lang["play_chat_invalid"])
             return await app.leave_chat(chat_id)
 
-        if not m.reply_to_message and (
-            len(m.command) < 2 or (len(m.command) == 2 and m.command[1] == "-f")
-        ):
+        arguments = m.command[1:]
+        query_arguments = [arg for arg in arguments if arg not in {"-f", "-v"}]
+        if not m.reply_to_message and not query_arguments:
             return await m.reply_text(m.lang["play_usage"])
 
         if len(queue.get_queue(chat_id)) >= config.QUEUE_LIMIT:
             return await m.reply_text(m.lang["play_queue_full"].format(config.QUEUE_LIMIT))
 
-        force = m.command[0].endswith("force") or (
-            len(m.command) > 1 and "-f" in m.command[1]
-        )
-        video = m.command[0][0] == "v" and config.VIDEO_PLAY
+        force = m.command[0].endswith("force") or "-f" in arguments
+        video = (m.command[0].startswith("v") or "-v" in arguments) and config.VIDEO_PLAY
         url = utils.get_url(m)
         if url and yt.invalid(url):
             return await m.reply_text(m.lang["play_not_found"].format(config.SUPPORT_CHAT))
@@ -50,6 +128,7 @@ def checkUB(play):
 
         if chat_id not in db.active_calls:
             client = await db.get_client(chat_id)
+            needs_invite = False
             try:
                 member = await app.get_chat_member(chat_id, client.id)
                 if member.status in [
@@ -69,58 +148,20 @@ def checkUB(play):
                                 f"@{client.username}" if client.username else None,
                             )
                         )
+                    needs_invite = True
+                elif member.status == enums.ChatMemberStatus.LEFT:
+                    needs_invite = True
             except errors.ChatAdminRequired:
                 return await m.reply_text(m.lang["admin_required"])
-            except (errors.UserNotParticipant, errors.exceptions.bad_request_400.UserNotParticipant):
-                if m.chat.username:
-                    invite_link = m.chat.username
-                    try:
-                        await client.resolve_peer(invite_link)
-                    except Exception:
-                        pass
-                else:
-                    try:
-                        invite_link = (await app.get_chat(chat_id)).invite_link
-                        if not invite_link:
-                            invite_link = await app.export_chat_invite_link(chat_id)
-                    except errors.ChatAdminRequired:
-                        return await m.reply_text(m.lang["admin_required"])
-                    except Exception:
-                        logger.exception(
-                            "Could not create an assistant invite for chat %s", chat_id
-                        )
-                        return await m.reply_text(
-                            m.lang["play_invite_error"].format("Invite unavailable")
-                        )
+            except (errors.UserNotParticipant, errors.PeerIdInvalid):
+                needs_invite = True
 
-                umm = await m.reply_text(m.lang["play_invite"].format(app.name))
-                await asyncio.sleep(2)
-                try:
-                    await client.join_chat(invite_link)
-                except errors.UserAlreadyParticipant:
-                    pass
-                except errors.InviteRequestSent:
-                    await asyncio.sleep(2)
-                    try:
-                        await app.approve_chat_join_request(chat_id, client.id)
-                    except errors.HideRequesterMissing:
-                        pass
-                    except Exception:
-                        logger.exception(
-                            "Could not approve assistant join request for chat %s",
-                            chat_id,
-                        )
-                        return await umm.edit_text(
-                            m.lang["play_invite_error"].format("Approval unavailable")
-                        )
-                except Exception:
-                    logger.exception("Assistant could not join chat %s", chat_id)
-                    return await umm.edit_text(
-                        m.lang["play_invite_error"].format("Join unavailable")
-                    )
-
-                await umm.delete()
-                await client.resolve_peer(chat_id)
+            if needs_invite:
+                if not await _invite_assistant(client, m):
+                    return
+            elif not await _prime_assistant_peer(client, chat_id, m.chat.username):
+                logger.warning("Assistant could not resolve peer for chat %s", chat_id)
+                return await m.reply_text(m.lang["play_peer_error"])
 
         if await db.get_cmd_delete(chat_id):
             try:

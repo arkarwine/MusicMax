@@ -22,12 +22,17 @@ async def _lang(_, m: types.Message):
 @admin_check
 async def _lang_cb(_, query: types.CallbackQuery):
     data = query.data.split()
+    if not data:
+        return await query.answer(query.lang["play_expired"], show_alert=False)
     if data[0] == "language":
         current = await db.get_lang(query.message.chat.id)
         keyboard = buttons.lang_markup(current)
         return await query.edit_message_text(
             query.lang["lang_choose"], reply_markup=keyboard
         )
+
+    if len(data) < 2 or data[1] not in lang.get_languages():
+        return await query.answer(query.lang["play_expired"], show_alert=False)
 
     _lang = data[1]
     current = await db.get_lang(query.message.chat.id)

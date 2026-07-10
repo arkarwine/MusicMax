@@ -74,14 +74,16 @@ class YouTube:
             return None
         if results and results["result"]:
             data = results["result"][0]
+            thumbnails = data.get("thumbnails") or [{}]
+            thumbnail = thumbnails[-1].get("url") or ""
             return Track(
                 id=data.get("id"),
                 channel_name=data.get("channel", {}).get("name"),
-                duration=data.get("duration"),
+                duration=data.get("duration") or "Live",
                 duration_sec=utils.to_seconds(data.get("duration")),
                 message_id=m_id,
-                title=data.get("title")[:25],
-                thumbnail=data.get("thumbnails", [{}])[-1].get("url").split("?")[0],
+                title=(data.get("title") or "Untitled track")[:25],
+                thumbnail=thumbnail.split("?")[0],
                 url=data.get("link"),
                 view_count=data.get("viewCount", {}).get("short"),
                 video=video,
@@ -92,15 +94,18 @@ class YouTube:
         tracks = []
         try:
             plist = await Playlist.get(url)
-            for data in plist["videos"][:limit]:
+            for data in (plist.get("videos") or [])[:limit]:
+                thumbnails = data.get("thumbnails") or [{}]
+                thumbnail = thumbnails[-1].get("url") or ""
+                link = data.get("link") or self.base + str(data.get("id") or "")
                 track = Track(
                     id=data.get("id"),
                     channel_name=data.get("channel", {}).get("name", ""),
-                    duration=data.get("duration"),
+                    duration=data.get("duration") or "Live",
                     duration_sec=utils.to_seconds(data.get("duration")),
-                    title=data.get("title")[:25],
-                    thumbnail=data.get("thumbnails")[-1].get("url").split("?")[0],
-                    url=data.get("link").split("&list=")[0],
+                    title=(data.get("title") or "Untitled track")[:25],
+                    thumbnail=thumbnail.split("?")[0],
+                    url=link.split("&list=")[0],
                     user=user,
                     view_count="",
                     video=video,

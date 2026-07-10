@@ -38,24 +38,35 @@ async def _broadcast(_, message: types.Message):
 
     async with broadcasting:
         for chat in chats:
-            try:
-                (
-                    await msg.copy(chat, reply_markup=msg.reply_markup)
-                    if copy
-                    else await msg.forward(chat)
-                )
+            delivered = False
+            for attempt in range(2):
+                try:
+                    (
+                        await msg.copy(chat, reply_markup=msg.reply_markup)
+                        if copy
+                        else await msg.forward(chat)
+                    )
+                    delivered = True
+                    break
+                except errors.FloodWait as fw:
+                    if attempt == 0:
+                        await asyncio.sleep(fw.value + 1)
+                        continue
+                    error = fw
+                except Exception as ex:
+                    error = ex
+                    break
+
+            if delivered:
                 if chat in groups:
                     count += 1
                 else:
                     ucount += 1
                 await asyncio.sleep(0.2)
-            except errors.FloodWait as fw:
-                await asyncio.sleep(fw.value + 10)
-            except Exception as ex:
+            else:
                 if not failed:
                     failed = open("errors.txt", "w")
-                failed.write(f"{chat} - {ex}\n")
-                continue
+                failed.write(f"{chat} - {error}\n")
 
     text = message.lang["gcast_end"].format(count, ucount)
     if failed:
@@ -64,7 +75,9 @@ async def _broadcast(_, message: types.Message):
             document="errors.txt",
             caption=text,
         )
-        try: os.remove("errors.txt")
-        except Exception: pass
+        try:
+            os.remove("errors.txt")
+        except OSError:
+            pass
 
     await sent.edit_text(text)

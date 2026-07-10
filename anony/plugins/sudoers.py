@@ -15,6 +15,8 @@ async def _sudo(_, m: types.Message):
     user = await utils.extract_user(m)
     if not user:
         return await m.reply_text(m.lang["user_not_found"])
+    if user.id == app.owner:
+        return await m.reply_text(m.lang["sudo_owner_protected"])
 
     if m.command[0] == "addsudo":
         if user.id in app.sudoers:

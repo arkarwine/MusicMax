@@ -23,6 +23,10 @@ async def cancel_dl(_, query: types.CallbackQuery):
 @can_manage_vc
 async def _controls(_, query: types.CallbackQuery):
     args = query.data.split()
+    if len(args) < 3 or args[1] not in {
+        "status", "pause", "resume", "skip", "force", "replay", "stop"
+    }:
+        return await query.answer(query.lang["play_expired"], show_alert=False)
     action, chat_id = args[1], int(args[2])
     qaction = len(args) == 4
     user = query.from_user.mention
@@ -70,11 +74,16 @@ async def _controls(_, query: types.CallbackQuery):
         reply = query.lang["play_skipped"].format(user)
 
     elif action == "force":
+        if len(args) < 4:
+            return await query.answer(query.lang["play_expired"], show_alert=False)
         pos, media = queue.check_item(chat_id, args[3])
         if not media or pos == -1:
             return await query.edit_message_text(query.lang["play_expired"])
 
-        m_id = queue.get_current(chat_id).message_id
+        current = queue.get_current(chat_id)
+        if not current:
+            return await query.answer(query.lang["not_playing"], show_alert=False)
+        m_id = current.message_id
         queue.force_add(chat_id, media, remove=pos)
         try:
             await app.delete_messages(
@@ -92,6 +101,8 @@ async def _controls(_, query: types.CallbackQuery):
 
     elif action == "replay":
         media = queue.get_current(chat_id)
+        if not media:
+            return await query.answer(query.lang["not_playing"], show_alert=False)
         media.user = user
         await anon.replay(chat_id)
         status = query.lang["replayed"]
@@ -107,20 +118,22 @@ async def _controls(_, query: types.CallbackQuery):
             await query.message.reply_text(reply, quote=False)
             await query.message.delete()
         else:
+            content = query.message.caption or query.message.text
+            message_html = getattr(content, "html", str(content or ""))
             mtext = re.sub(
                 r"\n\n<blockquote>.*?</blockquote>",
                 "",
-                query.message.caption.html or query.message.text.html,
+                message_html,
                 flags=re.DOTALL,
             )
             keyboard = buttons.controls(
                 chat_id, status=status if action != "resume" else None
             )
-        await query.edit_message_text(
-            f"{mtext}\n\n<blockquote>{reply}</blockquote>", reply_markup=keyboard
-        )
-    except Exception:
-        pass
+            await query.edit_message_text(
+                f"{mtext}\n\n<blockquote>{reply}</blockquote>", reply_markup=keyboard
+            )
+    except (errors.MessageIdInvalid, errors.MessageNotModified, errors.QueryIdInvalid):
+        return
 
 
 @app.on_callback_query(filters.regex("help") & ~app.bl_users)

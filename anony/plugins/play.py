@@ -70,7 +70,11 @@ async def play_hndlr(
             )
 
     elif len(m.command) >= 2:
-        query = " ".join(m.command[1:])
+        query = " ".join(
+            argument for argument in m.command[1:] if argument not in {"-f", "-v"}
+        )
+        if not query:
+            return await sent.edit_text(m.lang["play_usage"])
         file = await yt.search(query, sent.id, video=video)
         if not file:
             return await sent.edit_text(

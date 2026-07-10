@@ -27,38 +27,38 @@ logger = logging.getLogger(__name__)
 
 __version__ = "3.0.3"
 
-from config import Config
+from config import Config  # noqa: E402
 
 config = Config()
 config.check()
 tasks = []
 boot = time.time()
 
-from anony.core.bot import Bot
+from anony.core.bot import Bot  # noqa: E402
 app = Bot()
 
-from anony.core.dir import ensure_dirs
+from anony.core.dir import ensure_dirs  # noqa: E402
 ensure_dirs()
 
-from anony.core.userbot import Userbot
+from anony.core.userbot import Userbot  # noqa: E402
 userbot = Userbot()
 
-from anony.core.database import SQLiteDB
+from anony.core.database import SQLiteDB  # noqa: E402
 db = SQLiteDB()
 
-from anony.core.lang import Language
+from anony.core.lang import Language  # noqa: E402
 lang = Language()
 
-from anony.core.telegram import Telegram
-from anony.core.youtube import YouTube
+from anony.core.telegram import Telegram  # noqa: E402
+from anony.core.youtube import YouTube  # noqa: E402
 tg = Telegram()
 yt = YouTube()
 
-from anony.helpers import Queue, Thumbnail
+from anony.helpers import Queue, Thumbnail  # noqa: E402
 queue = Queue()
 thumb = Thumbnail()
 
-from anony.core.calls import TgCall
+from anony.core.calls import TgCall  # noqa: E402
 anon = TgCall()
 
 
