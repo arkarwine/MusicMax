@@ -3,6 +3,8 @@
 # This file is part of AnonXMusic
 
 
+import asyncio
+
 from ntgcalls import (ConnectionNotFound, TelegramServerError,
                       RTMPStreamingUnsupported, ConnectionError)
 from pyrogram.errors import (ChatSendMediaForbidden, ChatSendPhotosForbidden,
@@ -33,17 +35,47 @@ class TgCall(PyTgCalls):
         return result
 
     async def stop(self, chat_id: int, clear_persistence: bool = True) -> None:
-        client = await db.get_assistant(chat_id)
         queue.clear(chat_id)
         await db.remove_call(chat_id)
         await db.set_loop(chat_id, 0)
         if clear_persistence:
             await db.clear_playback(chat_id)
+        await self._leave_assistant_call(chat_id)
 
+    async def _leave_assistant_call(self, chat_id: int) -> None:
+        client = await db.get_assistant(chat_id)
         try:
             await client.leave_call(chat_id, close=False)
-        except Exception:
+        except (ConnectionNotFound, exceptions.NotInCallError):
+            # A new process has no local ntgcalls connection, but Telegram can
+            # still contain the assistant left behind by the previous process.
+            try:
+                await client._app.leave_group_call(chat_id)
+            except Exception:
+                logger.debug(
+                    "Assistant had no stale call in chat %s", chat_id,
+                    exc_info=True,
+                )
+        except exceptions.NoActiveGroupCall:
             pass
+        except Exception:
+            logger.warning(
+                "Could not leave the assistant call in chat %s",
+                chat_id,
+                exc_info=True,
+            )
+
+    async def reset_assistant_call(self, chat_id: int) -> None:
+        """Clear a call connection left behind by an earlier bot process."""
+        await self._leave_assistant_call(chat_id)
+        await asyncio.sleep(1)
+
+    async def exit(self) -> None:
+        """Leave active calls before assistant sessions are disconnected."""
+        for chat_id in list(db.active_calls):
+            await db.remove_call(chat_id)
+            await self._leave_assistant_call(chat_id)
+        logger.info("Assistant voice calls stopped.")
 
     async def _show_play_card(
         self,
@@ -134,6 +166,8 @@ class TgCall(PyTgCalls):
             ffmpeg_parameters=f"-ss {seek_time}" if seek_time > 1 else None,
         )
         try:
+            if not await db.get_call(chat_id):
+                await self.reset_assistant_call(chat_id)
             await client.play(
                 chat_id=chat_id,
                 stream=stream,
@@ -249,6 +283,8 @@ class TgCall(PyTgCalls):
         async def update_handler(_, update: types.Update) -> None:
             if isinstance(update, types.StreamEnded):
                 if update.stream_type == types.StreamEnded.Type.AUDIO:
+                    if not await db.get_call(update.chat_id):
+                        return
                     logger.info("Audio stream ended in chat %s", update.chat_id)
                     await self.play_next(update.chat_id)
             elif isinstance(update, types.ChatUpdate):

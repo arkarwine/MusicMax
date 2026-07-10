@@ -86,6 +86,7 @@ async def stop() -> None:
         except Exception:
             logger.exception("Failed to stop %s cleanly; continuing shutdown.", name)
 
+    await close_component("voice calls", anon.exit(), timeout=20)
     await close_component("bot", app.exit())
     await close_component("assistants", userbot.exit(), timeout=20)
     await close_component("database", db.close())
