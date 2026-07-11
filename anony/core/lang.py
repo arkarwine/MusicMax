@@ -12,6 +12,7 @@ from pathlib import Path
 from pyrogram import enums, errors
 
 from anony import app, db, logger
+from anony.core.custom_emoji import localized_text
 
 lang_codes = {
     "en": "English",
@@ -38,7 +39,10 @@ class Language:
         }
         for lang_code, lang_file in lang_files.items():
             with open(lang_file, "r", encoding="utf-8") as file:
-                languages[lang_code] = json.load(file)
+                languages[lang_code] = {
+                    key: localized_text(value)
+                    for key, value in json.load(file).items()
+                }
         english = languages["en"]
         languages = {
             code: {**english, **translations}

@@ -6,13 +6,18 @@
 from pyrogram import enums, types
 
 from anony import app, config, lang
+from anony.core.custom_emoji import custom_emoji_button
 from anony.core.lang import lang_codes
 
 
 class Inline:
     def __init__(self):
         self.ikm = types.InlineKeyboardMarkup
-        self.ikb = types.InlineKeyboardButton
+        self.ikb = custom_emoji_button
+
+    @staticmethod
+    def _control(name: str) -> str:
+        return lang.languages["en"][f"control_{name}"]
 
     def cancel_dl(self, text) -> types.InlineKeyboardMarkup:
         return self.ikm(
@@ -44,13 +49,13 @@ class Inline:
         if not remove:
             playback = (
                 self.ikb(
-                    text="❚❚",
+                    text=self._control("pause"),
                     callback_data=f"controls pause {chat_id}",
                     style=enums.ButtonStyle.SUCCESS,
                 )
                 if playing
                 else self.ikb(
-                    text="▷",
+                    text=self._control("resume"),
                     callback_data=f"controls resume {chat_id}",
                     style=enums.ButtonStyle.DANGER,
                 )
@@ -58,22 +63,22 @@ class Inline:
             keyboard.append(
                 [
                     self.ikb(
-                        text="∞",
+                        text=self._control("loop"),
                         callback_data=f"controls loop {chat_id}",
                     ),
                     self.ikb(
-                        text="◉",
+                        text=self._control("stop"),
                         callback_data=f"controls stop {chat_id}",
                         style=enums.ButtonStyle.DEFAULT,
                     ),
                     playback,
                     self.ikb(
-                        text="▷|",
+                        text=self._control("skip"),
                         callback_data=f"controls skip {chat_id}",
                         style=enums.ButtonStyle.DEFAULT,
                     ),
                     self.ikb(
-                        text="⟲",
+                        text=self._control("replay"),
                         callback_data=f"controls replay {chat_id}",
                     ),
                 ]
@@ -175,7 +180,11 @@ class Inline:
                 )],
                 [
                     self.ikb(
-                        text="❚❚" if playing else "▷",
+                        text=(
+                            self._control("pause")
+                            if playing
+                            else self._control("resume")
+                        ),
                         callback_data=f"controls {_action} {chat_id} q",
                         style=(
                             enums.ButtonStyle.SUCCESS
@@ -184,12 +193,12 @@ class Inline:
                         ),
                     ),
                     self.ikb(
-                        text="▷|",
+                        text=self._control("skip"),
                         callback_data=f"controls skip {chat_id} q",
                         style=enums.ButtonStyle.DEFAULT,
                     ),
                     self.ikb(
-                        text="◉",
+                        text=self._control("stop"),
                         callback_data=f"controls stop {chat_id} q",
                         style=enums.ButtonStyle.DEFAULT,
                     ),

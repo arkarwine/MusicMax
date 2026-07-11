@@ -24,6 +24,12 @@ async def _broadcast(_, message: types.Message):
 
     msg = message.reply_to_message
     copy = "-copy" in message.command
+    album = None
+    if msg.media_group_id:
+        album = sorted(
+            await app.get_media_group(msg.chat.id, msg.id),
+            key=lambda item: item.id,
+        )
     count, ucount = 0, 0
     groups, users = set(), set()
     sent = await message.reply_text(message.lang["gcast_start"])
@@ -41,11 +47,19 @@ async def _broadcast(_, message: types.Message):
             delivered = False
             for attempt in range(2):
                 try:
-                    (
+                    if album:
+                        if copy:
+                            await msg.copy_media_group(chat)
+                        else:
+                            await app.forward_messages(
+                                chat_id=chat,
+                                from_chat_id=msg.chat.id,
+                                message_ids=[item.id for item in album],
+                            )
+                    elif copy:
                         await msg.copy(chat, reply_markup=msg.reply_markup)
-                        if copy
-                        else await msg.forward(chat)
-                    )
+                    else:
+                        await msg.forward(chat)
                     delivered = True
                     break
                 except errors.FloodWait as fw:

@@ -3,9 +3,27 @@
 # This file is part of AnonXMusic
 
 
+import asyncio
+
 import pyrogram
 
 from anony import config, logger
+from anony.core.custom_emoji import (
+    custom_emoji_capability_detected,
+    custom_emoji_supported,
+    is_localized_text,
+    keyboard_has_custom_icons,
+    keyboard_without_custom_icons,
+    render_custom_emoji_text,
+    set_custom_emoji_supported,
+    strip_custom_emoji_tags,
+)
+
+
+_CUSTOM_EMOJI_TEST_ID = "5465443221003836735"
+_CUSTOM_EMOJI_TEST = (
+    f'<tg-emoji emoji-id="{_CUSTOM_EMOJI_TEST_ID}">▷</tg-emoji>'
+)
 
 
 class Bot(pyrogram.Client):
@@ -27,6 +45,182 @@ class Bot(pyrogram.Client):
         self.bl_users = pyrogram.filters.user()
         self.sudoers = pyrogram.filters.user(self.owner)
 
+    @staticmethod
+    def _render_call(args, kwargs, text_index: int, text_key: str):
+        args = list(args)
+        kwargs = dict(kwargs)
+        if len(args) > text_index and is_localized_text(args[text_index]):
+            args[text_index] = render_custom_emoji_text(args[text_index])
+        elif is_localized_text(kwargs.get(text_key)):
+            kwargs[text_key] = render_custom_emoji_text(kwargs[text_key])
+        return args, kwargs
+
+    async def _custom_emoji_call(
+        self, method, args, kwargs, text_index: int, text_key: str
+    ):
+        original_args = list(args)
+        original_kwargs = dict(kwargs)
+        args, kwargs = self._render_call(args, kwargs, text_index, text_key)
+        markup = kwargs.get("reply_markup")
+        try:
+            return await method(*args, **kwargs)
+        except pyrogram.errors.RPCError:
+            original_text = (
+                original_args[text_index]
+                if len(original_args) > text_index
+                else original_kwargs.get(text_key)
+            )
+            has_tagged_text = (
+                isinstance(original_text, str)
+                and "tg-emoji" in original_text.lower()
+            )
+            if not has_tagged_text and not keyboard_has_custom_icons(markup):
+                raise
+            logger.warning(
+                "Telegram rejected custom emoji content; retrying with fallbacks."
+            )
+            if len(args) > text_index and isinstance(args[text_index], str):
+                args[text_index] = strip_custom_emoji_tags(args[text_index])
+            elif isinstance(kwargs.get(text_key), str):
+                kwargs[text_key] = strip_custom_emoji_tags(kwargs[text_key])
+            kwargs["reply_markup"] = keyboard_without_custom_icons(markup)
+            return await method(*args, **kwargs)
+
+    async def send_message(self, *args, **kwargs):
+        return await self._custom_emoji_call(
+            super().send_message, args, kwargs, 1, "text"
+        )
+
+    async def edit_message_text(self, *args, **kwargs):
+        return await self._custom_emoji_call(
+            super().edit_message_text, args, kwargs, 2, "text"
+        )
+
+    async def edit_message_caption(self, *args, **kwargs):
+        return await self._custom_emoji_call(
+            super().edit_message_caption, args, kwargs, 2, "caption"
+        )
+
+    async def answer_callback_query(self, *args, **kwargs):
+        args = list(args)
+        kwargs = dict(kwargs)
+        # Callback toasts do not support HTML entities, so they always use the
+        # localized Unicode fallback even when message rendering is supported.
+        if len(args) > 1 and is_localized_text(args[1]):
+            args[1] = strip_custom_emoji_tags(args[1])
+        elif is_localized_text(kwargs.get("text")):
+            kwargs["text"] = strip_custom_emoji_tags(kwargs["text"])
+        return await super().answer_callback_query(*args, **kwargs)
+
+    async def _send_media_with_caption(self, method, args, kwargs):
+        return await self._custom_emoji_call(
+            method, args, kwargs, 2, "caption"
+        )
+
+    async def send_photo(self, *args, **kwargs):
+        return await self._send_media_with_caption(
+            super().send_photo, args, kwargs
+        )
+
+    async def send_video(self, *args, **kwargs):
+        return await self._send_media_with_caption(
+            super().send_video, args, kwargs
+        )
+
+    async def send_animation(self, *args, **kwargs):
+        return await self._send_media_with_caption(
+            super().send_animation, args, kwargs
+        )
+
+    async def send_audio(self, *args, **kwargs):
+        return await self._send_media_with_caption(
+            super().send_audio, args, kwargs
+        )
+
+    async def send_document(self, *args, **kwargs):
+        return await self._send_media_with_caption(
+            super().send_document, args, kwargs
+        )
+
+    async def answer_inline_query(self, *args, **kwargs):
+        args = list(args)
+        kwargs = dict(kwargs)
+        results = args[1] if len(args) > 1 else kwargs.get("results", [])
+        for result in results or []:
+            content = getattr(result, "input_message_content", None)
+            if content and is_localized_text(
+                getattr(content, "message_text", None)
+            ):
+                content.message_text = render_custom_emoji_text(
+                    content.message_text
+                )
+            if is_localized_text(getattr(result, "caption", None)):
+                result.caption = render_custom_emoji_text(result.caption)
+        try:
+            return await super().answer_inline_query(*args, **kwargs)
+        except pyrogram.errors.RPCError:
+            has_custom_content = False
+            for result in results or []:
+                content = getattr(result, "input_message_content", None)
+                if content and isinstance(
+                    getattr(content, "message_text", None), str
+                ):
+                    current = content.message_text
+                    has_custom_content |= "tg-emoji" in current.lower()
+                    content.message_text = strip_custom_emoji_tags(current)
+                if isinstance(getattr(result, "caption", None), str):
+                    current = result.caption
+                    has_custom_content |= "tg-emoji" in current.lower()
+                    result.caption = strip_custom_emoji_tags(current)
+                markup = getattr(result, "reply_markup", None)
+                if keyboard_has_custom_icons(markup):
+                    has_custom_content = True
+                    result.reply_markup = keyboard_without_custom_icons(markup)
+            if not has_custom_content:
+                raise
+            logger.warning(
+                "Telegram rejected inline custom emoji content; retrying with fallbacks."
+            )
+            return await super().answer_inline_query(*args, **kwargs)
+
+    async def detect_custom_emoji_support(self) -> bool:
+        if custom_emoji_capability_detected():
+            return custom_emoji_supported()
+        sent = None
+        supported = False
+        try:
+            sent = await asyncio.wait_for(
+                super().send_message(self.owner, _CUSTOM_EMOJI_TEST),
+                timeout=10,
+            )
+            entities = getattr(sent, "entities", None) or []
+            supported = any(
+                getattr(entity, "type", None)
+                == pyrogram.enums.MessageEntityType.CUSTOM_EMOJI
+                and str(getattr(entity, "custom_emoji_id", ""))
+                == _CUSTOM_EMOJI_TEST_ID
+                for entity in entities
+            )
+        except Exception:
+            logger.debug(
+                "Custom emoji capability probe failed.", exc_info=True
+            )
+        finally:
+            set_custom_emoji_supported(supported)
+            if sent is not None:
+                try:
+                    await asyncio.wait_for(sent.delete(), timeout=5)
+                except Exception:
+                    logger.debug(
+                        "Could not delete custom emoji capability probe.",
+                        exc_info=True,
+                    )
+        logger.info(
+            "Telegram custom emoji rendering: %s.",
+            "supported" if supported else "unsupported; using fallbacks",
+        )
+        return supported
+
     async def boot(self):
         """
         Starts the bot and performs initial setup.
@@ -36,6 +230,7 @@ class Bot(pyrogram.Client):
         self.name = self.me.first_name
         self.username = self.me.username
         self.mention = self.me.mention
+        await self.detect_custom_emoji_support()
         try:
             owner = await self.get_users(self.owner)
             self.owner_username = owner.username
