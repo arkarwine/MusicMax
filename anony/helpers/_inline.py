@@ -52,7 +52,7 @@ class Inline:
                 else self.ikb(
                     text="▷",
                     callback_data=f"controls resume {chat_id}",
-                    style=enums.ButtonStyle.SUCCESS,
+                    style=enums.ButtonStyle.DEFAULT,
                 )
             )
             keyboard.append(
@@ -80,16 +80,7 @@ class Inline:
         self, _lang: dict, back: bool = False, sudo: bool = False
     ) -> types.InlineKeyboardMarkup:
         if back:
-            rows = [
-                [
-                    self.ikb(text=_lang["back"], callback_data="help back"),
-                    self.ikb(
-                        text=_lang["close"],
-                        callback_data="help close",
-                        style=enums.ButtonStyle.DANGER,
-                    ),
-                ]
-            ]
+            rows = [[self.ikb(text=_lang["back"], callback_data="help back")]]
         else:
             cbs = [
                 "admins", "auth", "blist", "lang", "ping",
@@ -101,34 +92,38 @@ class Inline:
                 self.ikb(
                     text=_lang[f"help_{i}"],
                     callback_data=f"help {cb}",
-                    style=(
-                        enums.ButtonStyle.DEFAULT
-                        if i in {0, 4, 5, 6}
-                        else enums.ButtonStyle.DEFAULT
-                    ),
+                    style=enums.ButtonStyle.DEFAULT,
                 )
                 for i, cb in enumerate(cbs)
             ]
             rows = [buttons[i : i + 3] for i in range(0, len(buttons), 3)]
+            rows.append([
+                self.ikb(text=_lang["home"], callback_data="help home")
+            ])
 
         return self.ikm(rows)
 
-    def lang_markup(self, _lang: str) -> types.InlineKeyboardMarkup:
+    def lang_markup(
+        self, _lang: str, home: bool = True
+    ) -> types.InlineKeyboardMarkup:
         langs = lang.get_languages()
 
         buttons = [
             self.ikb(
                 text=f"{name} ({code}) {'✔️' if code == _lang else ''}",
                 callback_data=f"lang_change {code}",
-                style=(
-                    enums.ButtonStyle.SUCCESS
-                    if code == _lang
-                    else enums.ButtonStyle.DEFAULT
-                ),
+                style=enums.ButtonStyle.DEFAULT,
             )
             for code, name in langs.items()
         ]
         rows = [buttons[i : i + 2] for i in range(0, len(buttons), 2)]
+        if home:
+            rows.append([
+                self.ikb(
+                    text=lang.languages.get(_lang, lang.languages["en"])["home"],
+                    callback_data="help home",
+                )
+            ])
         return self.ikm(rows)
 
     def ping_markup(self, text: str) -> types.InlineKeyboardMarkup:
@@ -149,7 +144,7 @@ class Inline:
                     self.ikb(
                         text=_text,
                         callback_data=f"controls force {chat_id} {item_id}",
-                        style=enums.ButtonStyle.SUCCESS,
+                        style=enums.ButtonStyle.DEFAULT,
                     )
                 ]
             ]
@@ -160,7 +155,7 @@ class Inline:
             [[self.ikb(
                 text=text,
                 callback_data=f"controls resume {chat_id}",
-                style=enums.ButtonStyle.SUCCESS,
+                style=enums.ButtonStyle.DEFAULT,
             )]]
         )
 
@@ -178,11 +173,7 @@ class Inline:
                     self.ikb(
                         text="Ⅱ" if playing else "▷",
                         callback_data=f"controls {_action} {chat_id} q",
-                        style=(
-                            enums.ButtonStyle.DEFAULT
-                            if playing
-                            else enums.ButtonStyle.SUCCESS
-                        ),
+                        style=enums.ButtonStyle.DEFAULT,
                     ),
                     self.ikb(
                         text="»",
@@ -248,11 +239,7 @@ class Inline:
                     self.ikb(
                         text=lang["setting_on"] if cmd_delete else lang["setting_off"],
                         callback_data=f"settings {chat_id} delete",
-                        style=(
-                            enums.ButtonStyle.SUCCESS
-                            if cmd_delete
-                            else enums.ButtonStyle.DEFAULT
-                        ),
+                        style=enums.ButtonStyle.DEFAULT,
                     ),
                 ],
                 [
@@ -267,11 +254,7 @@ class Inline:
                             else lang["setting_off"]
                         ),
                         callback_data=f"settings {chat_id} cleanup",
-                        style=(
-                            enums.ButtonStyle.SUCCESS
-                            if feedback_cleanup
-                            else enums.ButtonStyle.DEFAULT
-                        ),
+                        style=enums.ButtonStyle.DEFAULT,
                     ),
                 ],
                 [
@@ -304,11 +287,7 @@ class Inline:
             self.ikb(
                 text=lang["check_again"],
                 callback_data="setup check",
-                style=(
-                    enums.ButtonStyle.SUCCESS
-                    if ready
-                    else enums.ButtonStyle.DEFAULT
-                ),
+                style=enums.ButtonStyle.DEFAULT,
             )
         ]]
         if ready:
@@ -330,11 +309,7 @@ class Inline:
             self.ikb(
                 text=f"{name} ({code}) {'✔️' if code == _lang else ''}",
                 callback_data=f"settings_lang {chat_id} {code}",
-                style=(
-                    enums.ButtonStyle.SUCCESS
-                    if code == _lang
-                    else enums.ButtonStyle.DEFAULT
-                ),
+                style=enums.ButtonStyle.DEFAULT,
             )
             for code, name in langs.items()
         ]
@@ -348,32 +323,35 @@ class Inline:
         return self.ikm(rows)
 
     def start_key(
-        self, lang: dict, private: bool = False
+        self,
+        lang: dict,
+        private: bool = False,
+        sudo: bool = False,
+        chat_id: int | None = None,
     ) -> types.InlineKeyboardMarkup:
-        rows = [
-            [
-                self.ikb(
-                    text=lang["add_me"],
-                    url=f"https://t.me/{app.username}?startgroup=true",
-                    style=enums.ButtonStyle.SUCCESS,
-                )
-            ],
-            [self.ikb(
-                text=lang["help"],
-                callback_data="help",
-                style=enums.ButtonStyle.DEFAULT,
-            )],
-            [
-                self.ikb(
-                    text=lang["support"],
-                    url=config.SUPPORT_CHAT,
-                    style=enums.ButtonStyle.DEFAULT,
-                ),
-                self.ikb(text=lang["channel"], url=config.SUPPORT_CHANNEL),
-            ],
-        ]
+        rows = []
         if private:
+            rows.append([self.ikb(
+                text=lang["add_me"],
+                url=f"https://t.me/{app.username}?startgroup=true",
+                style=enums.ButtonStyle.SUCCESS,
+            )])
+            rows += [[
+                self.ikb(text=lang["help"], callback_data="help"),
+                self.ikb(text=lang["language"], callback_data="language"),
+            ]]
+            if sudo:
+                rows.append([
+                    self.ikb(
+                        text=lang["session_manager"],
+                        callback_data="session page 0",
+                    )
+                ])
             rows += [
+                [
+                    self.ikb(text=lang["support"], url=config.SUPPORT_CHAT),
+                    self.ikb(text=lang["channel"], url=config.SUPPORT_CHANNEL),
+                ],
                 [
                     self.ikb(
                         text=lang["source"],
@@ -381,12 +359,17 @@ class Inline:
                     )
                 ]
             ]
-        else:
-            rows += [[self.ikb(
-                text=lang["language"],
-                callback_data="language",
-                style=enums.ButtonStyle.DEFAULT,
-            )]]
+        elif chat_id is not None:
+            rows.append([
+                self.ikb(
+                    text=lang["help"],
+                    url=f"https://t.me/{app.username}?start=help",
+                ),
+                self.ikb(
+                    text=lang["settings"],
+                    url=f"https://t.me/{app.username}?start=settings_{chat_id}",
+                ),
+            ])
         return self.ikm(rows)
 
     def yt_key(self, link: str) -> types.InlineKeyboardMarkup:

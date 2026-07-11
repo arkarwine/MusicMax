@@ -84,7 +84,12 @@ async def start(_, message: types.Message):
         else message.lang["start_gp"].format(escape(app.name))
     )
 
-    key = buttons.start_key(message.lang, private)
+    key = buttons.start_key(
+        message.lang,
+        private,
+        sudo=message.from_user.id in app.sudoers,
+        chat_id=message.chat.id,
+    )
     await message.reply_photo(
         photo=config.START_IMG,
         caption=_text,

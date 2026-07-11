@@ -14,19 +14,8 @@ from pyrogram import enums, errors
 from anony import app, db, logger
 
 lang_codes = {
-    "ar": "العربية",
-    "de": "Deutsch",
     "en": "English",
-    "es": "Español",
-    "fr": "Français",
-    "hi": "हिन्दी",
-    "ja": "日本語",
     "my": "မြန်မာဘာသာ",
-    "pa": "ਪੰਜਾਬੀ",
-    "pt": "Português",
-    "ru": "Русский",
-    "tr": "Türkçe",
-    "zh": "中文"
 }
 
 
@@ -42,7 +31,11 @@ class Language:
 
     def load_files(self):
         languages = {}
-        lang_files = {file.stem: file for file in self.lang_dir.glob("*.json")}
+        lang_files = {
+            file.stem: file
+            for file in self.lang_dir.glob("*.json")
+            if file.stem in lang_codes
+        }
         for lang_code, lang_file in lang_files.items():
             with open(lang_file, "r", encoding="utf-8") as file:
                 languages[lang_code] = json.load(file)

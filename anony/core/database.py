@@ -635,6 +635,8 @@ class SQLiteDB:
         await self.conn.commit()
 
     async def set_lang(self, chat_id: int, lang_code: str) -> None:
+        if lang_code not in {"en", "my"}:
+            lang_code = "en"
         await self.conn.execute(
             "INSERT INTO languages (chat_id, lang) VALUES (?, ?) "
             "ON CONFLICT(chat_id) DO UPDATE SET lang = excluded.lang",
@@ -649,7 +651,8 @@ class SQLiteDB:
                 "SELECT lang FROM languages WHERE chat_id = ?", (chat_id,)
             )
             row = await cursor.fetchone()
-            self.lang[chat_id] = row[0] if row else config.LANG_CODE
+            selected = row[0] if row else config.LANG_CODE
+            self.lang[chat_id] = selected if selected in {"en", "my"} else "en"
         return self.lang[chat_id]
 
     async def is_logger(self) -> bool:

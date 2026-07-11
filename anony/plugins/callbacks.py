@@ -6,7 +6,7 @@
 import re
 from html import escape
 
-from pyrogram import errors, filters, types
+from pyrogram import enums, errors, filters, types
 
 from anony import anon, app, db, lang, queue, tg, yt
 from anony.helpers import (
@@ -15,6 +15,7 @@ from anony.helpers import (
     can_configure_group,
     can_manage_vc,
     feedback,
+    navigate,
 )
 from anony.helpers._play import recover_playback
 
@@ -167,33 +168,53 @@ async def _controls(_, query: types.CallbackQuery):
 async def _help(_, query: types.CallbackQuery):
     data = query.data.split()
     if len(data) == 1:
-        return await query.answer(url=f"https://t.me/{app.username}?start=help")
+        if query.message.chat.type != enums.ChatType.PRIVATE:
+            return await query.answer(
+                url=f"https://t.me/{app.username}?start=help"
+            )
+        return await navigate(
+            query,
+            query.lang["help_menu"],
+            buttons.help_markup(
+                query.lang,
+                sudo=query.from_user.id in app.sudoers,
+            ),
+        )
     if data[1] not in {
-        "back", "close", "admins", "auth", "blist", "lang",
+        "back", "home", "admins", "auth", "blist", "lang",
         "ping", "play", "queue", "stats", "sudo",
     }:
         return await feedback.toast(query, query.lang["play_expired"])
 
     if data[1] == "back":
-        return await query.edit_message_text(
-            text=query.lang["help_menu"],
-            reply_markup=buttons.help_markup(
+        return await navigate(
+            query,
+            query.lang["help_menu"],
+            buttons.help_markup(
                 query.lang,
                 sudo=query.from_user.id in app.sudoers,
             ),
         )
-    elif data[1] == "close":
-        try:
-            await query.message.delete()
-            return await query.message.reply_to_message.delete()
-        except Exception:
-            return
+    if data[1] == "home":
+        return await navigate(
+            query,
+            query.lang["start_pm"].format(
+                escape(query.from_user.first_name or "there"),
+                escape(app.name),
+            ),
+            buttons.start_key(
+                query.lang,
+                private=True,
+                sudo=query.from_user.id in app.sudoers,
+            ),
+        )
 
     if data[1] == "sudo" and query.from_user.id not in app.sudoers:
         return await feedback.toast(query, query.lang["play_expired"])
-    await query.edit_message_text(
-        text=query.lang[f"help_{data[1]}"],
-        reply_markup=buttons.help_markup(
+    await navigate(
+        query,
+        query.lang[f"help_{data[1]}"],
+        buttons.help_markup(
             query.lang,
             True,
             sudo=query.from_user.id in app.sudoers,

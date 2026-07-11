@@ -14,6 +14,7 @@ from ._dataclass import Media, Track
 from ._exec import format_exception, meval
 from ._feedback import Feedback
 from ._inline import Inline
+from ._navigation import navigate
 from ._queue import Queue
 from ._thumbnails import Thumbnail
 from ._utilities import Utilities
@@ -29,6 +30,7 @@ __all__ = [
     "format_exception",
     "is_admin",
     "meval",
+    "navigate",
     "reload_admins",
 ]
 
