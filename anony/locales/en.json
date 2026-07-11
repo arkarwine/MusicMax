@@ -1,6 +1,7 @@
 {
     "add_me": "Add me to your group",
     "admin_required": "⚠️ Let me invite users, then try again.",
+    "play_unban_required": "⚠️ All music assistants are banned or restricted in this group. Unban them manually, or give me Ban Users permission so I can restore them, then try again.",
     "admin_cache_wait": "You can only refresh the admin cache once every 10 minutes.",
     "admin_cache_reloading": "⏳ Refreshing the admin list…",
     "admin_cache_reloaded": "✅ Admin list refreshed.",

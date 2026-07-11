@@ -383,7 +383,7 @@ class SQLiteDB:
             )
             await self.conn.commit()
 
-    async def set_assistant(self, chat_id: int) -> int:
+    async def set_assistant(self, chat_id: int, slot: int | None = None) -> int:
         from anony import anon
 
         slots = tuple(
@@ -391,7 +391,9 @@ class SQLiteDB:
         )
         if not slots:
             raise RuntimeError("No assistant sessions are active")
-        num = slots[randint(0, len(slots) - 1)]
+        if slot is not None and slot not in slots:
+            raise RuntimeError(f"Assistant session {slot} is not active")
+        num = slot if slot is not None else slots[randint(0, len(slots) - 1)]
         await self.conn.execute(
             "INSERT INTO assistants (chat_id, num) VALUES (?, ?) "
             "ON CONFLICT(chat_id) DO UPDATE SET num = excluded.num",

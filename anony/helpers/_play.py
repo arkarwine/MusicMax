@@ -7,7 +7,7 @@ import asyncio
 
 from pyrogram import enums, errors, types
 
-from anony import app, config, db, logger, queue, yt
+from anony import anon, app, config, db, logger, queue, userbot, yt
 from anony.helpers import feedback, utils
 
 
@@ -41,7 +41,7 @@ async def _prime_assistant_peer(client, chat_id: int, username: str | None) -> b
     return False
 
 
-async def _invite_assistant(client, m: types.Message) -> bool:
+async def _invite_assistant(client, m: types.Message, status) -> str:
     chat_id = m.chat.id
     temporary_link = None
 
@@ -73,14 +73,12 @@ async def _invite_assistant(client, m: types.Message) -> bool:
         try:
             invite_link = await fresh_invite()
         except errors.ChatAdminRequired:
-            await m.reply_text(m.lang["admin_required"])
-            return False
+            return "invite_admin_required"
         except Exception:
             logger.exception("Could not create an assistant invite for chat %s", chat_id)
-            await m.reply_text(m.lang["play_invite_error"].format("Invite unavailable"))
-            return False
+            return "invite_failed"
 
-    status = await m.reply_text(m.lang["play_invite"].format(app.name))
+    await status.edit_text(m.lang["play_invite"].format(client.name))
     join_pending = False
     try:
         try:
@@ -107,36 +105,53 @@ async def _invite_assistant(client, m: types.Message) -> bool:
                 break
     except errors.ChatAdminRequired:
         await revoke_invite()
-        await status.edit_text(m.lang["admin_required"])
-        return False
+        return "join_admin_required"
     except Exception:
         logger.exception("Assistant could not join chat %s", chat_id)
         await revoke_invite()
-        await status.edit_text(m.lang["play_invite_error"].format("Join unavailable"))
-        return False
+        return "join_failed"
 
     for _ in range(5):
         if await _prime_assistant_peer(client, chat_id, m.chat.username):
             await status.delete()
             await revoke_invite()
-            return True
+            return "ready"
         await asyncio.sleep(1)
 
     if join_pending:
         logger.warning("Assistant join request is still pending in chat %s", chat_id)
-        await status.edit_text(m.lang["play_invite_pending"])
+        result = "join_pending"
     else:
         logger.error("Assistant could not resolve chat %s after joining", chat_id)
-        await status.edit_text(m.lang["play_peer_error"])
+        result = "peer_failed"
     await revoke_invite()
-    return False
+    return result
 
 
 async def assistant_membership(
-    chat_id: int, username: str | None
+    chat_id: int, username: str | None, client=None
 ) -> tuple[object, str]:
     """Return the selected assistant and its membership state."""
-    client = await db.get_client(chat_id)
+    if client is None:
+        client = await db.get_client(chat_id)
+    try:
+        member = await app.get_chat_member(chat_id, client.id)
+        if member.status == enums.ChatMemberStatus.BANNED:
+            return client, "banned"
+        if member.status == enums.ChatMemberStatus.RESTRICTED and not getattr(
+            member, "is_member", False
+        ):
+            return client, "banned"
+    except (errors.UserNotParticipant, errors.PeerIdInvalid):
+        pass
+    except Exception:
+        logger.debug(
+            "Bot could not inspect assistant %s in chat %s",
+            client.id,
+            chat_id,
+            exc_info=True,
+        )
+
     if not await _prime_assistant_peer(client, chat_id, username):
         return client, "absent"
 
@@ -168,24 +183,88 @@ async def assistant_membership(
 
 async def ensure_assistant(m: types.Message) -> bool:
     chat_id = m.chat.id
-    client, membership = await assistant_membership(chat_id, m.chat.username)
-    if membership == "ready":
-        return True
-    if membership == "unknown":
-        logger.warning("Assistant could not resolve peer for chat %s", chat_id)
-        await m.reply_text(m.lang["play_peer_error"])
-        return False
+    selected = await db.get_client(chat_id)
+    selected_slot = next(
+        slot for slot, client in userbot.clients.items() if client is selected
+    )
+    slots = [selected_slot] + [
+        slot
+        for slot in userbot.clients
+        if slot != selected_slot and slot in anon.clients
+    ]
+    status = None
+    results = []
 
-    try:
-        await app.unban_chat_member(chat_id=chat_id, user_id=client.id)
-    except errors.UserNotParticipant:
-        pass
-    except errors.ChatAdminRequired:
-        await m.reply_text(m.lang["admin_required"])
-        return False
-    except Exception:
-        logger.debug("Assistant did not require unbanning in chat %s", chat_id)
-    return await _invite_assistant(client, m)
+    for slot in slots:
+        client = userbot.clients[slot]
+        client, membership = await assistant_membership(
+            chat_id, m.chat.username, client
+        )
+
+        if membership == "ready":
+            await db.set_assistant(chat_id, slot)
+            if status:
+                await status.delete()
+            return True
+
+        if membership == "unknown":
+            results.append("peer_failed")
+            continue
+
+        if membership == "banned":
+            try:
+                await app.unban_chat_member(chat_id=chat_id, user_id=client.id)
+            except errors.ChatAdminRequired:
+                results.append("banned_unban_required")
+                continue
+            except Exception:
+                logger.exception(
+                    "Could not unban assistant %s in chat %s", client.id, chat_id
+                )
+                results.append("unban_failed")
+                continue
+        else:
+            try:
+                await app.unban_chat_member(chat_id=chat_id, user_id=client.id)
+            except errors.UserNotParticipant:
+                pass
+            except errors.ChatAdminRequired:
+                # The account was not confirmed banned. Continue with the join;
+                # invite permissions may still be sufficient.
+                pass
+            except Exception:
+                logger.debug(
+                    "Assistant %s did not require unbanning in chat %s",
+                    client.id,
+                    chat_id,
+                    exc_info=True,
+                )
+
+        if status is None:
+            status = await m.reply_text(m.lang["play_invite"].format(client.name))
+        result = await _invite_assistant(client, m, status)
+        if result == "ready":
+            await db.set_assistant(chat_id, slot)
+            return True
+        results.append(result)
+        if result == "invite_admin_required":
+            break
+
+    if status is None:
+        status = await m.reply_text(m.lang["play_invite"].format(app.name))
+    if results and all(result == "banned_unban_required" for result in results):
+        await status.edit_text(m.lang["play_unban_required"])
+    elif "invite_admin_required" in results or "join_admin_required" in results:
+        await status.edit_text(m.lang["admin_required"])
+    elif "join_pending" in results:
+        await status.edit_text(m.lang["play_invite_pending"])
+    elif "peer_failed" in results:
+        await status.edit_text(m.lang["play_peer_error"])
+    else:
+        await status.edit_text(
+            m.lang["play_invite_error"].format("All assistants unavailable")
+        )
+    return False
 
 
 async def recover_playback(m: types.Message) -> bool:
