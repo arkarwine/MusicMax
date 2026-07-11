@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "anonxmusic"
 version = "3.0.3"
@@ -17,3 +21,15 @@ dependencies = [
     "python-dotenv~=1.2.1",
     "yt-dlp[default]>=2026.3.17",
 ]
+
+[tool.setuptools]
+py-modules = ["config"]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["anony", "anony.*"]
+exclude = ["data*", "cache*", "downloads*", "setup*"]
+
+[tool.setuptools.package-data]
+anony = ["locales/*.json", "locales/*.md"]
