@@ -23,7 +23,7 @@ from anony.core.custom_emoji import (
 
 _CUSTOM_EMOJI_TEST_ID = "5465443221003836735"
 _CUSTOM_EMOJI_TEST = (
-    f'<tg-emoji emoji-id="{_CUSTOM_EMOJI_TEST_ID}">▷</tg-emoji>'
+    f'<tg-emoji emoji-id="{_CUSTOM_EMOJI_TEST_ID}">▶️</tg-emoji>'
 )
 
 
