@@ -237,11 +237,12 @@ async def _clear_add_flow(user_id: int) -> None:
         pass
 
 
-async def _expire_add_flow(user_id: int, chat_id: int, prompt_id: int) -> None:
+async def _expire_add_flow(user_id: int, chat_id: int) -> None:
     await asyncio.sleep(300)
     flow = _add_flows.get(user_id)
-    if not flow or flow.prompt_id != prompt_id:
+    if not flow:
         return
+    prompt_id = flow.prompt_id
     page = flow.page
     await _clear_add_flow(user_id)
     try:
@@ -274,8 +275,32 @@ async def _send_add_prompt(
     flow = AddFlow(prompt.id, page, stage)
     _add_flows[user_id] = flow
     flow.timeout_task = asyncio.create_task(
-        _expire_add_flow(user_id, chat_id, prompt.id)
+        _expire_add_flow(user_id, chat_id)
     )
+
+
+async def _replace_force_prompt(
+    flow: AddFlow,
+    prompt: types.Message,
+    chat_id: int,
+    text: str,
+    placeholder: str,
+) -> types.Message:
+    """Force Reply only activates on a newly sent message, never an edit."""
+    next_prompt = await app.send_message(
+        chat_id,
+        text,
+        reply_markup=types.ForceReply(
+            selective=True,
+            placeholder=placeholder,
+        ),
+    )
+    flow.prompt_id = next_prompt.id
+    try:
+        await prompt.delete()
+    except Exception:
+        pass
+    return next_prompt
 
 
 def _add_failure_markup(page: int) -> types.InlineKeyboardMarkup:
@@ -482,12 +507,12 @@ async def _session_add_reply(_, message: types.Message):
     if flow.stage == "phone":
         digits = re.sub(r"\D", "", value)
         if not 7 <= len(digits) <= 15:
-            return await reply.edit_text(
+            return await _replace_force_prompt(
+                flow,
+                reply,
+                message.chat.id,
                 message.lang["session_phone_invalid"],
-                reply_markup=types.ForceReply(
-                    selective=True,
-                    placeholder=message.lang["session_phone_placeholder"],
-                ),
+                message.lang["session_phone_placeholder"],
             )
         phone = f"+{digits}"
         client = Client(
@@ -516,12 +541,12 @@ async def _session_add_reply(_, message: types.Message):
         flow.phone = phone
         flow.phone_code_hash = sent.phone_code_hash
         flow.stage = "code"
-        return await reply.edit_text(
+        return await _replace_force_prompt(
+            flow,
+            reply,
+            message.chat.id,
             message.lang["session_code_prompt"].format(phone),
-            reply_markup=types.ForceReply(
-                selective=True,
-                placeholder=message.lang["session_code_placeholder"],
-            ),
+            message.lang["session_code_placeholder"],
         )
 
     if flow.stage == "code":
@@ -534,22 +559,22 @@ async def _session_add_reply(_, message: types.Message):
                 raise RuntimeError("This phone number has no Telegram account")
         except errors.SessionPasswordNeeded:
             flow.stage = "password"
-            return await reply.edit_text(
+            return await _replace_force_prompt(
+                flow,
+                reply,
+                message.chat.id,
                 message.lang["session_password_prompt"],
-                reply_markup=types.ForceReply(
-                    selective=True,
-                    placeholder=message.lang["session_password_placeholder"],
-                ),
+                message.lang["session_password_placeholder"],
             )
         except errors.PhoneCodeInvalid as exc:
-            return await reply.edit_text(
+            return await _replace_force_prompt(
+                flow,
+                reply,
+                message.chat.id,
                 message.lang["session_code_invalid"].format(
                     escape(str(exc)[:300] or type(exc).__name__)
                 ),
-                reply_markup=types.ForceReply(
-                    selective=True,
-                    placeholder=message.lang["session_code_placeholder"],
-                ),
+                message.lang["session_code_placeholder"],
             )
         except errors.PhoneCodeExpired as exc:
             await _clear_add_flow(message.from_user.id)
@@ -572,12 +597,12 @@ async def _session_add_reply(_, message: types.Message):
         try:
             await flow.client.check_password(value)
         except errors.PasswordHashInvalid:
-            return await reply.edit_text(
+            return await _replace_force_prompt(
+                flow,
+                reply,
+                message.chat.id,
                 message.lang["session_password_invalid"],
-                reply_markup=types.ForceReply(
-                    selective=True,
-                    placeholder=message.lang["session_password_placeholder"],
-                ),
+                message.lang["session_password_placeholder"],
             )
         except Exception as exc:
             await _clear_add_flow(message.from_user.id)

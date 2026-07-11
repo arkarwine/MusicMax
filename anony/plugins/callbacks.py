@@ -205,7 +205,6 @@ async def _help(_, query: types.CallbackQuery):
             buttons.start_key(
                 query.lang,
                 private=True,
-                sudo=query.from_user.id in app.sudoers,
             ),
         )
 

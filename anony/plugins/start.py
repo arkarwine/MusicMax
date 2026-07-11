@@ -87,7 +87,6 @@ async def start(_, message: types.Message):
     key = buttons.start_key(
         message.lang,
         private,
-        sudo=message.from_user.id in app.sudoers,
         chat_id=message.chat.id,
     )
     await message.reply_photo(

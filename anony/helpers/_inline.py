@@ -326,7 +326,6 @@ class Inline:
         self,
         lang: dict,
         private: bool = False,
-        sudo: bool = False,
         chat_id: int | None = None,
     ) -> types.InlineKeyboardMarkup:
         rows = []
@@ -340,13 +339,6 @@ class Inline:
                 self.ikb(text=lang["help"], callback_data="help"),
                 self.ikb(text=lang["language"], callback_data="language"),
             ]]
-            if sudo:
-                rows.append([
-                    self.ikb(
-                        text=lang["session_manager"],
-                        callback_data="session page 0",
-                    )
-                ])
             rows += [
                 [
                     self.ikb(text=lang["support"], url=config.SUPPORT_CHAT),
