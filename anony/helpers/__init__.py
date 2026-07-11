@@ -3,7 +3,13 @@
 # This file is part of AnonXMusic
 
 
-from ._admins import admin_check, can_manage_vc, is_admin, reload_admins
+from ._admins import (
+    admin_check,
+    can_configure_group,
+    can_manage_vc,
+    is_admin,
+    reload_admins,
+)
 from ._dataclass import Media, Track
 from ._exec import format_exception, meval
 from ._feedback import Feedback
@@ -18,6 +24,7 @@ __all__ = [
     "Thumbnail",
     "Track",
     "admin_check",
+    "can_configure_group",
     "can_manage_vc",
     "format_exception",
     "is_admin",

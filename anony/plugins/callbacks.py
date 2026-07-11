@@ -4,11 +4,18 @@
 
 
 import re
+from html import escape
 
 from pyrogram import errors, filters, types
 
 from anony import anon, app, db, lang, queue, tg, yt
-from anony.helpers import admin_check, buttons, can_manage_vc, feedback
+from anony.helpers import (
+    admin_check,
+    buttons,
+    can_configure_group,
+    can_manage_vc,
+    feedback,
+)
 from anony.helpers._play import recover_playback
 
 
@@ -194,38 +201,62 @@ async def _help(_, query: types.CallbackQuery):
     )
 
 
-@app.on_callback_query(filters.regex("settings") & ~app.bl_users)
+@app.on_callback_query(filters.regex(r"^settings(?: |$)") & ~app.bl_users)
 @lang.language()
-@admin_check
 async def _settings_cb(_, query: types.CallbackQuery):
     cmd = query.data.split()
-    if len(cmd) == 1:
+    if len(cmd) < 2:
+        return await feedback.toast(query, query.lang["play_expired"])
+    try:
+        chat_id = int(cmd[1])
+    except ValueError:
+        return await feedback.toast(query, query.lang["play_expired"])
+    if not await can_configure_group(chat_id, query.from_user.id):
+        return await query.answer(
+            query.lang["settings_not_allowed"], show_alert=True
+        )
+    if len(cmd) == 2:
         return await query.answer()
-    chat_id = query.message.chat.id
+
     _admin = await db.get_play_mode(chat_id)
     _delete = await db.get_cmd_delete(chat_id)
     _cleanup = await db.get_feedback_cleanup(chat_id)
     _video = await db.get_default_video(chat_id)
     _language = await db.get_lang(chat_id)
 
-    if cmd[1] == "delete":
+    action = cmd[2]
+    if action == "language":
+        return await query.edit_message_text(
+            query.lang["lang_choose"],
+            reply_markup=buttons.group_lang_markup(
+                _language, chat_id, query.lang
+            ),
+        )
+    if action == "delete":
         _delete = not _delete
         await db.set_cmd_delete(chat_id, _delete)
-    elif cmd[1] == "play":
+    elif action == "play":
         await db.set_play_mode(chat_id, _admin)
         _admin = not _admin
-    elif cmd[1] == "cleanup":
+    elif action == "cleanup":
         _cleanup = not _cleanup
         await db.set_feedback_cleanup(chat_id, _cleanup)
-    elif cmd[1] == "video":
+    elif action == "video":
         _video = not _video
         await db.set_default_video(chat_id, _video)
-    else:
+    elif action != "back":
         return await feedback.toast(query)
+    selected = await lang.get_lang(chat_id)
     await feedback.toast(query, query.lang["setting_saved"])
-    await query.edit_message_reply_markup(
+    try:
+        target = await app.get_chat(chat_id)
+        title = escape(target.title or "Group")
+    except Exception:
+        title = "Group"
+    await query.edit_message_text(
+        selected["start_settings"].format(title),
         reply_markup=buttons.settings_markup(
-            query.lang,
+            selected,
             _admin,
             _delete,
             _cleanup,

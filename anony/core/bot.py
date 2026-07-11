@@ -66,9 +66,9 @@ class Bot(pyrogram.Client):
 
     async def register_sudo_commands(self, user_ids) -> None:
         sudo_commands = [
-            ("sessions", "List assistant sessions"),
-            ("session", "Inspect an assistant session"),
-            ("addsession", "Add an assistant session"),
+            ("sessions", "Open the assistant session manager"),
+            ("session", "Open an assistant account"),
+            ("addsession", "Add an assistant securely"),
             ("enablesession", "Enable an assistant session"),
             ("disablesession", "Disable an assistant session"),
             ("restartsession", "Reconnect an assistant session"),

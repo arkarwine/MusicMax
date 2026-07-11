@@ -4,8 +4,6 @@
 
 
 from pathlib import Path
-from html import escape
-
 from pyrogram import enums, filters, types
 
 from anony import app, db, lang, userbot, yt
@@ -38,12 +36,12 @@ async def _setup(_, m: types.Message):
     text, ready = await build_setup_text(m)
     await m.reply_text(
         text,
-        reply_markup=buttons.setup_markup(m.lang, ready),
+        reply_markup=buttons.setup_markup(m.lang, ready, m.chat.id),
         disable_notification=True,
     )
 
 
-@app.on_callback_query(filters.regex(r"^setup (?:check|settings)$") & ~app.bl_users)
+@app.on_callback_query(filters.regex(r"^setup check$") & ~app.bl_users)
 @lang.language()
 @admin_check
 async def _setup_callback(_, query: types.CallbackQuery):
@@ -54,27 +52,10 @@ async def _setup_callback(_, query: types.CallbackQuery):
         await feedback.toast(query, query.lang["setup_checked"])
         return await query.edit_message_text(
             text,
-            reply_markup=buttons.setup_markup(query.lang, ready),
+            reply_markup=buttons.setup_markup(
+                query.lang, ready, query.message.chat.id
+            ),
         )
-
-    admin_only = await db.get_play_mode(query.message.chat.id)
-    cmd_delete = await db.get_cmd_delete(query.message.chat.id)
-    cleanup = await db.get_feedback_cleanup(query.message.chat.id)
-    default_video = await db.get_default_video(query.message.chat.id)
-    language = await db.get_lang(query.message.chat.id)
-    await feedback.toast(query)
-    await query.edit_message_text(
-        query.lang["start_settings"].format(escape(query.message.chat.title)),
-        reply_markup=buttons.settings_markup(
-            query.lang,
-            admin_only,
-            cmd_delete,
-            cleanup,
-            default_video,
-            language,
-            query.message.chat.id,
-        ),
-    )
 
 
 @app.on_message(filters.command(["status"]) & app.sudoers)

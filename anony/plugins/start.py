@@ -7,7 +7,34 @@ from html import escape
 from pyrogram import enums, filters, types
 
 from anony import app, config, db, lang
-from anony.helpers import buttons, utils
+from anony.helpers import buttons, can_configure_group, utils
+
+
+async def open_group_settings(message: types.Message, chat_id: int) -> None:
+    if message.chat.type != enums.ChatType.PRIVATE:
+        return
+    if not await can_configure_group(chat_id, message.from_user.id):
+        await message.reply_text(message.lang["settings_not_allowed"])
+        return
+    try:
+        chat = await app.get_chat(chat_id)
+    except Exception:
+        await message.reply_text(message.lang["settings_unavailable"])
+        return
+
+    selected = await lang.get_lang(chat_id)
+    await message.reply_text(
+        selected["start_settings"].format(escape(chat.title or "Group")),
+        reply_markup=buttons.settings_markup(
+            selected,
+            await db.get_play_mode(chat_id),
+            await db.get_cmd_delete(chat_id),
+            await db.get_feedback_cleanup(chat_id),
+            await db.get_default_video(chat_id),
+            await db.get_lang(chat_id),
+            chat_id,
+        ),
+    )
 
 
 @app.on_message(filters.command(["help"]) & filters.private & ~app.bl_users)
@@ -34,6 +61,18 @@ async def start(_, message: types.Message):
 
     if len(message.command) > 1 and message.command[1] == "help":
         return await _help(_, message)
+
+    if len(message.command) > 1 and message.command[1].startswith("settings_"):
+        try:
+            chat_id = int(message.command[1].removeprefix("settings_"))
+        except ValueError:
+            return await message.reply_text(message.lang["settings_unavailable"])
+        return await open_group_settings(message, chat_id)
+
+    if len(message.command) > 1 and message.command[1] == "sessions":
+        from anony.plugins.sessions import open_sessions
+
+        return await open_sessions(message)
 
     private = message.chat.type == enums.ChatType.PRIVATE
     _text = (
@@ -68,22 +107,9 @@ async def start(_, message: types.Message):
 @app.on_message(filters.command(["playmode", "settings"]) & filters.group & ~app.bl_users)
 @lang.language()
 async def settings(_, message: types.Message):
-    admin_only = await db.get_play_mode(message.chat.id)
-    cmd_delete = await db.get_cmd_delete(message.chat.id)
-    feedback_cleanup = await db.get_feedback_cleanup(message.chat.id)
-    default_video = await db.get_default_video(message.chat.id)
-    _language = await db.get_lang(message.chat.id)
     await message.reply_text(
-        text=message.lang["start_settings"].format(escape(message.chat.title)),
-        reply_markup=buttons.settings_markup(
-            message.lang,
-            admin_only,
-            cmd_delete,
-            feedback_cleanup,
-            default_video,
-            _language,
-            message.chat.id,
-        ),
+        text=message.lang["settings_open_private"],
+        reply_markup=buttons.settings_link(message.lang, message.chat.id),
         quote=True,
     )
 
@@ -106,6 +132,6 @@ async def _new_member(_, message: types.Message):
     setup_text, ready = await build_setup_text(message)
     await message.reply_text(
         message.lang["welcome_group"] + "\n\n" + setup_text,
-        reply_markup=buttons.setup_markup(message.lang, ready),
+        reply_markup=buttons.setup_markup(message.lang, ready, message.chat.id),
         disable_notification=True,
     )

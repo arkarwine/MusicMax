@@ -82,6 +82,20 @@ async def is_admin(chat_id: int, user_id: int) -> bool:
         raise StopPropagation
 
 
+async def can_configure_group(chat_id: int, user_id: int) -> bool:
+    """Verify a private-dashboard user against the target group."""
+    if user_id in app.sudoers:
+        return True
+    try:
+        member = await app.get_chat_member(chat_id, user_id)
+    except Exception:
+        return False
+    return member.status in {
+        enums.ChatMemberStatus.ADMINISTRATOR,
+        enums.ChatMemberStatus.OWNER,
+    }
+
+
 async def reload_admins(chat_id: int) -> list[int]:
     try:
         admins = [

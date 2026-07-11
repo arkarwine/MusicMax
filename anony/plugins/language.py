@@ -3,15 +3,20 @@
 # This file is part of AnonXMusic
 
 
-from pyrogram import filters, types
+from pyrogram import enums, filters, types
 
 from anony import app, db, lang
-from anony.helpers import admin_check, buttons, feedback
+from anony.helpers import admin_check, buttons, can_configure_group, feedback
 
 
 @app.on_message(filters.command(["lang", "language"]) & ~app.bl_users)
 @lang.language()
 async def _lang(_, m: types.Message):
+    if m.chat.type in {enums.ChatType.GROUP, enums.ChatType.SUPERGROUP}:
+        return await m.reply_text(
+            m.lang["settings_open_private"],
+            reply_markup=buttons.settings_link(m.lang, m.chat.id),
+        )
     current = await db.get_lang(m.chat.id)
     keyboard = buttons.lang_markup(current)
     await m.reply_text(m.lang["lang_choose"], reply_markup=keyboard)
@@ -47,4 +52,28 @@ async def _lang_cb(_, query: types.CallbackQuery):
     await query.edit_message_text(
         selected["lang_choose"],
         reply_markup=buttons.lang_markup(_lang),
+    )
+
+
+@app.on_callback_query(filters.regex(r"^settings_lang ") & ~app.bl_users)
+@lang.language()
+async def _group_lang_cb(_, query: types.CallbackQuery):
+    data = query.data.split()
+    try:
+        chat_id = int(data[1])
+        code = data[2]
+    except (IndexError, ValueError):
+        return await feedback.toast(query, query.lang["play_expired"])
+    if code not in lang.get_languages():
+        return await feedback.toast(query, query.lang["play_expired"])
+    if not await can_configure_group(chat_id, query.from_user.id):
+        return await query.answer(
+            query.lang["settings_not_allowed"], show_alert=True
+        )
+    await db.set_lang(chat_id, code)
+    selected = lang.languages[code]
+    await feedback.toast(query, selected["lang_changed"].format(code))
+    await query.edit_message_text(
+        selected["lang_choose"],
+        reply_markup=buttons.group_lang_markup(code, chat_id, selected),
     )
