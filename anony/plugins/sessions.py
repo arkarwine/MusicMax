@@ -316,6 +316,21 @@ async def _replace_force_prompt(
     return next_prompt
 
 
+async def _replace_with_status(
+    flow: AddFlow,
+    prompt: types.Message,
+    chat_id: int,
+    text: str,
+) -> types.Message:
+    status = await app.send_message(chat_id, text)
+    flow.prompt_id = status.id
+    try:
+        await prompt.delete()
+    except Exception:
+        pass
+    return status
+
+
 def _add_failure_markup(page: int) -> types.InlineKeyboardMarkup:
     return buttons.ikm([[
         buttons.ikb(text="🔄 Try again", callback_data=f"session add {page}"),
@@ -547,7 +562,7 @@ async def _session_add_reply(_, message: types.Message):
         pass
 
     if flow.stage == "string":
-        _add_flows.pop(message.from_user.id, None)
+        _detach_add_flow(message.from_user.id)
         return await _activate_session_string(
             value, reply, flow.page, message.lang
         )
@@ -563,29 +578,30 @@ async def _session_add_reply(_, message: types.Message):
                 message.lang["session_phone_placeholder"],
             )
         phone = f"+{digits}"
+        reply = await _replace_with_status(
+            flow,
+            reply,
+            message.chat.id,
+            message.lang["session_sending_code"],
+        )
         client = Client(
             name=f"AnonyAuth{message.from_user.id}",
             api_id=config.API_ID,
             api_hash=config.API_HASH,
             in_memory=True,
         )
+        flow.client = client
         try:
             await client.connect()
             sent = await client.send_code(phone)
         except Exception as exc:
-            try:
-                if client.is_connected:
-                    await client.disconnect()
-            except Exception:
-                pass
-            _add_flows.pop(message.from_user.id, None)
+            await _clear_add_flow(message.from_user.id)
             return await reply.edit_text(
                 message.lang["session_phone_failed"].format(
                     type(exc).__name__, escape(str(exc)[:500] or "No details")
                 ),
                 reply_markup=_add_failure_markup(flow.page),
             )
-        flow.client = client
         flow.phone = phone
         flow.phone_code_hash = sent.phone_code_hash
         flow.stage = "code"
@@ -599,6 +615,12 @@ async def _session_add_reply(_, message: types.Message):
 
     if flow.stage == "code":
         code = re.sub(r"\D", "", value)
+        reply = await _replace_with_status(
+            flow,
+            reply,
+            message.chat.id,
+            message.lang["session_verifying_code"],
+        )
         try:
             signed_in = await flow.client.sign_in(
                 flow.phone, flow.phone_code_hash, code
@@ -642,6 +664,12 @@ async def _session_add_reply(_, message: types.Message):
             )
 
     elif flow.stage == "password":
+        reply = await _replace_with_status(
+            flow,
+            reply,
+            message.chat.id,
+            message.lang["session_verifying_password"],
+        )
         try:
             await flow.client.check_password(value)
         except errors.PasswordHashInvalid:
@@ -700,6 +728,7 @@ async def _command_action(message: types.Message, action: str) -> None:
     session = await _require_session(message)
     if not session:
         return
+    status = await message.reply_text(message.lang["session_working"])
     try:
         if action == "enable":
             await userbot.enable_session(session["slot"])
@@ -710,7 +739,7 @@ async def _command_action(message: types.Message, action: str) -> None:
         else:
             return
     except Exception as exc:
-        return await message.reply_text(
+        return await status.edit_text(
             message.lang["session_action_failed"].format(
                 type(exc).__name__, escape(str(exc)[:700] or "No details")
             )
@@ -718,7 +747,7 @@ async def _command_action(message: types.Message, action: str) -> None:
     if message.chat.type == enums.ChatType.PRIVATE:
         current = await db.get_assistant_session(session["slot"])
         text, markup = _detail(current)
-        await message.reply_text(text, reply_markup=markup)
+        await status.edit_text(text, reply_markup=markup)
     else:
         await open_sessions(message)
 

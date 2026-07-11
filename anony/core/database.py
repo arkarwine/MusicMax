@@ -135,6 +135,7 @@ class SQLiteDB:
                     "UPDATE chats SET feedback_cleanup = 0"
                 )
             await self.conn.commit()
+            await self.compact_assistant_slots()
             logger.info(f"Database connection successful. ({time() - start:.2f}s)")
             await self.load_cache()
         except Exception as e:
@@ -417,26 +418,36 @@ class SQLiteDB:
         session_string: str,
         source: str = "runtime",
     ) -> int:
-        await self.conn.execute(
-            "INSERT OR IGNORE INTO assistant_sessions "
-            "(session_string, source) VALUES (?, ?)",
-            (session_string, source),
-        )
-        if source == "environment":
-            await self.conn.execute(
-                "UPDATE assistant_sessions SET source = 'environment' "
-                "WHERE session_string = ?",
+        async with self.write_lock:
+            cursor = await self.conn.execute(
+                "SELECT slot FROM assistant_sessions WHERE session_string = ?",
                 (session_string,),
             )
-        await self.conn.commit()
-        cursor = await self.conn.execute(
-            "SELECT slot FROM assistant_sessions WHERE session_string = ?",
-            (session_string,),
-        )
-        row = await cursor.fetchone()
-        if not row:
-            raise RuntimeError("Assistant session could not be stored")
-        return row[0]
+            row = await cursor.fetchone()
+            if row:
+                if source == "environment":
+                    await self.conn.execute(
+                        "UPDATE assistant_sessions SET source = 'environment' "
+                        "WHERE slot = ?",
+                        (row[0],),
+                    )
+                    await self.conn.commit()
+                return row[0]
+
+            cursor = await self.conn.execute(
+                "SELECT slot FROM assistant_sessions ORDER BY slot"
+            )
+            used = {row[0] for row in await cursor.fetchall()}
+            slot = 1
+            while slot in used:
+                slot += 1
+            await self.conn.execute(
+                "INSERT INTO assistant_sessions (slot, session_string, source) "
+                "VALUES (?, ?, ?)",
+                (slot, session_string, source),
+            )
+            await self.conn.commit()
+            return slot
 
     async def get_assistant_sessions(self) -> list[dict]:
         cursor = await self.conn.execute(
@@ -508,12 +519,58 @@ class SQLiteDB:
             if assigned == slot:
                 self.assistant.pop(chat_id, None)
 
-    async def delete_assistant_session(self, slot: int) -> None:
+    async def compact_assistant_slots(self) -> dict[int, int]:
+        """Keep public assistant IDs dense while preserving every reference."""
+        async with self.write_lock:
+            cursor = await self.conn.execute(
+                "SELECT slot FROM assistant_sessions ORDER BY slot"
+            )
+            slots = [row[0] for row in await cursor.fetchall()]
+            mapping = {old: new for new, old in enumerate(slots, start=1)}
+            changed = {old: new for old, new in mapping.items() if old != new}
+            if not changed:
+                return mapping
+
+            for old in changed:
+                await self.conn.execute(
+                    "UPDATE assistant_sessions SET slot = ? WHERE slot = ?",
+                    (-old, old),
+                )
+                await self.conn.execute(
+                    "UPDATE assistants SET num = ? WHERE num = ?", (-old, old)
+                )
+                await self.conn.execute(
+                    "UPDATE playback_sessions SET assistant_num = ? "
+                    "WHERE assistant_num = ?",
+                    (-old, old),
+                )
+            for old, new in changed.items():
+                await self.conn.execute(
+                    "UPDATE assistant_sessions SET slot = ? WHERE slot = ?",
+                    (new, -old),
+                )
+                await self.conn.execute(
+                    "UPDATE assistants SET num = ? WHERE num = ?", (new, -old)
+                )
+                await self.conn.execute(
+                    "UPDATE playback_sessions SET assistant_num = ? "
+                    "WHERE assistant_num = ?",
+                    (new, -old),
+                )
+            await self.conn.commit()
+            self.assistant = {
+                chat_id: mapping.get(assigned, assigned)
+                for chat_id, assigned in self.assistant.items()
+            }
+            return mapping
+
+    async def delete_assistant_session(self, slot: int) -> dict[int, int]:
         await self.release_assistant_slot(slot)
         await self.conn.execute(
             "DELETE FROM assistant_sessions WHERE slot = ?", (slot,)
         )
         await self.conn.commit()
+        return await self.compact_assistant_slots()
 
     def active_chats_for_assistant(self, slot: int) -> list[int]:
         return [

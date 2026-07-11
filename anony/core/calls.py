@@ -241,7 +241,8 @@ class TgCall(PyTgCalls):
 
     async def play_next(self, chat_id: int) -> None:
         if loop := await db.get_loop(chat_id):
-            await db.set_loop(chat_id, loop - 1)
+            if loop > 0:
+                await db.set_loop(chat_id, loop - 1)
             return await self.replay(chat_id)
 
         media = queue.get_next(chat_id)

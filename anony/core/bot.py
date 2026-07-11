@@ -21,6 +21,8 @@ class Bot(pyrogram.Client):
             link_preview_options=pyrogram.types.LinkPreviewOptions(is_disabled=True),
         )
         self.owner = config.OWNER_ID
+        self.owner_username: str | None = None
+        self.owner_url = f"tg://user?id={self.owner}"
         self.logger: int | None = None
         self.bl_users = pyrogram.filters.user()
         self.sudoers = pyrogram.filters.user(self.owner)
@@ -34,6 +36,20 @@ class Bot(pyrogram.Client):
         self.name = self.me.first_name
         self.username = self.me.username
         self.mention = self.me.mention
+        try:
+            owner = await self.get_users(self.owner)
+            self.owner_username = owner.username
+            if owner.username:
+                self.owner_url = f"https://t.me/{owner.username}"
+            logger.info(
+                "Resolved owner %s as %s",
+                self.owner,
+                f"@{owner.username}" if owner.username else owner.first_name,
+            )
+        except Exception:
+            logger.warning(
+                "Could not resolve owner username; using the numeric Telegram link."
+            )
 
         self.commands = [
             ("play", "Play a song or link"),
@@ -49,6 +65,7 @@ class Bot(pyrogram.Client):
             ("settings", "Open group playback settings"),
             ("language", "Change the group language"),
             ("ping", "Check whether the bot is responsive"),
+            ("stats", "Show bot reach and activity"),
             ("help", "Show commands and help"),
         ]
         try:

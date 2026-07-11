@@ -44,33 +44,37 @@ class Inline:
         if not remove:
             playback = (
                 self.ikb(
-                    text="Ⅱ",
+                    text="❚❚",
                     callback_data=f"controls pause {chat_id}",
-                    style=enums.ButtonStyle.DEFAULT,
+                    style=enums.ButtonStyle.SUCCESS,
                 )
                 if playing
                 else self.ikb(
-                    text="▷",
+                    text="▶︎",
                     callback_data=f"controls resume {chat_id}",
-                    style=enums.ButtonStyle.DEFAULT,
+                    style=enums.ButtonStyle.SUCCESS,
                 )
             )
             keyboard.append(
                 [
-                    playback,
                     self.ikb(
-                        text="↻",
-                        callback_data=f"controls replay {chat_id}",
+                        text="∞",
+                        callback_data=f"controls loop {chat_id}",
                     ),
                     self.ikb(
-                        text="»",
-                        callback_data=f"controls skip {chat_id}",
-                        style=enums.ButtonStyle.DEFAULT,
-                    ),
-                    self.ikb(
-                        text="■",
+                        text="◉",
                         callback_data=f"controls stop {chat_id}",
                         style=enums.ButtonStyle.DANGER,
+                    ),
+                    playback,
+                    self.ikb(
+                        text="▶︎|",
+                        callback_data=f"controls skip {chat_id}",
+                        style=enums.ButtonStyle.DANGER,
+                    ),
+                    self.ikb(
+                        text="⟲",
+                        callback_data=f"controls replay {chat_id}",
                     ),
                 ]
             )
@@ -171,17 +175,17 @@ class Inline:
                 )],
                 [
                     self.ikb(
-                        text="Ⅱ" if playing else "▷",
+                        text="❚❚" if playing else "▶︎",
                         callback_data=f"controls {_action} {chat_id} q",
-                        style=enums.ButtonStyle.DEFAULT,
+                        style=enums.ButtonStyle.SUCCESS,
                     ),
                     self.ikb(
-                        text="»",
+                        text="▶︎|",
                         callback_data=f"controls skip {chat_id} q",
-                        style=enums.ButtonStyle.DEFAULT,
+                        style=enums.ButtonStyle.DANGER,
                     ),
                     self.ikb(
-                        text="■",
+                        text="◉",
                         callback_data=f"controls stop {chat_id} q",
                         style=enums.ButtonStyle.DANGER,
                     ),
@@ -338,6 +342,7 @@ class Inline:
             rows += [[
                 self.ikb(text=lang["help"], callback_data="help"),
                 self.ikb(text=lang["language"], callback_data="language"),
+                self.ikb(text=lang["stats"], callback_data="stats view"),
             ]]
             rows += [
                 [
@@ -346,8 +351,8 @@ class Inline:
                 ],
                 [
                     self.ikb(
-                        text=lang["source"],
-                        url="https://github.com/AnonymousX1025/AnonXMusic",
+                        text=lang["owner"],
+                        url=app.owner_url,
                     )
                 ]
             ]

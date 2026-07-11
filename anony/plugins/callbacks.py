@@ -33,7 +33,7 @@ async def cancel_dl(_, query: types.CallbackQuery):
 async def _controls(_, query: types.CallbackQuery):
     args = query.data.split()
     if len(args) < 3 or args[1] not in {
-        "status", "pause", "resume", "skip", "force", "replay", "stop",
+        "status", "loop", "pause", "resume", "skip", "force", "replay", "stop",
     }:
         return await query.answer(query.lang["play_expired"], show_alert=False)
     action, chat_id = args[1], int(args[2])
@@ -57,6 +57,14 @@ async def _controls(_, query: types.CallbackQuery):
 
     if action == "status":
         return await query.answer()
+
+    if action == "loop":
+        enabled = await db.get_loop(chat_id) == -1
+        await db.set_loop(chat_id, 0 if enabled else -1)
+        return await feedback.toast(
+            query,
+            query.lang["loop_off"] if enabled else query.lang["loop_forever"],
+        )
 
     if action == "pause":
         if not await db.playing(chat_id):

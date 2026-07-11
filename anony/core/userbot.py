@@ -134,7 +134,8 @@ class Userbot:
         except Exception:
             await db.update_assistant_session(slot, enabled=False)
             if session["source"] == "runtime" and not keep_on_failure:
-                await db.delete_assistant_session(slot)
+                mapping = await db.delete_assistant_session(slot)
+                self._apply_slot_mapping(mapping)
             raise
         return slot, client
 
@@ -158,6 +159,20 @@ class Userbot:
         if client:
             await client.stop()
 
+    def _apply_slot_mapping(self, mapping: dict[int, int]) -> None:
+        if not mapping:
+            return
+        from anony import anon
+
+        self.clients = {
+            mapping.get(slot, slot): client
+            for slot, client in self.clients.items()
+        }
+        anon.clients = {
+            mapping.get(slot, slot): client
+            for slot, client in anon.clients.items()
+        }
+
     async def disable_session(self, slot: int, delete: bool = False) -> None:
         from anony import db
 
@@ -175,7 +190,8 @@ class Userbot:
 
         await self._stop_session(slot)
         if delete:
-            await db.delete_assistant_session(slot)
+            mapping = await db.delete_assistant_session(slot)
+            self._apply_slot_mapping(mapping)
         else:
             await db.release_assistant_slot(slot)
             await db.update_assistant_session(slot, enabled=False)
