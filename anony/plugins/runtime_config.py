@@ -28,7 +28,10 @@ LABELS = {
 
 
 async def _runtime_view() -> tuple[str, types.InlineKeyboardMarkup]:
-    overrides = await db.get_runtime_config()
+    overrides = {
+        key.lower(): value
+        for key, value in (await db.get_runtime_config()).items()
+    }
     lines = []
     for key in config.RUNTIME_FIELDS:
         marker = " •" if key in overrides else ""
