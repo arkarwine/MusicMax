@@ -6,7 +6,14 @@
 import time
 import asyncio
 import logging
+import os
 from logging.handlers import RotatingFileHandler
+
+# PM2 launches processes with Node IPC variables. Deno interprets
+# NODE_CHANNEL_FD as its own IPC channel and yt-dlp's JS challenge solver then
+# fails with "fd is not from BiPipe". Python does not use this Node channel.
+os.environ.pop("NODE_CHANNEL_FD", None)
+os.environ.pop("NODE_UNIQUE_ID", None)
 
 logging.basicConfig(
     format="[%(asctime)s - %(levelname)s] - %(name)s: %(message)s",

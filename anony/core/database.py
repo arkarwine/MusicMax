@@ -140,7 +140,6 @@ class SQLiteDB:
                     "UPDATE chats SET feedback_cleanup = 0"
                 )
             await self.conn.commit()
-            await self.normalize_runtime_config()
             overrides = await self.get_runtime_config()
             for key, value in overrides.items():
                 try:
@@ -729,38 +728,6 @@ class SQLiteDB:
             "SELECT key, value FROM runtime_config ORDER BY key"
         )
         return dict(await cursor.fetchall())
-
-    async def normalize_runtime_config(self) -> None:
-        """Migrate supported legacy uppercase/JSON runtime values in place."""
-        cursor = await self.conn.execute(
-            "SELECT key, value FROM runtime_config ORDER BY updated_at, rowid"
-        )
-        rows = await cursor.fetchall()
-        changed = False
-        for original_key, original_value in rows:
-            key = original_key.strip().lower()
-            if key not in config.RUNTIME_FIELDS:
-                continue
-            try:
-                value = config.set_runtime(key, original_value)
-            except (TypeError, ValueError):
-                logger.warning("Ignored invalid legacy runtime value: %s", original_key)
-                continue
-            if original_key != key:
-                await self.conn.execute(
-                    "DELETE FROM runtime_config WHERE key = ?", (original_key,)
-                )
-            await self.conn.execute(
-                "INSERT INTO runtime_config (key, value, updated_at) "
-                "VALUES (?, ?, unixepoch()) "
-                "ON CONFLICT(key) DO UPDATE SET value = excluded.value, "
-                "updated_at = excluded.updated_at",
-                (key, value),
-            )
-            changed = changed or original_key != key or original_value != value
-        if changed:
-            await self.conn.commit()
-            logger.info("Normalized legacy runtime configuration values.")
 
     async def set_runtime_config(self, key: str, value: str) -> None:
         await self.conn.execute(

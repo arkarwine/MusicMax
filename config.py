@@ -1,4 +1,3 @@
-import json
 from os import getenv
 from urllib.parse import urlparse
 
@@ -55,7 +54,6 @@ class Config:
             url for url in getenv("COOKIES_URL", "").split(" ")
             if url and "batbin.me" in url
         ]
-        self.COOKIE_DIR = getenv("COOKIE_DIR")
         self.DEFAULT_THUMB = getenv("DEFAULT_THUMB", "https://te.legra.ph/file/3e40a408286d4eda24191.jpg")
         self.PING_IMG = getenv("PING_IMG", "https://files.catbox.moe/haagg2.png")
         self.START_IMG = getenv("START_IMG", "https://files.catbox.moe/zvziwk.jpg")
@@ -90,16 +88,6 @@ class Config:
         key = key.strip().lower()
         if key not in self.RUNTIME_FIELDS:
             raise KeyError(key)
-        raw_value = str(raw_value).strip()
-        if len(raw_value) >= 2 and raw_value[0] == raw_value[-1] == '"':
-            try:
-                decoded = json.loads(raw_value)
-                if isinstance(decoded, bool):
-                    raw_value = "on" if decoded else "off"
-                elif isinstance(decoded, (str, int, float)):
-                    raw_value = str(decoded)
-            except json.JSONDecodeError:
-                pass
 
         if key == "duration_limit":
             minutes = int(raw_value)
