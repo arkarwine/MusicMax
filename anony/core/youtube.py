@@ -53,6 +53,14 @@ class YouTube:
             return None
         return random.choice(self.cookies)
 
+    def get_cookie_candidates(self) -> list[str | None]:
+        self.get_cookies()
+        if not self.cookies:
+            return [None]
+        candidates = self.cookies.copy()
+        random.shuffle(candidates)
+        return candidates
+
     async def save_cookies(self, urls: list[str]) -> None:
         logger.info("Saving cookies from urls...")
         async with aiohttp.ClientSession() as session:
@@ -130,7 +138,8 @@ class YouTube:
 
         def existing_file() -> str | None:
             extensions = (".mp4", ".mkv") if video else (
-                ".webm", ".m4a", ".opus", ".ogg", ".mp3", ".aac"
+                ".webm", ".m4a", ".opus", ".ogg", ".mp3", ".aac",
+                ".mp4", ".mkv"
             )
             for extension in extensions:
                 candidate = download_dir / f"{video_id}{extension}"
@@ -141,7 +150,6 @@ class YouTube:
         if cached := existing_file():
             return cached
 
-        cookie = self.get_cookies()
         base_opts = {
             "outtmpl": "downloads/%(id)s.%(ext)s",
             "quiet": True,
@@ -150,49 +158,36 @@ class YouTube:
             "no_warnings": True,
             "overwrites": False,
             "nocheckcertificate": True,
-            "cookiefile": cookie,
         }
 
-        if video:
-            ydl_opts = {
-                **base_opts,
-                "format": (
-                    "bestvideo[height<=720][width<=1280][ext=mp4]+bestaudio/"
-                    "bestvideo[height<=720][width<=1280]+bestaudio/"
-                    "best[height<=720]/best"
-                ),
-                "merge_output_format": "mp4",
-            }
-        else:
-            ydl_opts = {
-                **base_opts,
-                "format": (
-                    "bestaudio[acodec=opus]/bestaudio[ext=webm]/"
-                    "bestaudio/best"
-                ),
-            }
-
         def _download():
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            for cookie in self.get_cookie_candidates():
+                ydl_opts = {**base_opts, "cookiefile": cookie}
+                if video:
+                    ydl_opts["merge_output_format"] = "mp4"
                 try:
-                    ydl.extract_info(url, download=True)
-                except (yt_dlp.utils.DownloadError, yt_dlp.utils.ExtractorError) as ex:
+                    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                        ydl.extract_info(url, download=True)
+                except (
+                    yt_dlp.utils.DownloadError,
+                    yt_dlp.utils.ExtractorError,
+                ) as ex:
                     logger.warning(
-                        "yt-dlp rejected %s using cookie %s: %s",
+                        "yt-dlp native selection rejected %s using cookie %s: %s",
                         video_id,
                         cookie or "none",
                         ex,
                     )
-                    return None
+                    continue
                 except Exception as ex:
                     logger.warning("Download failed: %s", ex)
-                    return None
-            downloaded = existing_file()
-            if not downloaded:
+                    continue
+                if downloaded := existing_file():
+                    return downloaded
                 logger.warning(
                     "yt-dlp completed %s but no playable output file was found",
                     video_id,
                 )
-            return downloaded
+            return None
 
         return await asyncio.to_thread(_download)
