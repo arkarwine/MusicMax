@@ -49,6 +49,18 @@ class Userbot:
                 f"This account is already active in session {duplicate}."
             )
 
+        from anony import db
+
+        # Persist the verified identity before voice attachment. If the voice
+        # layer fails, the account remains manageable and can be retried.
+        await db.update_assistant_session(
+            slot,
+            enabled=False,
+            user_id=client.id,
+            username=client.username or "",
+            display_name=client.name or "",
+        )
+
         self.clients[slot] = client
         try:
             if attach_calls:
@@ -59,8 +71,6 @@ class Userbot:
             self.clients.pop(slot, None)
             await client.stop()
             raise
-
-        from anony import db
 
         await db.update_assistant_session(
             slot,
@@ -103,7 +113,12 @@ class Userbot:
             raise SystemExit("No assistant session could be started.")
         logger.info("Started %s assistant session(s).", len(self.clients))
 
-    async def add_session(self, session_string: str) -> tuple[int, Client]:
+    async def add_session(
+        self,
+        session_string: str,
+        *,
+        keep_on_failure: bool = False,
+    ) -> tuple[int, Client]:
         from anony import db
 
         slot = await db.ensure_assistant_session(session_string, source="runtime")
@@ -117,7 +132,8 @@ class Userbot:
                 attach_calls=True,
             )
         except Exception:
-            if session["source"] == "runtime":
+            await db.update_assistant_session(slot, enabled=False)
+            if session["source"] == "runtime" and not keep_on_failure:
                 await db.delete_assistant_session(slot)
             raise
         return slot, client

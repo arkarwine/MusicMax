@@ -10,7 +10,7 @@ import re
 
 from pyrogram import Client, enums, errors, filters, types
 
-from anony import app, config, db, lang, userbot
+from anony import app, config, db, lang, logger, userbot
 from anony.helpers import buttons, feedback, navigate
 
 PAGE_SIZE = 6
@@ -86,10 +86,10 @@ def _dashboard_markup(sessions: list[dict], page: int) -> types.InlineKeyboardMa
         ])
     rows.extend([
         [buttons.ikb(
-            text="＋ Add assistant",
+            text="➕ Add assistant",
             callback_data=f"session add {page}",
         )],
-        [buttons.ikb(text="‹ Home", callback_data="help home")],
+        [buttons.ikb(text="⬅️ Home", callback_data="help home")],
     ])
     return buttons.ikm(rows)
 
@@ -98,7 +98,7 @@ async def _dashboard(page: int = 0) -> tuple[str, types.InlineKeyboardMarkup]:
     sessions = await db.get_assistant_sessions()
     active = len(userbot.clients)
     text = (
-        f"<b>Assistants</b> · {active} active / {len(sessions)} total\n\n"
+        f"🤖 <b>Assistants</b> · {active} active / {len(sessions)} total\n\n"
         "Choose an account."
     )
     return text, _dashboard_markup(sessions, page)
@@ -138,10 +138,10 @@ def _detail(session: dict, page: int = 0) -> tuple[str, types.InlineKeyboardMark
     if active:
         rows.append([
             buttons.ikb(
-                text="Restart", callback_data=f"session restart {slot} {page}"
+                text="🔄 Restart", callback_data=f"session restart {slot} {page}"
             ),
             buttons.ikb(
-                text="Disable",
+                text="⏸ Disable",
                 callback_data=f"session disable {slot} {page}",
                 style=enums.ButtonStyle.DANGER,
             ),
@@ -149,19 +149,19 @@ def _detail(session: dict, page: int = 0) -> tuple[str, types.InlineKeyboardMark
     else:
         rows.append([
             buttons.ikb(
-                text="Enable",
+                text="▶️ Enable",
                 callback_data=f"session enable {slot} {page}",
                 style=enums.ButtonStyle.DEFAULT,
             )
         ])
     if session["source"] != "environment":
         rows.append([buttons.ikb(
-            text="Remove",
+            text="🗑 Remove",
             callback_data=f"session remove {slot} {page}",
             style=enums.ButtonStyle.DANGER,
         )])
     rows.append([buttons.ikb(
-        text="‹ Assistants", callback_data=f"session page {page}"
+        text="⬅️ Assistants", callback_data=f"session page {page}"
     )])
     return text, buttons.ikm(rows)
 
@@ -176,12 +176,12 @@ def _remove_confirmation(
         ),
         buttons.ikm([[
             buttons.ikb(
-                text="Remove permanently",
+                text="🗑 Remove permanently",
                 callback_data=f"session confirm_remove {slot} {page}",
                 style=enums.ButtonStyle.DANGER,
             ),
             buttons.ikb(
-                text="‹ Keep session",
+                text="⬅️ Keep session",
                 callback_data=f"session view {slot} {page}",
             ),
         ]]),
@@ -203,38 +203,51 @@ async def _show_detail(
 
 def _add_method_view(page: int) -> tuple[str, types.InlineKeyboardMarkup]:
     return (
-        "<b>Add an assistant</b>\n\nChoose how you want to sign in.",
+        "➕ <b>Add an assistant</b>\n\nChoose how you want to sign in.",
         buttons.ikm([
             [
                 buttons.ikb(
-                    text="Phone number",
+                    text="📱 Phone number",
                     callback_data=f"session add_phone {page}",
                 ),
                 buttons.ikb(
-                    text="Session string",
+                    text="🔑 Session string",
                     callback_data=f"session add_string {page}",
                 ),
             ],
             [buttons.ikb(
-                text="‹ Assistants", callback_data=f"session page {page}"
+                text="⬅️ Assistants", callback_data=f"session page {page}"
             )],
         ]),
     )
 
 
-async def _clear_add_flow(user_id: int) -> None:
+def _detach_add_flow(user_id: int) -> AddFlow | None:
     flow = _add_flows.pop(user_id, None)
     if not flow:
-        return
+        return None
     if flow.timeout_task and flow.timeout_task is not asyncio.current_task():
         flow.timeout_task.cancel()
-    if not flow.client:
+    return flow
+
+
+async def _disconnect_auth_client(client: Client | None) -> None:
+    if not client:
         return
     try:
-        if flow.client.is_connected:
-            await flow.client.disconnect()
-    except Exception:
-        pass
+        if client.is_connected:
+            await asyncio.wait_for(client.disconnect(), timeout=3)
+    except (Exception, asyncio.TimeoutError):
+        logger.warning("Temporary phone authentication client did not disconnect cleanly")
+
+
+async def _clear_add_flow(user_id: int) -> None:
+    flow = _detach_add_flow(user_id)
+    if not flow:
+        return
+    if not flow.client:
+        return
+    await _disconnect_auth_client(flow.client)
 
 
 async def _expire_add_flow(user_id: int, chat_id: int) -> None:
@@ -305,8 +318,8 @@ async def _replace_force_prompt(
 
 def _add_failure_markup(page: int) -> types.InlineKeyboardMarkup:
     return buttons.ikm([[
-        buttons.ikb(text="Try again", callback_data=f"session add {page}"),
-        buttons.ikb(text="‹ Assistants", callback_data=f"session page {page}"),
+        buttons.ikb(text="🔄 Try again", callback_data=f"session add {page}"),
+        buttons.ikb(text="⬅️ Assistants", callback_data=f"session page {page}"),
     ]])
 
 
@@ -315,12 +328,47 @@ async def _activate_session_string(
     prompt: types.Message,
     page: int,
     labels: dict,
+    *,
+    verified: bool = False,
 ) -> None:
-    await prompt.edit_text(labels["session_adding"])
+    chat_id = prompt.chat.id
     try:
-        slot, client = await userbot.add_session(session_string)
+        await prompt.delete()
+    except Exception:
+        pass
+    status = await app.send_message(chat_id, labels["session_adding"])
+    try:
+        slot, client = await userbot.add_session(
+            session_string,
+            keep_on_failure=verified,
+        )
     except Exception as exc:
-        await prompt.edit_text(
+        saved = next(
+            (
+                item
+                for item in await db.get_assistant_sessions()
+                if item["session_string"] == session_string
+            ),
+            None,
+        )
+        logger.exception(
+            "Assistant session activation failed after %s authentication",
+            "verified phone" if verified else "session-string",
+        )
+        if verified and saved:
+            detail, markup = _detail(saved, page)
+            await status.edit_text(
+                labels["session_saved_inactive"].format(
+                    saved["slot"],
+                    escape(type(exc).__name__),
+                    escape(str(exc)[:700] or "No details"),
+                )
+                + "\n\n"
+                + detail,
+                reply_markup=markup,
+            )
+            return
+        await status.edit_text(
             labels["session_action_failed"].format(
                 type(exc).__name__, escape(str(exc)[:700] or "No details")
             ),
@@ -329,7 +377,7 @@ async def _activate_session_string(
         return
     session = await db.get_assistant_session(slot)
     text, markup = _detail(session, page)
-    await prompt.edit_text(
+    await status.edit_text(
         labels["session_added_short"].format(
             slot,
             f"@{escape(client.username)}" if client.username else escape(client.name),
@@ -623,9 +671,17 @@ async def _session_add_reply(_, message: types.Message):
             ),
             reply_markup=_add_failure_markup(flow.page),
         )
-    page = flow.page
-    await _clear_add_flow(message.from_user.id)
-    await _activate_session_string(session_string, reply, page, message.lang)
+    flow = _detach_add_flow(message.from_user.id) or flow
+    try:
+        await _activate_session_string(
+            session_string,
+            reply,
+            flow.page,
+            message.lang,
+            verified=True,
+        )
+    finally:
+        await _disconnect_auth_client(flow.client)
 
 
 async def _require_session(message: types.Message) -> dict | None:
