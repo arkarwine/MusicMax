@@ -46,6 +46,7 @@ class CustomEmojiTextTests(unittest.TestCase):
 class CustomEmojiButtonTests(unittest.TestCase):
     def tearDown(self):
         custom_emoji.set_custom_emoji_supported(False)
+        custom_emoji.set_custom_emoji_button_icons_supported(True)
 
     def test_button_uses_icon_without_duplicate_fallback(self):
         custom_emoji.set_custom_emoji_supported(True)
@@ -81,6 +82,27 @@ class CustomEmojiButtonTests(unittest.TestCase):
         )
         self.assertEqual(unsupported.text, "▷ Play")
         self.assertIsNone(unsupported.icon_custom_emoji_id)
+
+    def test_icon_only_button_has_valid_invisible_text_and_clean_fallback(self):
+        custom_emoji.set_custom_emoji_button_icons_supported(True)
+        custom_emoji.set_custom_emoji_supported(True)
+        button = custom_emoji.custom_emoji_button(
+            '<tg-emoji emoji-id="123">▷</tg-emoji>', callback_data="play"
+        )
+        self.assertEqual(button.text, "\u2063")
+
+        markup = custom_emoji.types.InlineKeyboardMarkup([[button]])
+        fallback = custom_emoji.keyboard_without_custom_icons(markup)
+        self.assertEqual(fallback.inline_keyboard[0][0].text, "▷")
+
+    def test_button_rejection_state_is_cached(self):
+        custom_emoji.set_custom_emoji_supported(True)
+        custom_emoji.set_custom_emoji_button_icons_supported(False)
+        button = custom_emoji.custom_emoji_button(
+            '<tg-emoji emoji-id="123">▷</tg-emoji>', callback_data="play"
+        )
+        self.assertEqual(button.text, "▷")
+        self.assertIsNone(button.icon_custom_emoji_id)
 
 
 if __name__ == "__main__":

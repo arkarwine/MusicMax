@@ -15,6 +15,7 @@ from anony.core.custom_emoji import (
     keyboard_has_custom_icons,
     keyboard_without_custom_icons,
     render_custom_emoji_text,
+    set_custom_emoji_button_icons_supported,
     set_custom_emoji_supported,
     strip_custom_emoji_tags,
 )
@@ -63,8 +64,11 @@ class Bot(pyrogram.Client):
         args, kwargs = self._render_call(args, kwargs, text_index, text_key)
         markup = kwargs.get("reply_markup")
         try:
-            return await method(*args, **kwargs)
-        except pyrogram.errors.RPCError:
+            result = await method(*args, **kwargs)
+            if keyboard_has_custom_icons(markup):
+                set_custom_emoji_button_icons_supported(True)
+            return result
+        except pyrogram.errors.BadRequest as first_error:
             original_text = (
                 original_args[text_index]
                 if len(original_args) > text_index
@@ -74,16 +78,36 @@ class Bot(pyrogram.Client):
                 isinstance(original_text, str)
                 and "tg-emoji" in original_text.lower()
             )
-            if not has_tagged_text and not keyboard_has_custom_icons(markup):
+            has_icons = keyboard_has_custom_icons(markup)
+            if not has_tagged_text and not has_icons:
                 raise
+
+            if has_icons:
+                first_rejection = set_custom_emoji_button_icons_supported(False)
+                kwargs["reply_markup"] = keyboard_without_custom_icons(markup)
+                if first_rejection:
+                    logger.warning(
+                        "Telegram rejected custom emoji button icons (%s); "
+                        "button fallbacks enabled for this process.",
+                        first_error,
+                    )
+                try:
+                    # Keep valid custom emoji entities in the message while
+                    # testing whether only the keyboard icon was rejected.
+                    return await method(*args, **kwargs)
+                except pyrogram.errors.BadRequest:
+                    if not has_tagged_text:
+                        raise
+
             logger.warning(
-                "Telegram rejected custom emoji content; retrying with fallbacks."
+                "Telegram rejected tagged custom emoji text (%s); retrying "
+                "this message with its Unicode fallback.",
+                first_error,
             )
             if len(args) > text_index and isinstance(args[text_index], str):
                 args[text_index] = strip_custom_emoji_tags(args[text_index])
             elif isinstance(kwargs.get(text_key), str):
                 kwargs[text_key] = strip_custom_emoji_tags(kwargs[text_key])
-            kwargs["reply_markup"] = keyboard_without_custom_icons(markup)
             return await method(*args, **kwargs)
 
     async def send_message(self, *args, **kwargs):

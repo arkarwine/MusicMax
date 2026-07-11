@@ -23,6 +23,7 @@ _LEADING_TAG_RE = re.compile(
 
 _supported = False
 _detected = False
+_button_icons_supported: bool | None = None
 _button_fallbacks: dict[int, str] = {}
 
 
@@ -70,9 +71,23 @@ def get_custom_emoji_capability_detected() -> bool:
 
 
 def set_custom_emoji_supported(supported: bool) -> None:
-    global _supported, _detected
+    global _supported, _detected, _button_icons_supported
     _supported = bool(supported)
     _detected = True
+    if not _supported:
+        _button_icons_supported = False
+
+
+def custom_emoji_button_icons_supported() -> bool:
+    return _button_icons_supported is not False
+
+
+def set_custom_emoji_button_icons_supported(supported: bool) -> bool:
+    """Set button capability and return whether the state changed."""
+    global _button_icons_supported
+    changed = _button_icons_supported is not bool(supported)
+    _button_icons_supported = bool(supported)
+    return changed
 
 
 def strip_custom_emoji_tags(text: str) -> str:
@@ -110,13 +125,17 @@ def custom_emoji_button(text: str, **kwargs) -> types.InlineKeyboardButton:
     emoji_id = unescape(match.group(2)).strip()
     can_use_icon = (
         custom_emoji_supported()
+        and custom_emoji_button_icons_supported()
         and emoji_id.isdecimal()
         and _button_supports_custom_icons()
     )
     if can_use_icon:
         try:
             button = types.InlineKeyboardButton(
-                text=remainder,
+                # Telegram still requires non-empty button text when a custom
+                # icon is present. INVISIBLE SEPARATOR keeps icon-only controls
+                # visually icon-only without duplicating their fallback glyph.
+                text=remainder or "\u2063",
                 icon_custom_emoji_id=emoji_id,
                 **kwargs,
             )
@@ -157,9 +176,12 @@ def keyboard_without_custom_icons(markup):
             }
             emoji_id = getattr(button, "icon_custom_emoji_id", None)
             if emoji_id:
+                visible_text = values.get("text", "")
+                if visible_text == "\u2063":
+                    visible_text = ""
                 values["text"] = (
                     _button_fallbacks.get(id(button), "")
-                    + values.get("text", "")
+                    + visible_text
                 )
             rebuilt.append(types.InlineKeyboardButton(**values))
         rows.append(rebuilt)
