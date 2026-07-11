@@ -74,6 +74,11 @@ async def start(_, message: types.Message):
 
         return await open_sessions(message)
 
+    if len(message.command) > 1 and message.command[1] == "runtime_config":
+        from anony.plugins.runtime_config import open_runtime_config
+
+        return await open_runtime_config(message)
+
     private = message.chat.type == enums.ChatType.PRIVATE
     _text = (
         message.lang["start_pm"].format(

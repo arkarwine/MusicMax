@@ -98,6 +98,11 @@ class SQLiteDB:
                     key TEXT PRIMARY KEY,
                     value TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS runtime_config (
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL,
+                    updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+                );
                 CREATE TABLE IF NOT EXISTS sudoers (
                     user_id INTEGER PRIMARY KEY
                 );
@@ -135,6 +140,12 @@ class SQLiteDB:
                     "UPDATE chats SET feedback_cleanup = 0"
                 )
             await self.conn.commit()
+            overrides = await self.get_runtime_config()
+            for key, value in overrides.items():
+                try:
+                    config.set_runtime(key, value)
+                except (KeyError, ValueError):
+                    logger.warning("Ignored invalid runtime config value: %s", key)
             await self.compact_assistant_slots()
             logger.info(f"Database connection successful. ({time() - start:.2f}s)")
             await self.load_cache()
@@ -711,6 +722,26 @@ class SQLiteDB:
             selected = row[0] if row else config.LANG_CODE
             self.lang[chat_id] = selected if selected in {"en", "my"} else "en"
         return self.lang[chat_id]
+
+    async def get_runtime_config(self) -> dict[str, str]:
+        cursor = await self.conn.execute(
+            "SELECT key, value FROM runtime_config ORDER BY key"
+        )
+        return dict(await cursor.fetchall())
+
+    async def set_runtime_config(self, key: str, value: str) -> None:
+        await self.conn.execute(
+            "INSERT INTO runtime_config (key, value, updated_at) "
+            "VALUES (?, ?, unixepoch()) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value, "
+            "updated_at = unixepoch()",
+            (key, value),
+        )
+        await self.conn.commit()
+
+    async def reset_runtime_config(self, key: str) -> None:
+        await self.conn.execute("DELETE FROM runtime_config WHERE key = ?", (key,))
+        await self.conn.commit()
 
     async def is_logger(self) -> bool:
         return self.logger

@@ -12,7 +12,7 @@ async def navigate(
     text: str,
     reply_markup: types.InlineKeyboardMarkup,
 ):
-    """Replace the current menu, including media-based start cards."""
+    """Navigate in place, while preserving media-based launcher cards."""
     try:
         await query.answer()
     except errors.QueryIdInvalid:
@@ -20,7 +20,6 @@ async def navigate(
 
     if query.message.caption is not None:
         chat_id = query.message.chat.id
-        await query.message.delete()
         return await app.send_message(
             chat_id,
             text,

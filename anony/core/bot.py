@@ -92,6 +92,9 @@ class Bot(pyrogram.Client):
             ("removesession", "🗑 Remove an assistant"),
             ("status", "📊 Show advanced status"),
             ("logs", "📄 Get the application log"),
+            ("config", "⚙️ Open runtime configuration"),
+            ("setconfig", "✏️ Change a safe runtime setting"),
+            ("resetconfig", "↩️ Restore a runtime setting"),
         ]
         commands = [
             pyrogram.types.BotCommand(command, description)

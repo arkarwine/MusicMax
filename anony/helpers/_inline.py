@@ -50,9 +50,9 @@ class Inline:
                 )
                 if playing
                 else self.ikb(
-                    text="▶︎",
+                    text="▷",
                     callback_data=f"controls resume {chat_id}",
-                    style=enums.ButtonStyle.SUCCESS,
+                    style=enums.ButtonStyle.DANGER,
                 )
             )
             keyboard.append(
@@ -64,13 +64,13 @@ class Inline:
                     self.ikb(
                         text="◉",
                         callback_data=f"controls stop {chat_id}",
-                        style=enums.ButtonStyle.DANGER,
+                        style=enums.ButtonStyle.DEFAULT,
                     ),
                     playback,
                     self.ikb(
-                        text="▶︎|",
+                        text="▷|",
                         callback_data=f"controls skip {chat_id}",
-                        style=enums.ButtonStyle.DANGER,
+                        style=enums.ButtonStyle.DEFAULT,
                     ),
                     self.ikb(
                         text="⟲",
@@ -175,19 +175,23 @@ class Inline:
                 )],
                 [
                     self.ikb(
-                        text="❚❚" if playing else "▶︎",
+                        text="❚❚" if playing else "▷",
                         callback_data=f"controls {_action} {chat_id} q",
-                        style=enums.ButtonStyle.SUCCESS,
+                        style=(
+                            enums.ButtonStyle.SUCCESS
+                            if playing
+                            else enums.ButtonStyle.DANGER
+                        ),
                     ),
                     self.ikb(
-                        text="▶︎|",
+                        text="▷|",
                         callback_data=f"controls skip {chat_id} q",
-                        style=enums.ButtonStyle.DANGER,
+                        style=enums.ButtonStyle.DEFAULT,
                     ),
                     self.ikb(
                         text="◉",
                         callback_data=f"controls stop {chat_id} q",
-                        style=enums.ButtonStyle.DANGER,
+                        style=enums.ButtonStyle.DEFAULT,
                     ),
                 ],
             ]
