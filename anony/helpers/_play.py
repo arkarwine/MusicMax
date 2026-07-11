@@ -78,7 +78,12 @@ async def _invite_assistant(client, m: types.Message, status) -> str:
             logger.exception("Could not create an assistant invite for chat %s", chat_id)
             return "invite_failed"
 
-    await status.edit_text(m.lang["play_invite"].format(client.name))
+    invite_text = m.lang["play_invite"].format(client.name)
+    if status.text != invite_text:
+        try:
+            await status.edit_text(invite_text)
+        except errors.MessageNotModified:
+            pass
     join_pending = False
     try:
         try:
