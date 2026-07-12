@@ -44,6 +44,18 @@ class StatsCard:
         return str(value)
 
     @staticmethod
+    def _percentage_change(days: list[dict], fields: tuple[str, ...]) -> int:
+        if len(days) < 2:
+            return 0
+        previous = sum(int(days[-2].get(field, 0)) for field in fields)
+        current = sum(int(days[-1].get(field, 0)) for field in fields)
+        if previous == 0:
+            change = 100 if current > 0 else 0
+        else:
+            change = round((current - previous) * 100 / previous)
+        return max(-100, min(change, 999))
+
+    @staticmethod
     def _rounded(draw, box, radius=24, fill=None, outline=None, width=1):
         draw.rounded_rectangle(
             box, radius=radius, fill=fill, outline=outline, width=width
@@ -64,16 +76,41 @@ class StatsCard:
         value_font = self._font(42 if len(value) < 13 else 32, True)
         draw.text((x1 + 55, y1 + 62), value, font=value_font, fill=self.TEXT)
 
-    def _chart_frame(self, draw, box, title: str, subtitle: str) -> tuple:
+    def _chart_frame(
+        self, draw, box, title: str, subtitle: str, change: int
+    ) -> tuple:
         self._rounded(draw, box, fill=self.PANEL, outline=(43, 55, 86))
         x1, y1, x2, y2 = box
         draw.text((x1 + 28, y1 + 22), title, font=self._font(27, True), fill=self.TEXT)
         draw.text((x1 + 28, y1 + 59), subtitle, font=self._font(18), fill=self.MUTED)
+        change_color = (
+            self.GREEN
+            if change > 0
+            else self.AMBER if change < 0 else self.MUTED
+        )
+        change_text = f"{change:+d}%" if change else "0%"
+        self._rounded(
+            draw,
+            (x2 - 132, y1 + 57, x2 - 28, y1 + 91),
+            radius=17,
+            fill=self.PANEL_ALT,
+        )
+        draw.text(
+            (x2 - 80, y1 + 62),
+            change_text,
+            font=self._font(17, True),
+            fill=change_color,
+            anchor="ma",
+        )
         return x1 + 42, y1 + 105, x2 - 30, y2 - 48
 
     def _growth_chart(self, draw, box, days: list[dict]) -> None:
         x1, y1, x2, y2 = self._chart_frame(
-            draw, box, "Audience growth", "New users and groups · last 7 days"
+            draw,
+            box,
+            "Bot growth",
+            "New users and groups · vs yesterday",
+            self._percentage_change(days, ("users_added", "groups_added")),
         )
         max_value = max(
             [1] + [max(day["users_added"], day["groups_added"]) for day in days]
@@ -105,7 +142,11 @@ class StatsCard:
 
     def _activity_chart(self, draw, box, days: list[dict]) -> None:
         x1, y1, x2, y2 = self._chart_frame(
-            draw, box, "Playback activity", "Daily plays and peak streams"
+            draw,
+            box,
+            "Playback activity",
+            "Daily plays and peak streams · vs yesterday",
+            self._percentage_change(days, ("plays",)),
         )
         max_value = max(
             [1] + [max(day["plays"], day["peak_streams"]) for day in days]
@@ -150,7 +191,7 @@ class StatsCard:
 
         draw.ellipse((1250, -260, 1750, 240), fill=(35, 48, 88))
         draw.text((70, 52), data["bot_name"], font=self._font(25, True), fill=self.BLUE)
-        draw.text((70, 91), "ANALYTICS", font=self._font(54, True), fill=self.TEXT)
+        draw.text((70, 91), "DASHBOARD", font=self._font(54, True), fill=self.TEXT)
         draw.text(
             (70, 154), "LIVE REACH  /  7-DAY PERFORMANCE",
             font=self._font(18, True), fill=self.MUTED,
@@ -182,7 +223,7 @@ class StatsCard:
             font=self._font(16), fill=self.MUTED,
         )
         draw.text(
-            (1530, 961), "Melody analytics",
+            (1530, 961), "Melody dashboard",
             font=self._font(16, True), fill=self.MUTED, anchor="ra",
         )
 

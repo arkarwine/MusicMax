@@ -8,7 +8,7 @@ from html import escape
 
 from pyrogram import filters, types
 
-from anony import app, config, lang, logger, yt
+from anony import app, config, lang, logger, thumb, yt
 
 
 _song_prompts: dict[tuple[int, int], tuple[int, float]] = {}
@@ -65,6 +65,7 @@ async def _deliver_song(message: types.Message, query: str | None) -> None:
             return await status.edit_text(message.lang["song_failed"])
 
         await status.edit_text(message.lang["song_uploading"])
+        cover = await thumb.audio_cover(track)
         await app.send_audio(
             chat_id=message.chat.id,
             audio=song["file_path"],
@@ -74,6 +75,7 @@ async def _deliver_song(message: types.Message, query: str | None) -> None:
             title=song["title"][:64],
             performer=song["performer"][:64],
             duration=song["duration"],
+            thumb=cover,
             reply_to_message_id=message.id,
             disable_notification=True,
         )

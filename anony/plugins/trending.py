@@ -20,12 +20,11 @@ _RANKS = (
     '<tg-emoji emoji-id="5411284026998681990">7️⃣</tg-emoji>',
     '<tg-emoji emoji-id="5411120178291311191">8️⃣</tg-emoji>',
     '<tg-emoji emoji-id="5411457934519461707">9️⃣</tg-emoji>',
-    "🔟",
 )
 
 
 async def _trending_text(_lang: dict) -> str:
-    tracks = await db.get_trending_tracks(days=30, limit=10)
+    tracks = await db.get_trending_tracks(days=30, limit=9)
     if not tracks:
         return _lang["trending_empty"]
 

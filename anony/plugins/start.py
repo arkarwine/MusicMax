@@ -6,8 +6,21 @@ import asyncio
 from html import escape
 from pyrogram import enums, filters, types
 
-from anony import app, config, db, lang
+from anony import app, config, db, lang, logger
 from anony.helpers import buttons, can_configure_group, utils
+
+
+async def _start_artwork():
+    if config.START_IMG:
+        return config.START_IMG
+    try:
+        from anony.plugins.stats import _build_stats
+
+        photo, _ = await _build_stats()
+        return photo
+    except Exception:
+        logger.exception("Could not generate the dashboard for Start")
+        return config.DEFAULT_THUMB
 
 
 async def open_group_settings(message: types.Message, chat_id: int) -> None:
@@ -95,7 +108,7 @@ async def start(_, message: types.Message):
         chat_id=message.chat.id,
     )
     await message.reply_photo(
-        photo=config.START_IMG,
+        photo=await _start_artwork(),
         caption=_text,
         reply_markup=key,
         quote=not private,

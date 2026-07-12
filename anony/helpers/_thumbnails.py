@@ -38,6 +38,35 @@ class Thumbnail:
                 file.write(await resp.read())
         return output_path
 
+    async def audio_cover(self, song: Track) -> str | None:
+        """Create a Telegram-compatible square JPEG cover for an audio file."""
+        if not song.thumbnail:
+            return None
+        output = f"cache/song_{song.id}.jpg"
+        temp = f"cache/song_{song.id}.source"
+        try:
+            if os.path.exists(output) and os.path.getsize(output) <= 200_000:
+                return output
+            await self.save_thumb(temp, song.thumbnail)
+            with Image.open(temp) as source:
+                cover = ImageOps.fit(
+                    source.convert("RGB"),
+                    (320, 320),
+                    method=Image.Resampling.LANCZOS,
+                )
+                for quality in (88, 76, 64, 52):
+                    cover.save(output, "JPEG", quality=quality, optimize=True)
+                    if os.path.getsize(output) <= 200_000:
+                        return output
+            return output if os.path.getsize(output) <= 200_000 else None
+        except Exception:
+            return None
+        finally:
+            try:
+                os.remove(temp)
+            except OSError:
+                pass
+
     async def generate(self, song: Track, size=(1280, 720)) -> str:
         try:
             temp = f"cache/temp_{song.id}.jpg"
