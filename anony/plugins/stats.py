@@ -2,69 +2,92 @@
 # Licensed under the MIT License.
 # This file is part of AnonXMusic
 
-import os
-import platform
-import sys
-from html import escape
 
-import psutil
-from pyrogram import __version__, enums, filters, types
-from pytgcalls import __version__ as pytgver
+import time
+from datetime import datetime, timezone
 
-from anony import app, db, lang, userbot
-from anony.helpers import navigate
-from anony.plugins import all_modules
+from pyrogram import errors, filters, types
+
+from anony import anon, app, boot, db, lang, logger, userbot
+from anony.helpers._stats_card import stats_card
 
 
-async def _stats_text(user_id: int) -> str:
-    groups = len(await db.get_chats())
+def _uptime() -> str:
+    elapsed = max(int(time.time() - boot), 0)
+    days, remainder = divmod(elapsed, 86400)
+    hours, remainder = divmod(remainder, 3600)
+    minutes = remainder // 60
+    if days:
+        return f"{days}d {hours:02d}h"
+    if hours:
+        return f"{hours:02d}h {minutes:02d}m"
+    return f"{minutes:02d}m"
+
+
+async def _stats_data() -> dict:
     users = len(await db.get_users())
-    text = (
-        f"📊 <b>{escape(app.name)} reach</b>\n\n"
-        f"<blockquote>👥 <b>{users}</b> users · "
-        f"💬 <b>{groups}</b> groups\n"
-        f"🎧 <b>{len(db.active_calls)}</b> playing · "
-        f"🤖 <b>{len(userbot.clients)}</b> assistants</blockquote>"
-    )
-    if user_id not in app.sudoers:
-        return text
-
-    process = psutil.Process(os.getpid())
-    storage = psutil.disk_usage("/")
-    return text + lang.languages["en"]["stats_sudo"].format(
-        len(all_modules),
-        platform.system(),
-        f"{process.memory_info().rss / 1024**2:.2f}",
-        round(psutil.virtual_memory().total / (1024.0**3)),
-        process.cpu_percent(),
-        psutil.cpu_count(),
-        f"{storage.used / (1024.0**3):.2f}",
-        f"{storage.total / (1024.0**3):.2f}",
-        sys.version.split()[0],
-        __version__,
-        pytgver,
-    )
+    groups = len(await db.get_chats())
+    assistants = len(set(userbot.clients) & set(anon.clients))
+    bot_ready = bool(getattr(app, "is_connected", False))
+    database_ready = db.connection is not None
+    if bot_ready and database_ready and assistants:
+        status = "Operational"
+    elif bot_ready and database_ready:
+        status = "Limited"
+    else:
+        status = "Degraded"
+    return {
+        "bot_name": app.name,
+        "users": users,
+        "groups": groups,
+        "active_streams": len(db.active_calls),
+        "assistants": assistants,
+        "uptime": _uptime(),
+        "status": status,
+        "days": await db.get_analytics(7),
+        "updated": datetime.now(timezone.utc).strftime("%d %b · %H:%M"),
+    }
 
 
-def _stats_markup(_private: bool) -> None:
-    return None
+async def _build_stats() -> tuple:
+    data = await _stats_data()
+    return await stats_card.generate(data), data
 
 
 @app.on_message(filters.command(["stats"]) & ~app.bl_users)
 @lang.language()
 async def _stats(_, message: types.Message):
-    await message.reply_text(
-        await _stats_text(message.from_user.id),
-        reply_markup=_stats_markup(message.chat.type == enums.ChatType.PRIVATE),
-        disable_notification=True,
-    )
+    try:
+        photo, _ = await _build_stats()
+        await message.reply_photo(
+            photo=photo,
+            caption=message.lang["stats_caption"],
+            disable_notification=True,
+        )
+    except Exception:
+        logger.exception("Could not generate the analytics report")
+        await message.reply_text(message.lang["stats_failed"])
 
 
 @app.on_callback_query(filters.regex(r"^stats view$") & ~app.bl_users)
 @lang.language()
 async def _stats_callback(_, query: types.CallbackQuery):
-    await navigate(
-        query,
-        await _stats_text(query.from_user.id),
-        _stats_markup(True),
-    )
+    try:
+        await query.answer(query.lang["stats_fetching"])
+    except errors.QueryIdInvalid:
+        pass
+    try:
+        photo, _ = await _build_stats()
+        await app.send_photo(
+            chat_id=query.message.chat.id,
+            photo=photo,
+            caption=query.lang["stats_caption"],
+            disable_notification=True,
+        )
+    except Exception:
+        logger.exception("Could not generate the callback analytics report")
+        await app.send_message(
+            query.message.chat.id,
+            query.lang["stats_failed"],
+            disable_notification=True,
+        )

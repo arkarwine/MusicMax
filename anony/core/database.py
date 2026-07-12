@@ -8,7 +8,7 @@ import json
 import sqlite3
 from contextlib import suppress
 from dataclasses import fields, is_dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from random import randint
 from time import time
@@ -126,6 +126,13 @@ class SQLiteDB:
                 );
                 CREATE INDEX IF NOT EXISTS queue_items_chat
                     ON queue_items (chat_id, item_order);
+                CREATE TABLE IF NOT EXISTS analytics_daily (
+                    day TEXT PRIMARY KEY,
+                    users_added INTEGER NOT NULL DEFAULT 0,
+                    groups_added INTEGER NOT NULL DEFAULT 0,
+                    plays INTEGER NOT NULL DEFAULT 0,
+                    peak_streams INTEGER NOT NULL DEFAULT 0
+                );
                 """
             )
             await self._ensure_column(
@@ -622,6 +629,68 @@ class SQLiteDB:
             return self.blacklisted
         return values
 
+    async def _increment_analytics(
+        self,
+        *,
+        users_added: int = 0,
+        groups_added: int = 0,
+        plays: int = 0,
+        peak_streams: int = 0,
+    ) -> None:
+        await self.conn.execute(
+            "INSERT INTO analytics_daily "
+            "(day, users_added, groups_added, plays, peak_streams) "
+            "VALUES (date('now'), ?, ?, ?, ?) "
+            "ON CONFLICT(day) DO UPDATE SET "
+            "users_added = users_added + excluded.users_added, "
+            "groups_added = groups_added + excluded.groups_added, "
+            "plays = plays + excluded.plays, "
+            "peak_streams = MAX(peak_streams, excluded.peak_streams)",
+            (users_added, groups_added, plays, peak_streams),
+        )
+
+    async def record_play(self, active_streams: int) -> None:
+        async with self.write_lock:
+            await self._increment_analytics(
+                plays=1,
+                peak_streams=max(active_streams, 0),
+            )
+            await self.conn.commit()
+
+    async def get_analytics(self, days: int = 7) -> list[dict]:
+        days = max(1, min(days, 31))
+        today = datetime.now(timezone.utc).date()
+        first = today - timedelta(days=days - 1)
+        cursor = await self.conn.execute(
+            "SELECT day, users_added, groups_added, plays, peak_streams "
+            "FROM analytics_daily WHERE day >= ? ORDER BY day",
+            (first.isoformat(),),
+        )
+        stored = {
+            row[0]: {
+                "users_added": row[1],
+                "groups_added": row[2],
+                "plays": row[3],
+                "peak_streams": row[4],
+            }
+            for row in await cursor.fetchall()
+        }
+        result = []
+        for offset in range(days):
+            day = first + timedelta(days=offset)
+            values = stored.get(day.isoformat(), {})
+            result.append(
+                {
+                    "day": day.isoformat(),
+                    "label": day.strftime("%a"),
+                    "users_added": values.get("users_added", 0),
+                    "groups_added": values.get("groups_added", 0),
+                    "plays": values.get("plays", 0),
+                    "peak_streams": values.get("peak_streams", 0),
+                }
+            )
+        return result
+
     async def is_chat(self, chat_id: int) -> bool:
         return chat_id in self.chats
 
@@ -629,6 +698,7 @@ class SQLiteDB:
         if not await self.is_chat(chat_id):
             self.chats.append(chat_id)
             await self.conn.execute("INSERT OR IGNORE INTO chats (chat_id) VALUES (?)", (chat_id,))
+            await self._increment_analytics(groups_added=1)
             await self.conn.commit()
 
     async def rm_chat(self, chat_id: int) -> None:
@@ -825,6 +895,7 @@ class SQLiteDB:
         if not await self.is_user(user_id):
             self.users.append(user_id)
             await self.conn.execute("INSERT OR IGNORE INTO users (user_id) VALUES (?)", (user_id,))
+            await self._increment_analytics(users_added=1)
             await self.conn.commit()
 
     async def rm_user(self, user_id: int) -> None:

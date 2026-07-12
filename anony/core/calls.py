@@ -179,6 +179,8 @@ class TgCall(PyTgCalls):
                 await db.add_call(chat_id)
                 await db.save_queue(chat_id, queue.get_queue(chat_id))
                 await db.save_playback(chat_id, "playing", seek_time)
+                if not new_session:
+                    await db.record_play(len(db.active_calls))
                 try:
                     await self._show_play_card(
                         chat_id, message, media, _lang, _thumb
