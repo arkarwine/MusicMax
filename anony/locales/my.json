@@ -146,13 +146,13 @@
     "stopped": "ထုတ်လွှင့်မှု ပြီးဆုံးသည်",
     "source": "ရင်းမြစ်",
     "support": "အကူအညီ",
-    "help_0": "စီမံခန့်ခွဲသူများ",
-    "help_1": "ခွင့်ပြုချက်",
-    "help_2": "ပိတ်ပင်ထားသောစာရင်း",
-    "help_3": "ဘာသာစကား",
-    "help_4": "Ping",
-    "help_5": "ဖွင့်ပါ",
-    "help_6": "တန်းစီစာရင်း",
-    "help_7": "အချက်အလက်",
-    "help_8": "Sudoers"
+    "help_0": "<tg-emoji emoji-id=\"5408894951440279259\">🛠️</tg-emoji> စီမံခန့်ခွဲသူများ",
+    "help_1": "<tg-emoji emoji-id=\"5411585799990830248\">👤</tg-emoji> ခွင့်ပြုချက်",
+    "help_2": "<tg-emoji emoji-id=\"5409189019261103031\">🛡️</tg-emoji> ပိတ်ပင်ထားသောစာရင်း",
+    "help_3": "<tg-emoji emoji-id=\"5411500398861118321\">🌐</tg-emoji> ဘာသာစကား",
+    "help_4": "<tg-emoji emoji-id=\"5409338071806146386\">✨</tg-emoji> Ping",
+    "help_5": "<tg-emoji emoji-id=\"5409194048667807708\">🎵</tg-emoji> ဖွင့်ပါ",
+    "help_6": "<tg-emoji emoji-id=\"5411284026998681990\">📋</tg-emoji> တန်းစီစာရင်း",
+    "help_7": "<tg-emoji emoji-id=\"5411120178291311191\">📊</tg-emoji> အချက်အလက်",
+    "help_8": "<tg-emoji emoji-id=\"5411457934519461707\">⚙️</tg-emoji> Sudoers"
 }

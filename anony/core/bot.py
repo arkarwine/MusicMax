@@ -41,6 +41,7 @@ class Bot(pyrogram.Client):
         )
         self.owner = config.OWNER_ID
         self.owner_username: str | None = None
+        self.owner_is_premium = False
         self.owner_url = f"tg://user?id={self.owner}"
         self.logger: int | None = None
         self.bl_users = pyrogram.filters.user()
@@ -210,6 +211,13 @@ class Bot(pyrogram.Client):
     async def detect_custom_emoji_support(self) -> bool:
         if custom_emoji_capability_detected():
             return custom_emoji_supported()
+        if not self.owner_is_premium:
+            set_custom_emoji_supported(False)
+            logger.info(
+                "Telegram custom emoji rendering: unsupported; "
+                "the owner is not Premium, using fallbacks."
+            )
+            return False
         sent = None
         supported = False
         try:
@@ -254,10 +262,10 @@ class Bot(pyrogram.Client):
         self.name = self.me.first_name
         self.username = self.me.username
         self.mention = self.me.mention
-        await self.detect_custom_emoji_support()
         try:
             owner = await self.get_users(self.owner)
             self.owner_username = owner.username
+            self.owner_is_premium = bool(getattr(owner, "is_premium", False))
             if owner.username:
                 self.owner_url = f"https://t.me/{owner.username}"
             logger.info(
@@ -269,6 +277,8 @@ class Bot(pyrogram.Client):
             logger.warning(
                 "Could not resolve owner username; using the numeric Telegram link."
             )
+
+        await self.detect_custom_emoji_support()
 
         self.commands = [
             ("play", "Play a song or link"),
