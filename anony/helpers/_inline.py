@@ -346,7 +346,7 @@ class Inline:
             rows.append([self.ikb(
                 text=lang["start_add_button"].format(lang["add_me"]),
                 url=f"https://t.me/{app.username}?startgroup=true",
-                style=enums.ButtonStyle.SUCCESS,
+                style=enums.ButtonStyle.DANGER,
             )])
             rows += [[
                 self.ikb(text=lang["help"], callback_data="help"),
