@@ -282,6 +282,7 @@ class Bot(pyrogram.Client):
 
         self.commands = [
             ("play", "Play a song or link"),
+            ("song", "Download a song as audio"),
             ("vplay", "Play a video"),
             ("pause", "Pause playback"),
             ("resume", "Resume playback or a saved queue"),

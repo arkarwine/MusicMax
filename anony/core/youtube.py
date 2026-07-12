@@ -115,6 +115,62 @@ class YouTube:
             pass
         return tracks
 
+    async def download_song(self, video_id: str) -> dict | None:
+        """Download Telegram-ready MP3 audio while retaining source metadata."""
+        url = self.base + video_id
+        filename = Path("downloads") / f"song_{video_id}.mp3"
+        cookie = self.get_cookies()
+        options = {
+            "format": "bestaudio/best",
+            "outtmpl": "downloads/song_%(id)s.%(ext)s",
+            "quiet": True,
+            "noplaylist": True,
+            "geo_bypass": True,
+            "no_warnings": True,
+            "overwrites": False,
+            "nocheckcertificate": True,
+            "cookiefile": cookie,
+            "postprocessors": [
+                {
+                    "key": "FFmpegExtractAudio",
+                    "preferredcodec": "mp3",
+                    "preferredquality": "192",
+                },
+                {
+                    "key": "FFmpegMetadata",
+                    "add_metadata": True,
+                },
+            ],
+        }
+
+        def _download():
+            try:
+                with yt_dlp.YoutubeDL(options) as ydl:
+                    info = ydl.extract_info(url, download=not filename.exists())
+                if not filename.exists():
+                    return None
+                return {
+                    "file_path": str(filename),
+                    "title": str(
+                        info.get("track") or info.get("title") or "Song"
+                    ),
+                    "performer": str(
+                        info.get("artist")
+                        or info.get("uploader")
+                        or info.get("channel")
+                        or ""
+                    ),
+                    "duration": int(info.get("duration") or 0),
+                    "url": info.get("webpage_url") or url,
+                }
+            except (yt_dlp.utils.DownloadError, yt_dlp.utils.ExtractorError):
+                return None
+            except Exception as ex:
+                logger.warning("Song download failed: %s", ex)
+                return None
+
+        return await asyncio.to_thread(_download)
+
     async def download(self, video_id: str, video: bool = False) -> str | None:
         url = self.base + video_id
         ext = "mp4" if video else "webm"
