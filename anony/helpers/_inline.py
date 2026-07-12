@@ -89,7 +89,9 @@ class Inline:
         self, _lang: dict, back: bool = False, sudo: bool = False
     ) -> types.InlineKeyboardMarkup | None:
         if back:
-            return None
+            return self.ikm([[
+                self.ikb(text=_lang["back"], callback_data="help back")
+            ]])
 
         cbs = [
             "admins", "auth", "blist", "lang", "ping",
@@ -342,7 +344,7 @@ class Inline:
         rows = []
         if private:
             rows.append([self.ikb(
-                text=lang["add_me"],
+                text=lang["start_add_button"].format(lang["add_me"]),
                 url=f"https://t.me/{app.username}?startgroup=true",
                 style=enums.ButtonStyle.SUCCESS,
             )])
@@ -353,12 +355,12 @@ class Inline:
             ]]
             rows += [
                 [
-                    self.ikb(text=lang["support"], url=config.SUPPORT_CHAT),
-                    self.ikb(text=lang["channel"], url=config.SUPPORT_CHANNEL),
+                    self.ikb(text=lang["start_support_button"].format(lang["support"]), url=config.SUPPORT_CHAT),
+                    self.ikb(text=lang["start_channel_button"].format(lang["channel"]), url=config.SUPPORT_CHANNEL),
                 ],
                 [
                     self.ikb(
-                        text=lang["owner"],
+                        text=lang["start_owner_button"].format(lang["owner"]),
                         url=app.owner_url,
                     )
                 ]
@@ -370,7 +372,7 @@ class Inline:
                     url=f"https://t.me/{app.username}?start=help",
                 ),
                 self.ikb(
-                    text=lang["settings"],
+                    text="⚙️ " + lang["settings"],
                     url=f"https://t.me/{app.username}?start=settings_{chat_id}",
                 ),
             ])
