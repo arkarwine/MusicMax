@@ -295,6 +295,7 @@ class Bot(pyrogram.Client):
             ("language", "Change the group language"),
             ("ping", "Check whether the bot is responsive"),
             ("stats", "Show bot reach and activity"),
+            ("trending", "Show the most-played tracks"),
             ("help", "Show commands and help"),
         ]
         try:

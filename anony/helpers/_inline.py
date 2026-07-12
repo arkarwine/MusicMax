@@ -353,6 +353,12 @@ class Inline:
                 self.ikb(text=lang["language"], callback_data="language"),
                 self.ikb(text=lang["stats"], callback_data="stats view"),
             ]]
+            rows.append([
+                self.ikb(
+                    text=lang["trending"],
+                    callback_data="trending view",
+                )
+            ])
             rows += [
                 [
                     self.ikb(text=lang["start_support_button"].format(lang["support"]), url=config.SUPPORT_CHAT),

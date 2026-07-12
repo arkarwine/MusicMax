@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from pyrogram import errors, filters, types
 
 from anony import anon, app, boot, db, lang, logger, userbot
+from anony.helpers import buttons
 from anony.helpers._stats_card import stats_card
 
 
@@ -54,6 +55,12 @@ async def _build_stats() -> tuple:
     return await stats_card.generate(data), data
 
 
+def _stats_markup(_lang: dict) -> types.InlineKeyboardMarkup:
+    return types.InlineKeyboardMarkup(
+        [[buttons.ikb(text=_lang["stats_refresh"], callback_data="stats refresh")]]
+    )
+
+
 @app.on_message(filters.command(["stats"]) & ~app.bl_users)
 @lang.language()
 async def _stats(_, message: types.Message):
@@ -63,6 +70,7 @@ async def _stats(_, message: types.Message):
             photo=photo,
             caption=message.lang["stats_caption"],
             disable_notification=True,
+            reply_markup=_stats_markup(message.lang),
         )
     except Exception:
         logger.exception("Could not generate the analytics report")
@@ -83,9 +91,37 @@ async def _stats_callback(_, query: types.CallbackQuery):
             photo=photo,
             caption=query.lang["stats_caption"],
             disable_notification=True,
+            reply_markup=_stats_markup(query.lang),
         )
     except Exception:
         logger.exception("Could not generate the callback analytics report")
+        await app.send_message(
+            query.message.chat.id,
+            query.lang["stats_failed"],
+            disable_notification=True,
+        )
+
+
+@app.on_callback_query(filters.regex(r"^stats refresh$") & ~app.bl_users)
+@lang.language()
+async def _stats_refresh(_, query: types.CallbackQuery):
+    try:
+        await query.answer(query.lang["stats_refreshing"])
+    except errors.QueryIdInvalid:
+        pass
+    try:
+        photo, _ = await _build_stats()
+        await query.message.edit_media(
+            types.InputMediaPhoto(
+                media=photo,
+                caption=query.lang["stats_caption"],
+            ),
+            reply_markup=_stats_markup(query.lang),
+        )
+    except errors.MessageNotModified:
+        return
+    except Exception:
+        logger.exception("Could not refresh the analytics report")
         await app.send_message(
             query.message.chat.id,
             query.lang["stats_failed"],

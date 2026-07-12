@@ -133,6 +133,17 @@ class SQLiteDB:
                     plays INTEGER NOT NULL DEFAULT 0,
                     peak_streams INTEGER NOT NULL DEFAULT 0
                 );
+                CREATE TABLE IF NOT EXISTS track_plays (
+                    day TEXT NOT NULL,
+                    track_id TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    url TEXT,
+                    plays INTEGER NOT NULL DEFAULT 0,
+                    last_played INTEGER NOT NULL DEFAULT (unixepoch()),
+                    PRIMARY KEY (day, track_id)
+                );
+                CREATE INDEX IF NOT EXISTS track_plays_recent
+                    ON track_plays (day, plays DESC);
                 """
             )
             await self._ensure_column(
@@ -649,13 +660,62 @@ class SQLiteDB:
             (users_added, groups_added, plays, peak_streams),
         )
 
-    async def record_play(self, active_streams: int) -> None:
+    async def record_play(
+        self,
+        active_streams: int,
+        *,
+        track_id: str | None = None,
+        title: str | None = None,
+        url: str | None = None,
+    ) -> None:
         async with self.write_lock:
             await self._increment_analytics(
                 plays=1,
                 peak_streams=max(active_streams, 0),
             )
+            if track_id and title:
+                await self.conn.execute(
+                    "INSERT INTO track_plays "
+                    "(day, track_id, title, url, plays, last_played) "
+                    "VALUES (date('now'), ?, ?, ?, 1, unixepoch()) "
+                    "ON CONFLICT(day, track_id) DO UPDATE SET "
+                    "title = excluded.title, url = excluded.url, "
+                    "plays = track_plays.plays + 1, last_played = unixepoch()",
+                    (
+                        str(track_id)[:128],
+                        str(title)[:300],
+                        str(url)[:500] if url else None,
+                    ),
+                )
+                await self.conn.execute(
+                    "DELETE FROM track_plays WHERE day < date('now', '-30 days')"
+                )
             await self.conn.commit()
+
+    async def get_trending_tracks(
+        self,
+        days: int = 7,
+        limit: int = 10,
+    ) -> list[dict]:
+        days = max(1, min(days, 30))
+        limit = max(1, min(limit, 20))
+        cursor = await self.conn.execute(
+            "SELECT track_id, MAX(title), MAX(url), SUM(plays), "
+            "MAX(last_played) FROM track_plays "
+            "WHERE day >= date('now', ?) GROUP BY track_id "
+            "ORDER BY SUM(plays) DESC, MAX(last_played) DESC LIMIT ?",
+            (f"-{days - 1} days", limit),
+        )
+        return [
+            {
+                "id": row[0],
+                "title": row[1],
+                "url": row[2],
+                "plays": row[3],
+                "last_played": row[4],
+            }
+            for row in await cursor.fetchall()
+        ]
 
     async def get_analytics(self, days: int = 7) -> list[dict]:
         days = max(1, min(days, 31))
