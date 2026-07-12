@@ -12,7 +12,7 @@ from pyrogram import __version__, enums, filters, types
 from pytgcalls import __version__ as pytgver
 
 from anony import app, db, lang, userbot
-from anony.helpers import buttons, navigate
+from anony.helpers import navigate
 from anony.plugins import all_modules
 
 
@@ -46,12 +46,8 @@ async def _stats_text(user_id: int) -> str:
     )
 
 
-def _stats_markup(private: bool) -> types.InlineKeyboardMarkup | None:
-    if not private:
-        return None
-    return buttons.ikm([[
-        buttons.ikb(text="⬅️ Home", callback_data="help home")
-    ]])
+def _stats_markup(_private: bool) -> None:
+    return None
 
 
 @app.on_message(filters.command(["stats"]) & ~app.bl_users)

@@ -87,29 +87,28 @@ class Inline:
 
     def help_markup(
         self, _lang: dict, back: bool = False, sudo: bool = False
-    ) -> types.InlineKeyboardMarkup:
+    ) -> types.InlineKeyboardMarkup | None:
         if back:
-            rows = [[self.ikb(text=_lang["back"], callback_data="help back")]]
-        else:
-            cbs = [
-                "admins", "auth", "blist", "lang", "ping",
-                "play", "queue", "stats",
-            ]
-            if sudo:
-                cbs.append("sudo")
-            buttons = [
-                self.ikb(
-                    text=_lang[f"help_{i}"],
-                    callback_data=f"help {cb}",
-                    style=enums.ButtonStyle.DEFAULT,
-                )
-                for i, cb in enumerate(cbs)
-            ]
-            rows = [buttons[i : i + 3] for i in range(0, len(buttons), 3)]
-            rows.append([
-                self.ikb(text=_lang["home"], callback_data="help home")
-            ])
+            return None
 
+        cbs = [
+            "admins", "auth", "blist", "lang", "ping",
+            "play", "queue", "stats",
+        ]
+        if sudo:
+            cbs.append("sudo")
+        help_buttons = [
+            self.ikb(
+                text=_lang[f"help_{i}"],
+                callback_data=f"help {cb}",
+                style=enums.ButtonStyle.DEFAULT,
+            )
+            for i, cb in enumerate(cbs)
+        ]
+        rows = [
+            help_buttons[i : i + 3]
+            for i in range(0, len(help_buttons), 3)
+        ]
         return self.ikm(rows)
 
     def lang_markup(
@@ -117,7 +116,7 @@ class Inline:
     ) -> types.InlineKeyboardMarkup:
         langs = lang.get_languages()
 
-        buttons = [
+        language_buttons = [
             self.ikb(
                 text=f"{name} ({code}) {'✔️' if code == _lang else ''}",
                 callback_data=f"lang_change {code}",
@@ -125,15 +124,10 @@ class Inline:
             )
             for code, name in langs.items()
         ]
-        rows = [buttons[i : i + 2] for i in range(0, len(buttons), 2)]
-        if home:
-            rows.append([
-                self.ikb(
-                    text=lang.languages.get(_lang, lang.languages["en"])["home"],
-                    callback_data="help home",
-                )
-            ])
-        return self.ikm(rows)
+        return self.ikm([
+            language_buttons[i : i + 2]
+            for i in range(0, len(language_buttons), 2)
+        ])
 
     def ping_markup(self, text: str) -> types.InlineKeyboardMarkup:
         return self.ikm(
