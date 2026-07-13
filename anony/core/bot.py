@@ -280,6 +280,23 @@ class Bot(pyrogram.Client):
 
         await self.detect_custom_emoji_support()
 
+        try:
+            await self.set_bot_default_privileges(
+                pyrogram.types.ChatAdministratorRights(
+                    can_manage_chat=True,
+                    can_invite_users=True,
+                ),
+                for_channels=False,
+            )
+            logger.info("Configured minimal default group administrator rights.")
+        except pyrogram.errors.RightsNotModified:
+            logger.debug("Default group administrator rights are already current.")
+        except Exception:
+            logger.warning(
+                "Could not configure default group administrator rights.",
+                exc_info=True,
+            )
+
         self.commands = [
             ("play", "Play a song or link"),
             ("song", "Download a song as audio"),
