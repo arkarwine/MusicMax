@@ -33,6 +33,7 @@ async def _stats_data() -> dict:
     assistants = len(set(userbot.clients) & set(anon.clients))
     bot_ready = bool(getattr(app, "is_connected", False))
     database_ready = db.connection is not None
+    month = await db.get_analytics(30)
     if bot_ready and database_ready and assistants:
         status = "Ready"
     elif bot_ready and database_ready:
@@ -49,7 +50,8 @@ async def _stats_data() -> dict:
         "assistants": assistants,
         "uptime": _uptime(),
         "status": status,
-        "days": await db.get_analytics(7),
+        "days": month[-7:],
+        "month": month,
         "updated": datetime.now(timezone.utc).strftime("%d %b · %H:%M"),
     }
 

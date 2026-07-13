@@ -782,6 +782,16 @@ class SQLiteDB:
             }
             for row in await cursor.fetchall()
         }
+        activity_cursor = await self.conn.execute(
+            "SELECT date(started_at, 'unixepoch'), COUNT(DISTINCT chat_id) "
+            "FROM stream_events WHERE started_at >= unixepoch(?) "
+            "GROUP BY date(started_at, 'unixepoch')",
+            (first.isoformat(),),
+        )
+        active_chats = {
+            row[0]: int(row[1])
+            for row in await activity_cursor.fetchall()
+        }
         result = []
         for offset in range(days):
             day = first + timedelta(days=offset)
@@ -793,6 +803,7 @@ class SQLiteDB:
                     "users_added": values.get("users_added", 0),
                     "groups_added": values.get("groups_added", 0),
                     "plays": values.get("plays", 0),
+                    "active_chats": active_chats.get(day.isoformat(), 0),
                     "peak_streams": values.get("peak_streams", 0),
                 }
             )
