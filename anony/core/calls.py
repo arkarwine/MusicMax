@@ -180,12 +180,19 @@ class TgCall(PyTgCalls):
                 await db.save_queue(chat_id, queue.get_queue(chat_id))
                 await db.save_playback(chat_id, "playing", seek_time)
                 if not new_session:
-                    await db.record_play(
-                        len(db.active_calls),
-                        track_id=media.id,
-                        title=media.title or _lang["unknown_track"],
-                        url=media.url,
-                    )
+                    try:
+                        await db.record_play(
+                            chat_id,
+                            track_id=media.id,
+                            title=media.title or _lang["unknown_track"],
+                            url=media.url,
+                        )
+                    except Exception:
+                        logger.warning(
+                            "Could not record playback analytics for chat %s",
+                            chat_id,
+                            exc_info=True,
+                        )
                 try:
                     await self._show_play_card(
                         chat_id, message, media, _lang, _thumb

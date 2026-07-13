@@ -28,6 +28,7 @@ def _uptime() -> str:
 async def _stats_data() -> dict:
     users = len(await db.get_users())
     groups = len(await db.get_chats())
+    activity = await db.get_stream_activity(24)
     assistants = len(set(userbot.clients) & set(anon.clients))
     bot_ready = bool(getattr(app, "is_connected", False))
     database_ready = db.connection is not None
@@ -39,9 +40,9 @@ async def _stats_data() -> dict:
         status = "Degraded"
     return {
         "bot_name": app.name,
-        "users": users,
-        "groups": groups,
-        "active_streams": len(db.active_calls),
+        "chats": users + groups,
+        "streams_24h": activity["streams"],
+        "active_chats_24h": activity["active_chats"],
         "assistants": assistants,
         "uptime": _uptime(),
         "status": status,

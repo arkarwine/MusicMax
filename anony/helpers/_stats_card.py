@@ -109,36 +109,42 @@ class StatsCard:
             draw,
             box,
             "Bot growth",
-            "New users and groups · vs yesterday",
+            "New chats · vs yesterday",
             self._percentage_change(days, ("users_added", "groups_added")),
         )
-        max_value = max(
-            [1] + [max(day["users_added"], day["groups_added"]) for day in days]
-        )
+        chat_counts = [
+            day["users_added"] + day["groups_added"] for day in days
+        ]
+        max_value = max([1] + chat_counts)
         width = x2 - x1
         slot = width / max(len(days), 1)
         baseline = y2
         height = y2 - y1
-        for index, day in enumerate(days):
+        for index, (day, chats) in enumerate(zip(days, chat_counts)):
             center = x1 + slot * index + slot / 2
-            user_h = max(3, height * day["users_added"] / max_value)
-            group_h = max(3, height * day["groups_added"] / max_value)
+            bar_height = max(3, height * chats / max_value)
             draw.rounded_rectangle(
-                (center - 22, baseline - user_h, center - 4, baseline),
-                radius=7, fill=self.BLUE,
-            )
-            draw.rounded_rectangle(
-                (center + 4, baseline - group_h, center + 22, baseline),
-                radius=7, fill=self.VIOLET,
+                (center - 18, baseline - bar_height, center + 18, baseline),
+                radius=8,
+                fill=self.BLUE,
             )
             draw.text(
-                (center, baseline + 10), day["label"],
-                font=self._font(15), fill=self.MUTED, anchor="ma",
+                (center, baseline + 10),
+                day["label"],
+                font=self._font(15),
+                fill=self.MUTED,
+                anchor="ma",
             )
-        draw.ellipse((x2 - 210, box[1] + 29, x2 - 196, box[1] + 43), fill=self.BLUE)
-        draw.text((x2 - 187, box[1] + 25), "Users", font=self._font(16), fill=self.MUTED)
-        draw.ellipse((x2 - 112, box[1] + 29, x2 - 98, box[1] + 43), fill=self.VIOLET)
-        draw.text((x2 - 89, box[1] + 25), "Groups", font=self._font(16), fill=self.MUTED)
+        draw.ellipse(
+            (x2 - 105, box[1] + 29, x2 - 91, box[1] + 43),
+            fill=self.BLUE,
+        )
+        draw.text(
+            (x2 - 82, box[1] + 25),
+            "Chats",
+            font=self._font(16),
+            fill=self.MUTED,
+        )
 
     def _activity_chart(self, draw, box, days: list[dict]) -> None:
         x1, y1, x2, y2 = self._chart_frame(
@@ -202,9 +208,13 @@ class StatsCard:
         draw.text((1338, 85), data["status"], font=self._font(21, True), fill=self.TEXT)
 
         metrics = [
-            ("Total users", self._compact(data["users"]), self.BLUE),
-            ("Total groups", self._compact(data["groups"]), self.VIOLET),
-            ("Active streams", str(data["active_streams"]), self.GREEN),
+            ("Total chats", self._compact(data["chats"]), self.BLUE),
+            ("Streams · 24h", self._compact(data["streams_24h"]), self.GREEN),
+            (
+                "Active chats · 24h",
+                self._compact(data["active_chats_24h"]),
+                self.VIOLET,
+            ),
             ("Available assistants", str(data["assistants"]), self.AMBER),
             ("Uptime", data["uptime"], self.BLUE),
             ("Service status", data["status"], status_color),

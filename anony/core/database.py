@@ -133,6 +133,15 @@ class SQLiteDB:
                     plays INTEGER NOT NULL DEFAULT 0,
                     peak_streams INTEGER NOT NULL DEFAULT 0
                 );
+                CREATE TABLE IF NOT EXISTS stream_events (
+                    event_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    chat_id INTEGER NOT NULL,
+                    started_at INTEGER NOT NULL DEFAULT (unixepoch())
+                );
+                CREATE INDEX IF NOT EXISTS stream_events_started
+                    ON stream_events (started_at);
+                CREATE INDEX IF NOT EXISTS stream_events_chat_started
+                    ON stream_events (chat_id, started_at);
                 CREATE TABLE IF NOT EXISTS track_plays (
                     day TEXT NOT NULL,
                     track_id TEXT NOT NULL,
@@ -218,6 +227,10 @@ class SQLiteDB:
 
     async def add_call(self, chat_id: int) -> None:
         self.active_calls[chat_id] = 1
+        try:
+            await self.record_peak(sum(self.active_calls.values()))
+        except Exception:
+            logger.warning("Could not update the daily stream peak", exc_info=True)
 
     async def remove_call(self, chat_id: int) -> None:
         self.active_calls.pop(chat_id, None)
@@ -231,6 +244,14 @@ class SQLiteDB:
                 ("paused" if paused else "playing", chat_id),
             )
             await self.conn.commit()
+            if paused is False:
+                try:
+                    await self.record_peak(sum(self.active_calls.values()))
+                except Exception:
+                    logger.warning(
+                        "Could not update the daily stream peak after resume",
+                        exc_info=True,
+                    )
         return bool(self.active_calls.get(chat_id, 0))
 
     async def get_admins(self, chat_id: int, reload: bool = False) -> list[int]:
@@ -660,18 +681,31 @@ class SQLiteDB:
             (users_added, groups_added, plays, peak_streams),
         )
 
+    async def record_peak(self, active_streams: int) -> None:
+        async with self.write_lock:
+            await self._increment_analytics(
+                peak_streams=max(active_streams, 0),
+            )
+            await self.conn.commit()
+
     async def record_play(
         self,
-        active_streams: int,
+        chat_id: int,
         *,
         track_id: str | None = None,
         title: str | None = None,
         url: str | None = None,
     ) -> None:
         async with self.write_lock:
-            await self._increment_analytics(
-                plays=1,
-                peak_streams=max(active_streams, 0),
+            await self._increment_analytics(plays=1)
+            await self.conn.execute(
+                "INSERT INTO stream_events (chat_id, started_at) "
+                "VALUES (?, unixepoch())",
+                (chat_id,),
+            )
+            await self.conn.execute(
+                "DELETE FROM stream_events "
+                "WHERE started_at < unixepoch() - 2678400"
             )
             if track_id and title:
                 await self.conn.execute(
@@ -691,6 +725,19 @@ class SQLiteDB:
                     "DELETE FROM track_plays WHERE day < date('now', '-30 days')"
                 )
             await self.conn.commit()
+
+    async def get_stream_activity(self, hours: int = 24) -> dict:
+        hours = max(1, min(hours, 24 * 31))
+        cursor = await self.conn.execute(
+            "SELECT COUNT(*), COUNT(DISTINCT chat_id) FROM stream_events "
+            "WHERE started_at >= unixepoch() - ?",
+            (hours * 3600,),
+        )
+        row = await cursor.fetchone()
+        return {
+            "streams": int(row[0] if row else 0),
+            "active_chats": int(row[1] if row else 0),
+        }
 
     async def get_trending_tracks(
         self,
