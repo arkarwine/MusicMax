@@ -61,20 +61,103 @@ class StatsCard:
             box, radius=radius, fill=fill, outline=outline, width=width
         )
 
-    def _metric(self, draw, box, label: str, value: str, accent) -> None:
-        self._rounded(draw, box, fill=self.PANEL, outline=(43, 55, 86))
-        x1, y1, x2, _ = box
+    def _person_icon(self, draw, cx: int, cy: int, color, scale=1.0) -> None:
+        radius = int(9 * scale)
+        draw.ellipse(
+            (cx - radius, cy - 23 * scale, cx + radius, cy - 5 * scale),
+            fill=color,
+        )
         draw.rounded_rectangle(
-            (x1 + 24, y1 + 25, x1 + 32, y1 + 99),
-            radius=4,
-            fill=accent,
+            (cx - 15 * scale, cy + 1 * scale, cx + 15 * scale, cy + 25 * scale),
+            radius=int(11 * scale),
+            fill=color,
+        )
+
+    def _icon(self, draw, center: tuple[int, int], kind: str, accent) -> None:
+        cx, cy = center
+        draw.ellipse(
+            (cx - 43, cy - 43, cx + 43, cy + 43),
+            fill=self.PANEL_ALT,
+            outline=accent,
+            width=2,
+        )
+        icon_color = (233, 239, 255)
+        if kind == "person":
+            self._person_icon(draw, cx, cy, icon_color, 1.25)
+        elif kind in {"reach", "groups"}:
+            self._person_icon(draw, cx, cy + 3, icon_color, 0.9)
+            self._person_icon(draw, cx - 23, cy + 8, icon_color, 0.66)
+            self._person_icon(draw, cx + 23, cy + 8, icon_color, 0.66)
+        elif kind == "play":
+            draw.polygon(
+                [(cx - 14, cy - 23), (cx - 14, cy + 23), (cx + 24, cy)],
+                fill=icon_color,
+            )
+        else:
+            draw.rounded_rectangle(
+                (cx - 25, cy - 20, cx + 25, cy + 18),
+                radius=9,
+                fill=icon_color,
+            )
+            draw.polygon(
+                [(cx - 14, cy + 16), (cx - 23, cy + 29), (cx - 5, cy + 19)],
+                fill=icon_color,
+            )
+            if kind == "new":
+                draw.line((cx - 9, cy - 1, cx + 9, cy - 1), fill=accent, width=5)
+                draw.line((cx, cy - 10, cx, cy + 8), fill=accent, width=5)
+            else:
+                draw.line((cx - 13, cy - 7, cx + 13, cy - 7), fill=accent, width=4)
+                draw.line((cx - 13, cy + 3, cx + 5, cy + 3), fill=accent, width=4)
+
+    def _music_mark(self, draw) -> None:
+        self._rounded(
+            draw,
+            (44, 40, 174, 170),
+            radius=24,
+            fill=(20, 30, 74),
+            outline=self.VIOLET,
+            width=2,
+        )
+        draw.line((118, 73, 118, 132), fill=self.TEXT, width=10)
+        draw.line((118, 73, 145, 66), fill=self.TEXT, width=10)
+        draw.ellipse((91, 119, 124, 148), fill=self.TEXT)
+        draw.ellipse((130, 105, 158, 132), fill=self.TEXT)
+        draw.line((145, 69, 145, 119), fill=self.TEXT, width=10)
+
+    def _chart_grid(self, draw, box, maximum: int) -> None:
+        x1, y1, x2, y2 = box
+        for step in range(5):
+            ratio = step / 4
+            y = y2 - (y2 - y1) * ratio
+            value = round(maximum * ratio)
+            draw.line((x1, y, x2, y), fill=(48, 60, 88), width=1)
+            draw.text(
+                (x1 - 12, y - 8),
+                str(value),
+                font=self._font(13),
+                fill=self.MUTED,
+                anchor="ra",
+            )
+
+    def _metric(
+        self, draw, box, label: str, value: str, accent, icon: str
+    ) -> None:
+        self._rounded(draw, box, fill=self.PANEL, outline=(43, 61, 102))
+        x1, y1, _, y2 = box
+        self._icon(draw, (x1 + 70, (y1 + y2) // 2), icon, accent)
+        draw.text(
+            (x1 + 130, y1 + 26),
+            label.upper(),
+            font=self._font(20, True),
+            fill=self.MUTED,
         )
         draw.text(
-            (x1 + 55, y1 + 26), label.upper(),
-            font=self._font(21, True), fill=self.MUTED,
+            (x1 + 130, y1 + 58),
+            value,
+            font=self._font(48, True),
+            fill=self.TEXT,
         )
-        value_font = self._font(42 if len(value) < 13 else 32, True)
-        draw.text((x1 + 55, y1 + 62), value, font=value_font, fill=self.TEXT)
 
     def _chart_frame(
         self, draw, box, title: str, subtitle: str, change: int
@@ -88,20 +171,16 @@ class StatsCard:
             if change > 0
             else self.AMBER if change < 0 else self.MUTED
         )
-        if change > 0:
-            change_text = f"{change}% more today"
-        elif change < 0:
-            change_text = f"{abs(change)}% less today"
-        else:
-            change_text = "Same as yesterday"
+        change_text = f"{change:+d}% today" if change else "0% today"
         self._rounded(
             draw,
-            (x2 - 205, y1 + 57, x2 - 28, y1 + 91),
+            (x2 - 163, y1 + 57, x2 - 28, y1 + 91),
             radius=17,
             fill=self.PANEL_ALT,
+            outline=change_color,
         )
         draw.text(
-            (x2 - 116, y1 + 63),
+            (x2 - 95, y1 + 63),
             change_text,
             font=self._font(15, True),
             fill=change_color,
@@ -114,13 +193,14 @@ class StatsCard:
             draw,
             box,
             "Growing community",
-            "New people and groups this week",
+            "New chats · last 7 days",
             self._percentage_change(days, ("users_added", "groups_added")),
         )
         chat_counts = [
             day["users_added"] + day["groups_added"] for day in days
         ]
         max_value = max([1] + chat_counts)
+        self._chart_grid(draw, (x1, y1, x2, y2), max_value)
         width = x2 - x1
         slot = width / max(len(days), 1)
         baseline = y2
@@ -140,26 +220,18 @@ class StatsCard:
                 fill=self.MUTED,
                 anchor="ma",
             )
-        draw.ellipse(
-            (x2 - 105, box[1] + 29, x2 - 91, box[1] + 43),
-            fill=self.BLUE,
-        )
-        draw.text(
-            (x2 - 82, box[1] + 25),
-            "New chats",
-            font=self._font(16),
-            fill=self.MUTED,
-        )
+
 
     def _activity_chart(self, draw, box, days: list[dict]) -> None:
         x1, y1, x2, y2 = self._chart_frame(
             draw,
             box,
             "Songs enjoyed",
-            "Songs played each day this week",
+            "Plays · last 7 days",
             self._percentage_change(days, ("plays",)),
         )
         max_value = max([1] + [day["plays"] for day in days])
+        self._chart_grid(draw, (x1, y1, x2, y2), max_value)
         width = x2 - x1
         slot = width / max(len(days), 1)
         baseline = y2
@@ -175,8 +247,7 @@ class StatsCard:
                 (center, baseline + 10), day["label"],
                 font=self._font(15), fill=self.MUTED, anchor="ma",
             )
-        draw.rectangle((x2 - 120, box[1] + 30, x2 - 106, box[1] + 44), fill=self.GREEN)
-        draw.text((x2 - 96, box[1] + 25), "Songs", font=self._font(16), fill=self.MUTED)
+
 
     def _render(self, data: dict) -> BytesIO:
         image = Image.new("RGB", self.SIZE, self.BG_TOP)
@@ -190,10 +261,11 @@ class StatsCard:
             draw.line((0, y, self.SIZE[0], y), fill=color)
 
         draw.ellipse((1250, -260, 1750, 240), fill=(35, 48, 88))
-        draw.text((70, 52), data["bot_name"], font=self._font(25, True), fill=self.BLUE)
-        draw.text((70, 91), "OUR MUSIC REACH", font=self._font(54, True), fill=self.TEXT)
+        self._music_mark(draw)
+        draw.text((200, 40), data["bot_name"], font=self._font(35, True), fill=self.TEXT)
+        draw.text((200, 84), "OUR MUSIC REACH", font=self._font(54, True), fill=self.TEXT)
         draw.text(
-            (70, 154), "A SIMPLE LOOK AT OUR GROWING COMMUNITY",
+            (200, 154), "A SIMPLE LOOK AT OUR GROWING COMMUNITY",
             font=self._font(18, True), fill=self.MUTED,
         )
         status_color = self.GREEN if data["status"] == "Ready" else self.AMBER
@@ -206,21 +278,22 @@ class StatsCard:
             fill=self.TEXT,
         )
 
+        today = data["days"][-1] if data["days"] else {}
+        new_chats_today = int(today.get("users_added", 0)) + int(
+            today.get("groups_added", 0)
+        )
         metrics = [
-            ("People & groups reached", self._compact(data["chats"]), self.BLUE),
-            ("Songs played today", self._compact(data["streams_24h"]), self.GREEN),
+            ("Total reach", self._compact(data["chats"]), self.BLUE, "reach"),
+            ("People", self._compact(data["users"]), self.VIOLET, "person"),
+            ("Groups", self._compact(data["groups"]), self.BLUE, "groups"),
+            ("Plays today", self._compact(data["streams_24h"]), self.VIOLET, "play"),
             (
-                "Chats listening today",
+                "Active chats today",
                 self._compact(data["active_chats_24h"]),
-                self.VIOLET,
+                self.BLUE,
+                "chat",
             ),
-            ("Music assistants ready", str(data["assistants"]), self.AMBER),
-            ("Online for", data["uptime"], self.BLUE),
-            (
-                "Songs played this week",
-                self._compact(sum(day["plays"] for day in data["days"])),
-                self.GREEN,
-            ),
+            ("New chats today", self._compact(new_chats_today), self.VIOLET, "new"),
         ]
         card_w, card_h = 466, 126
         for index, metric in enumerate(metrics):
@@ -236,8 +309,11 @@ class StatsCard:
             font=self._font(16), fill=self.MUTED,
         )
         draw.text(
-            (1530, 961), "Music brings us together",
-            font=self._font(16, True), fill=self.MUTED, anchor="ra",
+            (1530, 961),
+            f"{data['assistants']} assistants · Up {data['uptime']}",
+            font=self._font(16, True),
+            fill=self.MUTED,
+            anchor="ra",
         )
 
         output = BytesIO()

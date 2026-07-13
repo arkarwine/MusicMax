@@ -3,10 +3,18 @@
 # This file is part of AnonXMusic
 
 
+import asyncio
+import platform
+import time
+from datetime import datetime, timezone
+from html import escape
+from importlib import metadata
 from pathlib import Path
+
+import psutil
 from pyrogram import enums, filters, types
 
-from anony import app, db, lang, userbot, yt
+from anony import anon, app, boot, db, lang, userbot, yt
 from anony.helpers import admin_check, buttons, feedback
 
 
@@ -59,20 +67,95 @@ async def _setup_callback(_, query: types.CallbackQuery):
         return await query.edit_message_text(text, reply_markup=markup)
 
 
+def _status_uptime() -> str:
+    elapsed = max(int(time.time() - boot), 0)
+    days, remainder = divmod(elapsed, 86400)
+    hours, remainder = divmod(remainder, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    value = f"{hours:02d}h {minutes:02d}m {seconds:02d}s"
+    return f"{days}d {value}" if days else value
+
+
+def _package_version(*names: str) -> str:
+    for name in names:
+        try:
+            return metadata.version(name)
+        except Exception:
+            continue
+    return "unavailable"
+
+
+def _system_percent(getter) -> str:
+    try:
+        return f"{getter():.1f}%"
+    except Exception:
+        return "unavailable"
+
+
+async def _bot_latency() -> str:
+    started = time.perf_counter()
+    try:
+        await asyncio.wait_for(app.get_me(), timeout=5)
+    except Exception:
+        return "unavailable"
+    return f"{(time.perf_counter() - started) * 1000:.0f} ms"
+
+
 @app.on_message(filters.command(["status"]) & app.sudoers)
 @lang.language()
 async def _status(_, m: types.Message):
     cookie_dir = Path(yt.cookie_dir)
-    cookies = len(list(cookie_dir.glob("*.txt"))) if cookie_dir.exists() else 0
-    sessions = await db.get_recovery_sessions()
+    try:
+        cookies = len(list(cookie_dir.glob("*.txt"))) if cookie_dir.exists() else 0
+    except OSError:
+        cookies = "unavailable"
+    try:
+        saved_sessions = len(await db.get_recovery_sessions())
+    except Exception:
+        saved_sessions = "unavailable"
+    try:
+        logging_enabled = await db.is_logger()
+    except Exception:
+        logging_enabled = False
+
+    database_ready = db.connection is not None
+    assistants = len(userbot.clients)
+    bot_ready = bool(getattr(app, "is_connected", False))
+    if bot_ready and database_ready and assistants:
+        state_key = "status_operational"
+        state_icon = "🟢"
+    elif bot_ready or database_ready:
+        state_key = "status_limited"
+        state_icon = "🟠"
+    else:
+        state_key = "status_unavailable"
+        state_icon = "🔴"
+
+    voice_latency = await anon.ping()
     text = m.lang["status_sudo"].format(
-        "connected" if db.connection else "disconnected",
-        len(userbot.clients),
-        cookies,
-        "enabled" if await db.is_logger() else "disabled",
-        app.logger or "none",
-        len(sessions),
-        len(db.active_calls),
+        cpu=_system_percent(lambda: psutil.cpu_percent(interval=0)),
+        memory=_system_percent(lambda: psutil.virtual_memory().percent),
+        storage=_system_percent(lambda: psutil.disk_usage("/").percent),
+        bot_latency=await _bot_latency(),
+        voice_latency=f"{voice_latency:.2f} ms" if voice_latency else "unavailable",
+        database=m.lang[
+            "status_connected" if database_ready else "status_disconnected"
+        ],
+        assistants=assistants,
+        active_calls=len(db.active_calls),
+        saved_sessions=saved_sessions,
+        cookies=cookies,
+        logging=m.lang[
+            "status_enabled" if logging_enabled else "status_disabled"
+        ],
+        log_destination=escape(str(app.logger or "none")),
+        uptime=_status_uptime(),
+        python=platform.python_version(),
+        pyrogram=_package_version("kurigram", "pyrogram"),
+        pytgcalls=_package_version("py-tgcalls", "pytgcalls"),
+        state_icon=state_icon,
+        state=m.lang[state_key],
+        updated=datetime.now(timezone.utc).strftime("%d %b · %H:%M"),
     )
     await m.reply_text(text, disable_notification=True)
 

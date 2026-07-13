@@ -74,11 +74,11 @@ def _stats_caption(_lang: dict, data: dict) -> str:
         for day in days
     )
     week_plays = sum(int(day.get("plays", 0)) for day in days)
-    daily_average = round(week_plays / len(days)) if days else 0
-    busiest_day_plays = max(
-        (int(day.get("plays", 0)) for day in days),
-        default=0,
+    today = days[-1] if days else {}
+    today_new_chats = int(today.get("users_added", 0)) + int(
+        today.get("groups_added", 0)
     )
+    daily_average = round(week_plays / len(days)) if days else 0
     status = _lang[
         {
             "Ready": "stats_status_ready",
@@ -98,8 +98,8 @@ def _stats_caption(_lang: dict, data: dict) -> str:
         "🟢" if data["status"] == "Ready" else "🟠",
         _compact(data["users"]),
         _compact(data["groups"]),
+        _compact(today_new_chats),
         _compact(daily_average),
-        _compact(busiest_day_plays),
         escape(data["updated"]),
     )
 
