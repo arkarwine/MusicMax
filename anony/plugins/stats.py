@@ -68,6 +68,23 @@ def _compact(value: int) -> str:
 
 
 def _stats_caption(_lang: dict, data: dict) -> str:
+    days = data["days"]
+    week_new_chats = sum(
+        int(day.get("users_added", 0)) + int(day.get("groups_added", 0))
+        for day in days
+    )
+    week_plays = sum(int(day.get("plays", 0)) for day in days)
+    daily_average = round(week_plays / len(days)) if days else 0
+    busiest_day_plays = max(
+        (int(day.get("plays", 0)) for day in days),
+        default=0,
+    )
+    status = _lang[
+        {
+            "Ready": "stats_status_ready",
+            "Getting ready": "stats_status_needs_assistant",
+        }.get(data["status"], "stats_status_unavailable")
+    ]
     return _lang["stats_caption"].format(
         escape(str(data["bot_name"])),
         _compact(data["chats"]),
@@ -75,20 +92,15 @@ def _stats_caption(_lang: dict, data: dict) -> str:
         _compact(data["active_chats_24h"]),
         data["assistants"],
         escape(data["uptime"]),
-        _lang[
-            {
-                "Ready": "stats_status_ready",
-                "Getting ready": "stats_status_needs_assistant",
-            }.get(data["status"], "stats_status_unavailable")
-        ],
-        _compact(
-            sum(
-                int(day.get("users_added", 0)) + int(day.get("groups_added", 0))
-                for day in data["days"]
-            )
-        ),
-        _compact(sum(int(day.get("plays", 0)) for day in data["days"])),
+        status,
+        _compact(week_new_chats),
+        _compact(week_plays),
         "🟢" if data["status"] == "Ready" else "🟠",
+        _compact(data["users"]),
+        _compact(data["groups"]),
+        _compact(daily_average),
+        _compact(busiest_day_plays),
+        escape(data["updated"]),
     )
 
 

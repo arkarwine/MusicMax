@@ -192,7 +192,7 @@
     "settings_not_allowed": "Only this group's admins can change its settings.",
     "settings_unavailable": "I couldn't open settings for that group. Open them again from the group.",
     "stats_fetching": "⏳ Gathering our latest reach…",
-    "stats_caption": "📊 <b>{0}'s reach</b>\n\n<blockquote><b>{1}</b> people & groups reached\n<b>{2}</b> songs played today\n<b>{3}</b> chats listening today\n\nThis week: <b>{7}</b> new chats · <b>{8}</b> songs played</blockquote>\n\n🎧 <b>{4}</b> music assistants ready\n{9} <b>{6}</b> · online for {5}",
+    "stats_caption": "📊 <b>{0}'s reach</b>\n\n👥 <b>Community</b>\n<blockquote><b>{1}</b> people & groups reached\n<b>{10}</b> people have used the bot\n<b>{11}</b> groups are connected</blockquote>\n\n🎵 <b>Listening</b>\n<blockquote><b>{2}</b> songs played today\n<b>{3}</b> chats listened today\n<b>{8}</b> songs played this week\nAbout <b>{12}</b> songs each day\nBusiest day: <b>{13}</b> songs</blockquote>\n\n🌱 <b>Growth</b>\n<blockquote><b>{7}</b> new chats this week</blockquote>\n\n🎧 <b>{4}</b> music assistants ready\n{9} <b>{6}</b> · online for {5}\n<i>Updated {14} UTC</i>",
     "stats_status_ready": "Ready to play",
     "stats_status_needs_assistant": "Getting ready",
     "stats_status_unavailable": "Taking a short break",
