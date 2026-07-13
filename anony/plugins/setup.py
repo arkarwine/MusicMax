@@ -50,12 +50,13 @@ async def _setup_callback(_, query: types.CallbackQuery):
     if action == "check":
         text, ready = await build_setup_text(query.message)
         await feedback.toast(query, query.lang["setup_checked"])
-        return await query.edit_message_text(
-            text,
-            reply_markup=buttons.setup_markup(
-                query.lang, ready, query.message.chat.id
-            ),
-        )
+        markup = buttons.setup_markup(query.lang, ready, query.message.chat.id)
+        if query.message.caption is not None:
+            return await query.edit_message_caption(
+                caption=text,
+                reply_markup=markup,
+            )
+        return await query.edit_message_text(text, reply_markup=markup)
 
 
 @app.on_message(filters.command(["status"]) & app.sudoers)

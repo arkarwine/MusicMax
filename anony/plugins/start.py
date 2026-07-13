@@ -4,10 +4,17 @@
 
 import asyncio
 from html import escape
+from pathlib import Path
+
 from pyrogram import enums, filters, types
 
 from anony import app, config, db, lang, logger
 from anony.helpers import buttons, can_configure_group, utils
+
+
+ADMIN_PERMISSIONS_IMAGE = (
+    Path(__file__).resolve().parents[1] / "assets" / "admin_permissions.png"
+)
 
 
 async def _start_artwork():
@@ -152,8 +159,18 @@ async def _new_member(_, message: types.Message):
     from anony.plugins.setup import build_setup_text
 
     setup_text, ready = await build_setup_text(message)
-    await message.reply_text(
-        message.lang["welcome_group"] + "\n\n" + setup_text,
-        reply_markup=buttons.setup_markup(message.lang, ready, message.chat.id),
-        disable_notification=True,
-    )
+    text = message.lang["welcome_group"] + "\n\n" + setup_text
+    markup = buttons.setup_markup(message.lang, ready, message.chat.id)
+    if ready:
+        await message.reply_text(
+            text,
+            reply_markup=markup,
+            disable_notification=True,
+        )
+    else:
+        await message.reply_photo(
+            photo=str(ADMIN_PERMISSIONS_IMAGE),
+            caption=text,
+            reply_markup=markup,
+            disable_notification=True,
+        )

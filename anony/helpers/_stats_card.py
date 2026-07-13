@@ -11,7 +11,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 
 class StatsCard:
-    """Render the compact public reach and seven-day analytics dashboard."""
+    """Render a friendly, public summary of the bot's reach."""
 
     SIZE = (1600, 1000)
     BG_TOP = (10, 14, 28)
@@ -88,17 +88,22 @@ class StatsCard:
             if change > 0
             else self.AMBER if change < 0 else self.MUTED
         )
-        change_text = f"{change:+d}%" if change else "0%"
+        if change > 0:
+            change_text = f"{change}% more today"
+        elif change < 0:
+            change_text = f"{abs(change)}% less today"
+        else:
+            change_text = "Same as yesterday"
         self._rounded(
             draw,
-            (x2 - 132, y1 + 57, x2 - 28, y1 + 91),
+            (x2 - 205, y1 + 57, x2 - 28, y1 + 91),
             radius=17,
             fill=self.PANEL_ALT,
         )
         draw.text(
-            (x2 - 80, y1 + 62),
+            (x2 - 116, y1 + 63),
             change_text,
-            font=self._font(17, True),
+            font=self._font(15, True),
             fill=change_color,
             anchor="ma",
         )
@@ -108,8 +113,8 @@ class StatsCard:
         x1, y1, x2, y2 = self._chart_frame(
             draw,
             box,
-            "Bot growth",
-            "New chats · vs yesterday",
+            "Growing community",
+            "New people and groups this week",
             self._percentage_change(days, ("users_added", "groups_added")),
         )
         chat_counts = [
@@ -141,7 +146,7 @@ class StatsCard:
         )
         draw.text(
             (x2 - 82, box[1] + 25),
-            "Chats",
+            "New chats",
             font=self._font(16),
             fill=self.MUTED,
         )
@@ -150,18 +155,15 @@ class StatsCard:
         x1, y1, x2, y2 = self._chart_frame(
             draw,
             box,
-            "Playback activity",
-            "Daily plays and peak streams · vs yesterday",
+            "Songs enjoyed",
+            "Songs played each day this week",
             self._percentage_change(days, ("plays",)),
         )
-        max_value = max(
-            [1] + [max(day["plays"], day["peak_streams"]) for day in days]
-        )
+        max_value = max([1] + [day["plays"] for day in days])
         width = x2 - x1
         slot = width / max(len(days), 1)
         baseline = y2
         height = y2 - y1
-        points = []
         for index, day in enumerate(days):
             center = x1 + slot * index + slot / 2
             play_h = max(3, height * day["plays"] / max_value)
@@ -169,20 +171,12 @@ class StatsCard:
                 (center - 18, baseline - play_h, center + 18, baseline),
                 radius=8, fill=self.GREEN,
             )
-            peak_y = baseline - height * day["peak_streams"] / max_value
-            points.append((center, peak_y))
             draw.text(
                 (center, baseline + 10), day["label"],
                 font=self._font(15), fill=self.MUTED, anchor="ma",
             )
-        if len(points) > 1:
-            draw.line(points, fill=self.AMBER, width=5, joint="curve")
-        for x, y in points:
-            draw.ellipse((x - 6, y - 6, x + 6, y + 6), fill=self.AMBER)
-        draw.rectangle((x2 - 205, box[1] + 30, x2 - 191, box[1] + 44), fill=self.GREEN)
-        draw.text((x2 - 181, box[1] + 25), "Plays", font=self._font(16), fill=self.MUTED)
-        draw.ellipse((x2 - 108, box[1] + 29, x2 - 94, box[1] + 43), fill=self.AMBER)
-        draw.text((x2 - 84, box[1] + 25), "Peak", font=self._font(16), fill=self.MUTED)
+        draw.rectangle((x2 - 120, box[1] + 30, x2 - 106, box[1] + 44), fill=self.GREEN)
+        draw.text((x2 - 96, box[1] + 25), "Songs", font=self._font(16), fill=self.MUTED)
 
     def _render(self, data: dict) -> BytesIO:
         image = Image.new("RGB", self.SIZE, self.BG_TOP)
@@ -197,27 +191,36 @@ class StatsCard:
 
         draw.ellipse((1250, -260, 1750, 240), fill=(35, 48, 88))
         draw.text((70, 52), data["bot_name"], font=self._font(25, True), fill=self.BLUE)
-        draw.text((70, 91), "DASHBOARD", font=self._font(54, True), fill=self.TEXT)
+        draw.text((70, 91), "OUR MUSIC REACH", font=self._font(54, True), fill=self.TEXT)
         draw.text(
-            (70, 154), "LIVE REACH  /  7-DAY PERFORMANCE",
+            (70, 154), "A SIMPLE LOOK AT OUR GROWING COMMUNITY",
             font=self._font(18, True), fill=self.MUTED,
         )
-        status_color = self.GREEN if data["status"] == "Operational" else self.AMBER
+        status_color = self.GREEN if data["status"] == "Ready" else self.AMBER
         self._rounded(draw, (1280, 72, 1530, 130), radius=29, fill=(30, 45, 59))
         draw.ellipse((1303, 91, 1321, 109), fill=status_color)
-        draw.text((1338, 85), data["status"], font=self._font(21, True), fill=self.TEXT)
+        draw.text(
+            (1338, 85),
+            data["status"],
+            font=self._font(21 if len(data["status"]) < 15 else 16, True),
+            fill=self.TEXT,
+        )
 
         metrics = [
-            ("Total chats", self._compact(data["chats"]), self.BLUE),
-            ("Streams · 24h", self._compact(data["streams_24h"]), self.GREEN),
+            ("People & groups reached", self._compact(data["chats"]), self.BLUE),
+            ("Songs played today", self._compact(data["streams_24h"]), self.GREEN),
             (
-                "Active chats · 24h",
+                "Chats listening today",
                 self._compact(data["active_chats_24h"]),
                 self.VIOLET,
             ),
-            ("Available assistants", str(data["assistants"]), self.AMBER),
-            ("Uptime", data["uptime"], self.BLUE),
-            ("Service status", data["status"], status_color),
+            ("Music assistants ready", str(data["assistants"]), self.AMBER),
+            ("Online for", data["uptime"], self.BLUE),
+            (
+                "Songs played this week",
+                self._compact(sum(day["plays"] for day in data["days"])),
+                self.GREEN,
+            ),
         ]
         card_w, card_h = 466, 126
         for index, metric in enumerate(metrics):
@@ -233,12 +236,12 @@ class StatsCard:
             font=self._font(16), fill=self.MUTED,
         )
         draw.text(
-            (1530, 961), "Melody dashboard",
+            (1530, 961), "Music brings us together",
             font=self._font(16, True), fill=self.MUTED, anchor="ra",
         )
 
         output = BytesIO()
-        output.name = "analytics.png"
+        output.name = "bot-reach.png"
         image.save(output, "PNG", optimize=True)
         output.seek(0)
         return output

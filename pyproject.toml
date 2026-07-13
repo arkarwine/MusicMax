@@ -32,4 +32,4 @@ include = ["anony", "anony.*"]
 exclude = ["data*", "cache*", "downloads*", "setup*"]
 
 [tool.setuptools.package-data]
-anony = ["locales/*.json", "locales/*.md"]
+anony = ["locales/*.json", "locales/*.md", "assets/*.png"]

@@ -5,6 +5,7 @@
 
 import time
 from datetime import datetime, timezone
+from html import escape
 
 from pyrogram import errors, filters, types
 
@@ -33,13 +34,15 @@ async def _stats_data() -> dict:
     bot_ready = bool(getattr(app, "is_connected", False))
     database_ready = db.connection is not None
     if bot_ready and database_ready and assistants:
-        status = "Operational"
+        status = "Ready"
     elif bot_ready and database_ready:
-        status = "Limited"
+        status = "Getting ready"
     else:
-        status = "Degraded"
+        status = "Taking a break"
     return {
         "bot_name": app.name,
+        "users": users,
+        "groups": groups,
         "chats": users + groups,
         "streams_24h": activity["streams"],
         "active_chats_24h": activity["active_chats"],
@@ -56,6 +59,39 @@ async def _build_stats() -> tuple:
     return await stats_card.generate(data), data
 
 
+def _compact(value: int) -> str:
+    if value >= 1_000_000:
+        return f"{value / 1_000_000:.1f}M"
+    if value >= 1_000:
+        return f"{value / 1_000:.1f}K"
+    return str(value)
+
+
+def _stats_caption(_lang: dict, data: dict) -> str:
+    return _lang["stats_caption"].format(
+        escape(str(data["bot_name"])),
+        _compact(data["chats"]),
+        _compact(data["streams_24h"]),
+        _compact(data["active_chats_24h"]),
+        data["assistants"],
+        escape(data["uptime"]),
+        _lang[
+            {
+                "Ready": "stats_status_ready",
+                "Getting ready": "stats_status_needs_assistant",
+            }.get(data["status"], "stats_status_unavailable")
+        ],
+        _compact(
+            sum(
+                int(day.get("users_added", 0)) + int(day.get("groups_added", 0))
+                for day in data["days"]
+            )
+        ),
+        _compact(sum(int(day.get("plays", 0)) for day in data["days"])),
+        "🟢" if data["status"] == "Ready" else "🟠",
+    )
+
+
 def _stats_markup(_lang: dict) -> types.InlineKeyboardMarkup:
     return types.InlineKeyboardMarkup(
         [[buttons.ikb(text=_lang["stats_refresh"], callback_data="stats refresh")]]
@@ -66,10 +102,10 @@ def _stats_markup(_lang: dict) -> types.InlineKeyboardMarkup:
 @lang.language()
 async def _stats(_, message: types.Message):
     try:
-        photo, _ = await _build_stats()
+        photo, data = await _build_stats()
         await message.reply_photo(
             photo=photo,
-            caption=message.lang["stats_caption"],
+            caption=_stats_caption(message.lang, data),
             disable_notification=True,
             reply_markup=_stats_markup(message.lang),
         )
@@ -86,11 +122,11 @@ async def _stats_callback(_, query: types.CallbackQuery):
     except errors.QueryIdInvalid:
         pass
     try:
-        photo, _ = await _build_stats()
+        photo, data = await _build_stats()
         await app.send_photo(
             chat_id=query.message.chat.id,
             photo=photo,
-            caption=query.lang["stats_caption"],
+            caption=_stats_caption(query.lang, data),
             disable_notification=True,
             reply_markup=_stats_markup(query.lang),
         )
@@ -111,11 +147,11 @@ async def _stats_refresh(_, query: types.CallbackQuery):
     except errors.QueryIdInvalid:
         pass
     try:
-        photo, _ = await _build_stats()
+        photo, data = await _build_stats()
         await query.message.edit_media(
             types.InputMediaPhoto(
                 media=photo,
-                caption=query.lang["stats_caption"],
+                caption=_stats_caption(query.lang, data),
             ),
             reply_markup=_stats_markup(query.lang),
         )
