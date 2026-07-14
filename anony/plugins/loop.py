@@ -14,7 +14,7 @@ from anony.helpers import can_manage_vc, feedback
 @can_manage_vc
 async def _loop(_, m: types.Message):
     if not await db.get_call(m.chat.id):
-        return await feedback.send(m, m.lang["not_playing"], error=True)
+        return await feedback.error(m, m.lang["not_playing"])
 
     chat_id = m.chat.id
     if len(m.command) < 2:

@@ -17,7 +17,7 @@ async def _resume(_, m: types.Message):
     if not await db.get_call(m.chat.id):
         media = queue.get_current(m.chat.id)
         if not media:
-            return await feedback.send(m, m.lang["not_playing"], error=True)
+            return await feedback.error(m, m.lang["not_playing"])
         return await recover_playback(m)
 
     if await db.playing(m.chat.id):

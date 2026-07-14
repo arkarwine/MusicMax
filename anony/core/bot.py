@@ -19,6 +19,7 @@ from anony.core.custom_emoji import (
     set_custom_emoji_supported,
     strip_custom_emoji_tags,
 )
+from anony.core.rich_messages import RichMedia, RichMessageService, promote_heading
 
 
 _CUSTOM_EMOJI_TEST_ID = "5465443221003836735"
@@ -46,6 +47,12 @@ class Bot(pyrogram.Client):
         self.logger: int | None = None
         self.bl_users = pyrogram.filters.user()
         self.sudoers = pyrogram.filters.user(self.owner)
+        self.rich_messages = RichMessageService(
+            self,
+            config.BOT_TOKEN,
+            logger,
+            enabled=config.RICH_MESSAGES,
+        )
 
     @staticmethod
     def _render_call(args, kwargs, text_index: int, text_key: str):
@@ -111,12 +118,115 @@ class Bot(pyrogram.Client):
                 kwargs[text_key] = strip_custom_emoji_tags(kwargs[text_key])
             return await method(*args, **kwargs)
 
+    @staticmethod
+    def _call_value(args, kwargs, index, key):
+        return args[index] if len(args) > index else kwargs.get(key)
+
+    @staticmethod
+    def _reply_parameters(kwargs):
+        parameters = kwargs.get("reply_parameters")
+        if parameters is not None:
+            return parameters
+        reply_id = kwargs.get("reply_to_message_id")
+        return {"message_id": reply_id} if reply_id else None
+
+    async def _rich_text_call(self, args, kwargs, *, edit=False):
+        text_index = 2 if edit else 1
+        rendered_args, rendered_kwargs = self._render_call(
+            args, kwargs, text_index, "text"
+        )
+        text = self._call_value(
+            rendered_args, rendered_kwargs, text_index, "text"
+        )
+        rich_text = promote_heading(text)
+        if rich_text is None:
+            return None
+
+        chat_id = self._call_value(rendered_args, rendered_kwargs, 0, "chat_id")
+        common = {
+            "fallback_text": text,
+            "reply_markup": rendered_kwargs.get("reply_markup"),
+        }
+        if edit:
+            message_id = self._call_value(
+                rendered_args, rendered_kwargs, 1, "message_id"
+            )
+            return await self.rich_messages.edit(
+                chat_id, message_id, rich_text, **common
+            )
+
+        return await self.rich_messages.send(
+            chat_id,
+            rich_text,
+            reply_parameters=self._reply_parameters(rendered_kwargs),
+            message_thread_id=rendered_kwargs.get("message_thread_id"),
+            disable_notification=rendered_kwargs.get("disable_notification"),
+            protect_content=rendered_kwargs.get("protect_content"),
+            **common,
+        )
+
+    async def _rich_media_send(self, args, kwargs, media_key, kind):
+        rendered_args, rendered_kwargs = self._render_call(
+            args, kwargs, 2, "caption"
+        )
+        caption = self._call_value(
+            rendered_args, rendered_kwargs, 2, "caption"
+        )
+        rich_text = promote_heading(caption)
+        if rich_text is None:
+            return None
+
+        chat_id = self._call_value(rendered_args, rendered_kwargs, 0, "chat_id")
+        media = self._call_value(
+            rendered_args, rendered_kwargs, 1, media_key
+        )
+        return await self.rich_messages.send(
+            chat_id,
+            rich_text,
+            fallback_text=caption,
+            media=RichMedia(media, kind),
+            reply_markup=rendered_kwargs.get("reply_markup"),
+            reply_parameters=self._reply_parameters(rendered_kwargs),
+            message_thread_id=rendered_kwargs.get("message_thread_id"),
+            disable_notification=rendered_kwargs.get("disable_notification"),
+            protect_content=rendered_kwargs.get("protect_content"),
+        )
+
+    async def _rich_media_edit(self, args, kwargs):
+        media = self._call_value(args, kwargs, 2, "media")
+        caption = getattr(media, "caption", None)
+        if is_localized_text(caption):
+            caption = render_custom_emoji_text(caption)
+        rich_text = promote_heading(caption)
+        kind = type(media).__name__.removeprefix("InputMedia").lower()
+        if rich_text is None or kind not in {
+            "photo", "video", "animation", "audio"
+        }:
+            return None
+
+        chat_id = self._call_value(args, kwargs, 0, "chat_id")
+        message_id = self._call_value(args, kwargs, 1, "message_id")
+        return await self.rich_messages.edit(
+            chat_id,
+            message_id,
+            rich_text,
+            fallback_text=caption,
+            media=RichMedia(media.media, kind),
+            reply_markup=kwargs.get("reply_markup"),
+        )
+
     async def send_message(self, *args, **kwargs):
+        rich = await self._rich_text_call(args, kwargs)
+        if rich is not None:
+            return rich
         return await self._custom_emoji_call(
             super().send_message, args, kwargs, 1, "text"
         )
 
     async def edit_message_text(self, *args, **kwargs):
+        rich = await self._rich_text_call(args, kwargs, edit=True)
+        if rich is not None:
+            return rich
         return await self._custom_emoji_call(
             super().edit_message_text, args, kwargs, 2, "text"
         )
@@ -143,21 +253,41 @@ class Bot(pyrogram.Client):
         )
 
     async def send_photo(self, *args, **kwargs):
+        rich = await self._rich_media_send(args, kwargs, "photo", "photo")
+        if rich is not None:
+            return rich
         return await self._send_media_with_caption(
             super().send_photo, args, kwargs
         )
 
+    async def edit_message_media(self, *args, **kwargs):
+        rich = await self._rich_media_edit(args, kwargs)
+        if rich is not None:
+            return rich
+        return await super().edit_message_media(*args, **kwargs)
+
     async def send_video(self, *args, **kwargs):
+        rich = await self._rich_media_send(args, kwargs, "video", "video")
+        if rich is not None:
+            return rich
         return await self._send_media_with_caption(
             super().send_video, args, kwargs
         )
 
     async def send_animation(self, *args, **kwargs):
+        rich = await self._rich_media_send(
+            args, kwargs, "animation", "animation"
+        )
+        if rich is not None:
+            return rich
         return await self._send_media_with_caption(
             super().send_animation, args, kwargs
         )
 
     async def send_audio(self, *args, **kwargs):
+        rich = await self._rich_media_send(args, kwargs, "audio", "audio")
+        if rich is not None:
+            return rich
         return await self._send_media_with_caption(
             super().send_audio, args, kwargs
         )
@@ -368,5 +498,6 @@ class Bot(pyrogram.Client):
         """
         Asynchronously stops the bot.
         """
+        await self.rich_messages.close()
         await super().stop()
         logger.info("Bot stopped.")

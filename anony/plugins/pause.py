@@ -14,7 +14,7 @@ from anony.helpers import buttons, can_manage_vc, feedback
 @can_manage_vc
 async def _pause(_, m: types.Message):
     if not await db.get_call(m.chat.id):
-        return await feedback.send(m, m.lang["not_playing"], error=True)
+        return await feedback.error(m, m.lang["not_playing"])
 
     if not await db.playing(m.chat.id):
         return await feedback.send(m, m.lang["play_already_paused"])

@@ -57,9 +57,7 @@ async def play_hndlr(
             )
 
             if not tracks:
-                return await feedback.edit(
-                    sent, m.lang["playlist_error"], error=True
-                )
+                return await feedback.error_edit(sent, m.lang["playlist_error"])
 
             file = tracks[0]
             tracks.remove(file)
@@ -68,10 +66,9 @@ async def play_hndlr(
             file = await yt.search(url, sent.id, video=video)
 
         if not file:
-            return await feedback.edit(
+            return await feedback.error_edit(
                 sent,
                 m.lang["play_not_found"].format(config.SUPPORT_CHAT),
-                error=True,
             )
 
     elif len(m.command) >= 2:
@@ -81,23 +78,21 @@ async def play_hndlr(
             if argument not in {"-f", "-v", "-a"}
         )
         if not query:
-            return await feedback.edit(sent, m.lang["play_usage"], error=True)
+            return await feedback.error_edit(sent, m.lang["play_usage"])
         file = await yt.search(query, sent.id, video=video)
         if not file:
-            return await feedback.edit(
+            return await feedback.error_edit(
                 sent,
                 m.lang["play_not_found"].format(config.SUPPORT_CHAT),
-                error=True,
             )
 
     if not file:
-        return await feedback.edit(sent, m.lang["play_usage"], error=True)
+        return await feedback.error_edit(sent, m.lang["play_usage"])
 
     if file.duration_sec > config.DURATION_LIMIT:
-        return await feedback.edit(
+        return await feedback.error_edit(
             sent,
             m.lang["play_duration_limit"].format(config.DURATION_LIMIT // 60),
-            error=True,
         )
 
     if await db.is_logger():

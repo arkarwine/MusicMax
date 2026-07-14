@@ -18,7 +18,7 @@ async def _stop(_, m: types.Message):
 
     call = await db.get_call(m.chat.id)
     if not call and not queue.get_current(m.chat.id):
-        return await feedback.send(m, m.lang["not_playing"], error=True)
+        return await feedback.error(m, m.lang["not_playing"])
 
     media = queue.get_current(m.chat.id)
     message_id = media.message_id if media else 0

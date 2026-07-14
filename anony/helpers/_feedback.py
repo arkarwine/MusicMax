@@ -83,6 +83,42 @@ class Feedback:
         edited = await message.edit_text(text, reply_markup=reply_markup)
         return await self.keep_or_clean(edited, durable=durable, error=error)
 
+    async def success(self, update: types.Message, text: str, **kwargs):
+        """Send an already-localized success using the normal cleanup policy."""
+        return await self.send(update, text, **kwargs)
+
+    async def info(self, update: types.Message, text: str, **kwargs):
+        """Send already-localized informational feedback."""
+        return await self.send(update, text, **kwargs)
+
+    async def warning(self, update: types.Message, text: str, **kwargs):
+        """Send an already-localized warning using error cleanup timing."""
+        return await self.send(update, text, error=True, **kwargs)
+
+    async def error(self, update: types.Message, text: str, **kwargs):
+        """Send an already-localized error using error cleanup timing."""
+        return await self.send(update, text, error=True, **kwargs)
+
+    async def success_edit(self, message: types.Message, text: str, **kwargs):
+        return await self.edit(message, text, **kwargs)
+
+    async def warning_edit(self, message: types.Message, text: str, **kwargs):
+        return await self.edit(message, text, error=True, **kwargs)
+
+    async def error_edit(self, message: types.Message, text: str, **kwargs):
+        return await self.edit(message, text, error=True, **kwargs)
+
+    async def empty(
+        self,
+        update: types.Message,
+        text: str,
+        *,
+        error: bool = False,
+        **kwargs,
+    ):
+        """Send an already-localized empty state without rewriting its copy."""
+        return await self.send(update, text, error=error, **kwargs)
+
     @staticmethod
     async def toast(
         query: types.CallbackQuery,
@@ -94,3 +130,12 @@ class Feedback:
             await query.answer(text, show_alert=alert)
         except errors.QueryIdInvalid:
             pass
+
+    async def expired(
+        self,
+        query: types.CallbackQuery,
+        text: str,
+        *,
+        alert: bool = False,
+    ) -> None:
+        await self.toast(query, text, alert=alert)

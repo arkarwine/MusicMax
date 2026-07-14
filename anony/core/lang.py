@@ -3,6 +3,7 @@
 # This file is part of AnonXMusic
 
 
+import re
 import json
 import secrets
 from html import escape
@@ -18,6 +19,53 @@ lang_codes = {
     "en": "English",
     "my": "မြန်မာဘာသာ",
 }
+
+
+_TITLE_RE = re.compile(
+    r"^\s*(?:(?:<tg-emoji\b[^>]*>.*?</tg-emoji\s*>)|[^\w<\n])*\s*"
+    r"(?:<u>)?<b>.*?</b>(?:</u>)?",
+    re.IGNORECASE | re.DOTALL,
+)
+
+_HEADING_MESSAGES = {
+    "auth_list": ("heading_playback_access", " · {0}", False),
+    "help_menu": ("heading_help", "", False),
+    "help_admins": ("heading_controls", "", False),
+    "help_auth": ("heading_access", "", False),
+    "help_blist": ("heading_safety", "", False),
+    "help_lang": ("heading_language", "", False),
+    "help_ping": ("heading_bot", "", False),
+    "help_play": ("heading_music", "", False),
+    "help_queue": ("heading_queue", "", False),
+    "help_stats": ("heading_insights", "", False),
+    "help_sudo": ("heading_sudo", "", False),
+    "lang_choose": ("heading_language", "", True),
+    "play_media": ("heading_now_playing", "", False),
+    "play_queued": ("heading_added_to_queue", " · #{0}", False),
+    "queue_curr": ("heading_queue", "", False),
+    "sessions_list": ("heading_sessions", "", False),
+    "session_info": ("heading_session", " {0}", False),
+    "session_add_prompt": ("heading_add_assistant", "", False),
+    "session_phone_prompt": ("heading_phone_number", "", False),
+    "session_code_prompt": ("heading_check_telegram", "", False),
+    "session_password_prompt": ("heading_two_step", "", False),
+    "start_pm": ("heading_welcome", ", {0}", False),
+    "start_gp": ("heading_ready_to_play", "", False),
+    "start_settings": ("heading_settings", " · {0}", False),
+    "trending_title": ("heading_trending", "", False),
+    "trending_empty": ("heading_trending", "", False),
+    "setup_required": ("heading_setup_required", "", False),
+    "setup_ready": ("heading_ready_to_play", "", False),
+    "welcome_group": ("heading_welcome", "", False),
+    "status_sudo": ("heading_advanced_status", "", False),
+    "vc_list": ("heading_active_streams", "", False),
+}
+
+
+def _compose_heading(text: str, heading: str, suffix: str, replace_all: bool):
+    match = _TITLE_RE.match(text)
+    remainder = text[match.end():] if match else ("" if replace_all else text)
+    return localized_text(f"<b>{heading}{suffix}</b>{remainder}")
 
 
 class Language:
@@ -48,6 +96,17 @@ class Language:
             code: {**english, **translations}
             for code, translations in languages.items()
         }
+        for translations in languages.values():
+            for message_key, definition in _HEADING_MESSAGES.items():
+                heading_key, suffix, replace_all = definition
+                text = translations.get(message_key)
+                heading = translations.get(heading_key)
+                if text is None or heading is None:
+                    continue
+                translations[message_key] = _compose_heading(
+                    text, heading, suffix, replace_all
+                )
+
         logger.info(f"Loaded languages: {', '.join(languages.keys())}")
         return languages
 

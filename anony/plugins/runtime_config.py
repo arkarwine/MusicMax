@@ -8,6 +8,8 @@ from pyrogram import enums, filters, types
 
 from anony import app, config, db, lang
 from anony.helpers import buttons, feedback
+from anony.ui import callbacks
+from anony.ui.keyboards import home_row
 
 BOOLEAN_KEYS = ("auto_leave", "auto_end", "thumb_gen", "video_play")
 LABELS = {
@@ -49,10 +51,10 @@ async def _runtime_view() -> tuple[str, types.InlineKeyboardMarkup]:
         for key in BOOLEAN_KEYS[index : index + 2]:
             row.append(buttons.ikb(
                 text=f"{LABELS[key]} · {config.runtime_display(key).title()}",
-                callback_data=f"runtime_config toggle {key}",
+                callback_data=callbacks.runtime_config("toggle", key),
             ))
         rows.append(row)
-    rows.append([buttons.ikb(text="⬅️ Home", callback_data="help home")])
+    rows.append(home_row("⬅️ Home", callbacks.HELP_HOME))
     return text, buttons.ikm(rows)
 
 

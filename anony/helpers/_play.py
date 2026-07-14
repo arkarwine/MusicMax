@@ -281,7 +281,7 @@ async def recover_playback(m: types.Message) -> bool:
 def checkUB(play):
     async def wrapper(_, m: types.Message):
         if not m.from_user:
-            return await feedback.send(m, m.lang["play_user_invalid"], error=True)
+            return await feedback.error(m, m.lang["play_user_invalid"])
 
         chat_id = m.chat.id
         if m.chat.type != enums.ChatType.SUPERGROUP:
@@ -293,13 +293,12 @@ def checkUB(play):
             arg for arg in arguments if arg not in {"-f", "-v", "-a"}
         ]
         if not m.reply_to_message and not query_arguments:
-            return await feedback.send(m, m.lang["play_usage"], error=True)
+            return await feedback.error(m, m.lang["play_usage"])
 
         if len(queue.get_queue(chat_id)) >= config.QUEUE_LIMIT:
-            return await feedback.send(
+            return await feedback.error(
                 m,
                 m.lang["play_queue_full"].format(config.QUEUE_LIMIT),
-                error=True,
             )
 
         force = m.command[0].endswith("force") or "-f" in arguments
@@ -313,10 +312,9 @@ def checkUB(play):
         )
         url = utils.get_url(m)
         if url and yt.invalid(url):
-            return await feedback.send(
+            return await feedback.error(
                 m,
                 m.lang["play_not_found"].format(config.SUPPORT_CHAT),
-                error=True,
             )
         m3u8 = url and not yt.valid(url)
 
@@ -328,7 +326,7 @@ def checkUB(play):
                 and not await db.is_auth(chat_id, m.from_user.id)
                 and m.from_user.id not in app.sudoers
             ):
-                return await feedback.send(m, m.lang["play_admin"], error=True)
+                return await feedback.error(m, m.lang["play_admin"])
 
         if chat_id not in db.active_calls:
             if not await ensure_assistant(m):

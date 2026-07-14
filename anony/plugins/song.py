@@ -9,6 +9,7 @@ from html import escape
 from pyrogram import filters, types
 
 from anony import app, config, lang, logger, thumb, yt
+from anony.ui import StatusMessage
 
 
 _song_prompts: dict[tuple[int, int], tuple[int, float]] = {}
@@ -47,24 +48,24 @@ async def _deliver_song(message: types.Message, query: str | None) -> None:
     if not query:
         return await message.reply_text(message.lang["song_input_invalid"])
 
-    status = await message.reply_text(message.lang["song_searching"])
+    status = await StatusMessage.begin(message, message.lang["song_searching"])
     try:
         track = await yt.search(query, status.id)
         if not track:
-            return await status.edit_text(message.lang["song_not_found"])
+            return await status.update(message.lang["song_not_found"])
         if track.duration_sec > config.DURATION_LIMIT:
-            return await status.edit_text(
+            return await status.update(
                 message.lang["song_duration_limit"].format(
                     config.DURATION_LIMIT // 60
                 )
             )
 
-        await status.edit_text(message.lang["song_downloading"])
+        await status.update(message.lang["song_downloading"])
         song = await yt.download_song(track.id)
         if not song:
-            return await status.edit_text(message.lang["song_failed"])
+            return await status.update(message.lang["song_failed"])
 
-        await status.edit_text(message.lang["song_uploading"])
+        await status.update(message.lang["song_uploading"])
         cover = await thumb.audio_cover(track)
         await app.send_audio(
             chat_id=message.chat.id,
@@ -80,12 +81,12 @@ async def _deliver_song(message: types.Message, query: str | None) -> None:
             disable_notification=True,
         )
         try:
-            await status.delete()
+            await status.remove()
         except Exception:
             pass
     except Exception:
         logger.exception("Could not deliver a requested song")
-        await status.edit_text(message.lang["song_failed"])
+        await status.update(message.lang["song_failed"])
 
 
 @app.on_message(filters.command(["song"]) & ~app.bl_users)

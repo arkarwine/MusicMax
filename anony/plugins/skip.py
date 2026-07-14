@@ -15,7 +15,7 @@ from anony.helpers import can_manage_vc, feedback
 async def _skip(_, m: types.Message):
     if not await db.get_call(m.chat.id):
         if not queue.get_current(m.chat.id):
-            return await feedback.send(m, m.lang["not_playing"], error=True)
+            return await feedback.error(m, m.lang["not_playing"])
         queue.get_next(m.chat.id)
         if queue.get_current(m.chat.id):
             await db.save_queue(m.chat.id, queue.get_queue(m.chat.id))

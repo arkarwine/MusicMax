@@ -15,14 +15,14 @@ from anony.helpers import Track, buttons, feedback
 @lang.language()
 async def _queue_func(_, m: types.Message):
     if not await db.get_call(m.chat.id) and not queue.get_current(m.chat.id):
-        return await feedback.send(m, m.lang["not_playing"], error=True)
+        return await feedback.error(m, m.lang["not_playing"])
 
     _reply = await m.reply_text(m.lang["queue_fetching"])
     _queue = queue.get_queue(m.chat.id)
     if not _queue:
         await db.remove_call(m.chat.id)
         await db.clear_playback(m.chat.id)
-        return await feedback.edit(_reply, m.lang["not_playing"], error=True)
+        return await feedback.error_edit(_reply, m.lang["not_playing"])
     _media = _queue[0]
     _thumb = (
         await thumb.generate(_media)

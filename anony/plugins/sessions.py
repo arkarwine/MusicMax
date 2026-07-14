@@ -12,6 +12,13 @@ from pyrogram import Client, enums, errors, filters, types
 
 from anony import app, config, db, lang, logger, userbot
 from anony.helpers import buttons, feedback, navigate
+from anony.ui import callbacks
+from anony.ui.keyboards import (
+    back_row,
+    confirmation_keyboard,
+    home_row,
+    pagination_row,
+)
 
 PAGE_SIZE = 6
 
@@ -68,28 +75,23 @@ def _dashboard_markup(sessions: list[dict], page: int) -> types.InlineKeyboardMa
             buttons.ikb(
                 text=f"{'●' if active else '○'}  {session['slot']} · "
                 f"{session['username'] or session['display_name'] or 'Unknown'}",
-                callback_data=f"session view {session['slot']} {page}",
+                callback_data=callbacks.session("view", session["slot"], page),
                 style=enums.ButtonStyle.DEFAULT,
             )
         ])
     if pages > 1:
-        rows.append([
-            buttons.ikb(
-                text="‹",
-                callback_data=f"session page {max(0, page - 1)}",
-            ),
-            buttons.ikb(text=f"{page + 1} / {pages}", callback_data="session noop"),
-            buttons.ikb(
-                text="›",
-                callback_data=f"session page {min(pages - 1, page + 1)}",
-            ),
-        ])
+        rows.append(pagination_row(
+            page=page,
+            page_count=pages,
+            callback_for_page=lambda target: callbacks.session("page", target),
+            indicator_callback=callbacks.session("noop"),
+        ))
     rows.extend([
         [buttons.ikb(
             text="➕ Add assistant",
-            callback_data=f"session add {page}",
+            callback_data=callbacks.session("add", page),
         )],
-        [buttons.ikb(text="⬅️ Home", callback_data="help home")],
+        home_row("⬅️ Home", callbacks.HELP_HOME),
     ])
     return buttons.ikm(rows)
 
@@ -138,11 +140,12 @@ def _detail(session: dict, page: int = 0) -> tuple[str, types.InlineKeyboardMark
     if active:
         rows.append([
             buttons.ikb(
-                text="🔄 Restart", callback_data=f"session restart {slot} {page}"
+                text="🔄 Restart",
+                callback_data=callbacks.session("restart", slot, page),
             ),
             buttons.ikb(
                 text="⏸ Disable",
-                callback_data=f"session disable {slot} {page}",
+                callback_data=callbacks.session("disable", slot, page),
                 style=enums.ButtonStyle.DANGER,
             ),
         ])
@@ -150,19 +153,17 @@ def _detail(session: dict, page: int = 0) -> tuple[str, types.InlineKeyboardMark
         rows.append([
             buttons.ikb(
                 text="▶️ Enable",
-                callback_data=f"session enable {slot} {page}",
+                callback_data=callbacks.session("enable", slot, page),
                 style=enums.ButtonStyle.DEFAULT,
             )
         ])
     if session["source"] != "environment":
         rows.append([buttons.ikb(
             text="🗑 Remove",
-            callback_data=f"session remove {slot} {page}",
+            callback_data=callbacks.session("remove", slot, page),
             style=enums.ButtonStyle.DANGER,
         )])
-    rows.append([buttons.ikb(
-        text="⬅️ Assistants", callback_data=f"session page {page}"
-    )])
+    rows.append(back_row("⬅️ Assistants", callbacks.session("page", page)))
     return text, buttons.ikm(rows)
 
 
@@ -174,17 +175,12 @@ def _remove_confirmation(
         lang.languages["en"]["session_remove_confirm"].format(
             slot, _identity(session)
         ),
-        buttons.ikm([[
-            buttons.ikb(
-                text="🗑 Remove permanently",
-                callback_data=f"session confirm_remove {slot} {page}",
-                style=enums.ButtonStyle.DANGER,
-            ),
-            buttons.ikb(
-                text="⬅️ Keep session",
-                callback_data=f"session view {slot} {page}",
-            ),
-        ]]),
+        confirmation_keyboard(
+            confirm_text="🗑 Remove permanently",
+            confirm_callback=callbacks.session("confirm_remove", slot, page),
+            cancel_text="⬅️ Keep session",
+            cancel_callback=callbacks.session("view", slot, page),
+        ),
     )
 
 
@@ -208,16 +204,14 @@ def _add_method_view(page: int) -> tuple[str, types.InlineKeyboardMarkup]:
             [
                 buttons.ikb(
                     text="📱 Phone number",
-                    callback_data=f"session add_phone {page}",
+                    callback_data=callbacks.session("add_phone", page),
                 ),
                 buttons.ikb(
                     text="🔑 Session string",
-                    callback_data=f"session add_string {page}",
+                    callback_data=callbacks.session("add_string", page),
                 ),
             ],
-            [buttons.ikb(
-                text="⬅️ Assistants", callback_data=f"session page {page}"
-            )],
+            back_row("⬅️ Assistants", callbacks.session("page", page)),
         ]),
     )
 
@@ -333,8 +327,14 @@ async def _replace_with_status(
 
 def _add_failure_markup(page: int) -> types.InlineKeyboardMarkup:
     return buttons.ikm([[
-        buttons.ikb(text="🔄 Try again", callback_data=f"session add {page}"),
-        buttons.ikb(text="⬅️ Assistants", callback_data=f"session page {page}"),
+        buttons.ikb(
+            text="🔄 Try again",
+            callback_data=callbacks.session("add", page),
+        ),
+        buttons.ikb(
+            text="⬅️ Assistants",
+            callback_data=callbacks.session("page", page),
+        ),
     ]])
 
 

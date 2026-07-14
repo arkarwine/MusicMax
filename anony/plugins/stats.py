@@ -12,6 +12,7 @@ from pyrogram import errors, filters, types
 from anony import anon, app, boot, db, lang, logger, userbot
 from anony.helpers import buttons
 from anony.helpers._stats_card import stats_card
+from anony.ui import callbacks
 
 
 def _uptime() -> str:
@@ -87,7 +88,7 @@ def _stats_caption(_lang: dict, data: dict) -> str:
             "Getting ready": "stats_status_needs_assistant",
         }.get(data["status"], "stats_status_unavailable")
     ]
-    return _lang["stats_caption"].format(
+    body = _lang["stats_caption"].format(
         escape(str(data["bot_name"])),
         _compact(data["chats"]),
         _compact(data["streams_24h"]),
@@ -104,11 +105,17 @@ def _stats_caption(_lang: dict, data: dict) -> str:
         _compact(daily_average),
         escape(data["updated"]),
     )
+    return f'<b>{_lang["heading_stats"]}</b>\n\n{body}'
 
 
 def _stats_markup(_lang: dict) -> types.InlineKeyboardMarkup:
     return types.InlineKeyboardMarkup(
-        [[buttons.ikb(text=_lang["stats_refresh"], callback_data="stats refresh")]]
+        [[
+            buttons.ikb(
+                text=_lang["stats_refresh"],
+                callback_data=callbacks.stats("refresh"),
+            )
+        ]]
     )
 
 

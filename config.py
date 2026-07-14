@@ -46,6 +46,9 @@ class Config:
     
         self.THUMB_GEN: bool = getenv("THUMB_GEN", "True").lower() == "true"
         self.VIDEO_PLAY: bool = getenv("VIDEO_PLAY", "True").lower() == "true"
+        self.RICH_MESSAGES: bool = (
+            getenv("RICH_MESSAGES", "True").lower() == "true"
+        )
 
         language = getenv("LANG_CODE", "en").lower()
         self.LANG_CODE = language if language in {"en", "my"} else "en"
