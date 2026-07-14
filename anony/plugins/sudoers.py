@@ -51,16 +51,25 @@ async def _listsudo(_, m: types.Message):
 
     if not o_mention:
         o_mention = (await app.get_users(app.owner)).mention
-    txt = m.lang["sudo_owner"].format(o_mention)
+    rows = [(m.lang["sudo_list_owner"], o_mention)]
     sudoers = await db.get_sudoers()
-    if sudoers:
-        txt += m.lang["sudo_users"]
 
     for user_id in sudoers:
         try:
             user = (await app.get_users(user_id)).mention
-            txt += f"\n- {user}"
+            rows.append((m.lang["sudo_list_member"], user))
         except Exception:
             continue
 
+    lines = [
+        f'{m.lang["sudo_list_role"]} · {m.lang["sudo_list_account"]}'
+    ]
+    for index, (role, account) in enumerate(rows):
+        branch = "└" if index == len(rows) - 1 else "├"
+        lines.append(f"{branch} {role}: {account}")
+    txt = (
+        "<b>Sudo access</b>\n\n<blockquote>"
+        + "\n".join(lines)
+        + "</blockquote>"
+    )
     await sent.edit_text(txt)

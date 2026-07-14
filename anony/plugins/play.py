@@ -3,13 +3,14 @@
 # This file is part of AnonXMusic
 
 
+import asyncio
 from pathlib import Path
 from html import escape
 
 from pyrogram import filters, types
 
-from anony import anon, app, config, db, lang, queue, tg, yt
-from anony.helpers import buttons, feedback, utils
+from anony import anon, app, config, db, lang, queue, tg, thumb, yt
+from anony.helpers import Track, buttons, feedback, utils
 from anony.helpers._play import checkUB
 
 
@@ -138,6 +139,11 @@ async def play_hndlr(
                 )
             return
 
+    artwork_task = (
+        asyncio.create_task(thumb.generate(file))
+        if config.THUMB_GEN and isinstance(file, Track)
+        else None
+    )
     if not file.file_path:
         fname = f"downloads/{file.id}.{'mp4' if video else 'webm'}"
         if Path(fname).exists():
@@ -146,7 +152,12 @@ async def play_hndlr(
             await sent.edit_text(m.lang["play_downloading"])
             file.file_path = await yt.download(file.id, video=video)
 
-    await anon.play_media(chat_id=m.chat.id, message=sent, media=file)
+    await anon.play_media(
+        chat_id=m.chat.id,
+        message=sent,
+        media=file,
+        artwork_task=artwork_task,
+    )
     if not tracks:
         return
     added = playlist_to_queue(m.chat.id, tracks)

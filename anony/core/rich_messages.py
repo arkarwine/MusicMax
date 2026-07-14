@@ -41,6 +41,9 @@ _BLOCKQUOTE_RE = re.compile(
 _HEADING_TAG_RE = re.compile(
     r"<h(?P<level>[1-6])>(?P<body>.*?)</h(?P=level)>", re.I | re.S
 )
+_TABLE_HEADER_RE = re.compile(
+    r"(?P<open><th\b[^>]*>)(?P<body>.*?)(?P<close></th>)", re.I | re.S
+)
 _HTML_TOKEN_RE = re.compile(r"(<[^>]+>|&(?:#\d+|#x[0-9a-f]+|\w+);)", re.I)
 _UNQUOTED_HREF_RE = re.compile(
     r'(<a\b[^>]*\bhref\s*=\s*)(?!["\x27])([^\s>]+)', re.I
@@ -68,7 +71,7 @@ _SMALL_CAPS = str.maketrans({
     "ᴀ": "a", "ʙ": "b", "ᴄ": "c", "ᴅ": "d", "ᴇ": "e",
     "ғ": "f", "ɢ": "g", "ʜ": "h", "ɪ": "i", "ᴊ": "j",
     "ᴋ": "k", "ʟ": "l", "ᴍ": "m", "ɴ": "n", "ᴏ": "o",
-    "ᴘ": "p", "ʀ": "r", "s": "s", "ᴛ": "t", "ᴜ": "u",
+    "ᴘ": "p", "ǫ": "q", "ʀ": "r", "s": "s", "ᴛ": "t", "ᴜ": "u",
     "ᴠ": "v", "ᴡ": "w", "x": "x", "ʏ": "y", "ᴢ": "z",
 })
 
@@ -105,6 +108,7 @@ _TITLE_RENAMES = {
     "music": "Music",
     "insights": "Insights",
     "sudo": "Sudo",
+    "sudo access": "Sudo access",
     "which song would you like?": "Which song would you like?",
     "sign-in failed": "Sign-in failed",
     "log group configured": "Log group configured",
@@ -119,19 +123,32 @@ _PRIMARY = {
     "Assistant sessions", "Advanced status", "Trending tracks",
     "Runtime configuration", "Active streams", "Playback access",
     "Bot insights", "Settings", "Welcome",
-    "Controls", "Access", "Safety", "Bot", "Music", "Insights", "Sudo",
+    "Controls", "Access", "Safety", "Bot", "Music", "Insights", "Sudo", "Sudo access",
 }
 _EXCLUDED = {"usage:", "output:", "owner:", "sudo users:"}
 _HEADING_FONT = str.maketrans({
-    **{ord("A") + index: chr(0x1D5D4 + index) for index in range(26)},
-    **{ord("a") + index: chr(0x1D5EE + index) for index in range(26)},
-    **{ord("0") + index: chr(0x1D7EC + index) for index in range(10)},
+    "a": "ᴀ", "b": "ʙ", "c": "ᴄ", "d": "ᴅ", "e": "ᴇ",
+    "f": "ғ", "g": "ɢ", "h": "ʜ", "i": "ɪ", "j": "ᴊ",
+    "k": "ᴋ", "l": "ʟ", "m": "ᴍ", "n": "ɴ", "o": "ᴏ",
+    "p": "ᴘ", "q": "ǫ", "r": "ʀ", "s": "s", "t": "ᴛ",
+    "u": "ᴜ", "v": "ᴠ", "w": "ᴡ", "x": "x", "y": "ʏ", "z": "ᴢ",
 })
+_SMALL_CAP_GLYPHS = frozenset(
+    glyph for glyph in _HEADING_FONT.values()
+    if isinstance(glyph, str) and not glyph.isascii()
+)
 
 
 def unicode_heading(value: str) -> str:
-    """Apply the bot's mathematical sans-bold display face to heading text."""
-    return value.translate(_HEADING_FONT)
+    """Apply title case with Unicode small caps after each initial."""
+    if any(char in _SMALL_CAP_GLYPHS for char in value):
+        return value
+    titled = re.sub(
+        r"[A-Za-z]+",
+        lambda match: match.group(0)[:1].upper() + match.group(0)[1:].lower(),
+        value,
+    )
+    return titled.translate(_HEADING_FONT)
 
 
 def _style_heading(match: re.Match) -> str:
@@ -143,7 +160,19 @@ def _style_heading(match: re.Match) -> str:
     return f'<h{match.group("level")}>{body}</h{match.group("level")}>'
 
 
-def _center_leading_heading(rich: str, *, divider: bool = True) -> str:
+def _style_table_header(match: re.Match) -> str:
+    opening = match.group("open")
+    if not re.search(r"\balign\s*=", opening, re.I):
+        opening = opening[:-1] + ' align="center">'
+    parts = _HTML_TOKEN_RE.split(match.group("body"))
+    body = "".join(
+        part if part.startswith(("<", "&")) else unicode_heading(part)
+        for part in parts
+    )
+    return opening + body + match.group("close")
+
+
+def _center_leading_heading(rich: str) -> str:
     heading = re.match(
         r"<h(?P<level>[1-6])>(?P<body>.*?)</h(?P=level)>",
         rich,
@@ -156,10 +185,7 @@ def _center_leading_heading(rich: str, *, divider: bool = True) -> str:
         + heading.group("body")
         + "</th></tr></table>"
     )
-    remainder = rich[heading.end():]
-    has_content = bool(re.sub(r"(?:<br\s*/?>|\s)+", "", remainder, flags=re.I))
-    separator = "<hr/>" if divider and has_content else ""
-    return header + separator + remainder
+    return header + rich[heading.end():]
 
 
 def _insert_before_last_blockquote(rich: str) -> str:
@@ -566,6 +592,8 @@ def promote_heading(text: str) -> str | None:
         )
     if title == "Bot insights":
         rich = _format_summary_table(rich, bordered=True, center_values=True)
+    elif title == "Sudo access":
+        rich = _format_summary_table(rich, bordered=True, center_values=True)
     elif title == "Advanced status":
         rich = _format_summary_table(rich, expandable=True)
     elif title == "Trending tracks":
@@ -577,11 +605,8 @@ def promote_heading(text: str) -> str | None:
     rich = _add_section_separators(rich, title)
     if title == "Runtime configuration":
         rich = _format_runtime_config_table(rich)
-    rich = _center_leading_heading(
-        rich,
-        divider=not title.startswith("Welcome"),
-    )
-    rich = rich.replace("<th>", '<th align="center">')
+    rich = _center_leading_heading(rich)
+    rich = _TABLE_HEADER_RE.sub(_style_table_header, rich)
     rich = _explicit_rich_breaks(rich)
     return rich
 

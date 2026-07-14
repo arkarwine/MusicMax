@@ -140,16 +140,22 @@ class TgCall(PyTgCalls):
         media: Media | Track,
         seek_time: int = 0,
         new_session: bool = False,
+        artwork_task: asyncio.Task | None = None,
     ) -> bool:
         client = await db.get_assistant(chat_id)
         _lang = await lang.get_lang(chat_id)
-        _thumb = (
-            await thumb.generate(media)
-            if isinstance(media, Track)
-            else config.DEFAULT_THUMB
-        ) if config.THUMB_GEN else None
+        show_card = not seek_time or new_session
+        _thumb = None
+        if show_card and config.THUMB_GEN:
+            if isinstance(media, Track):
+                if artwork_task is None:
+                    artwork_task = asyncio.create_task(thumb.generate(media))
+            else:
+                _thumb = config.DEFAULT_THUMB
 
         if not media.file_path:
+            if artwork_task is not None and not artwork_task.done():
+                artwork_task.cancel()
             await message.edit_text(_lang["error_no_file"].format(config.SUPPORT_CHAT))
             await self.play_next(chat_id)
             return False
@@ -177,6 +183,20 @@ class TgCall(PyTgCalls):
             if not seek_time or new_session:
                 media.time = max(seek_time, 1)
                 await db.add_call(chat_id)
+                if artwork_task is not None:
+                    _thumb = await artwork_task
+                try:
+                    await self._show_play_card(
+                        chat_id, message, media, _lang, _thumb
+                    )
+                except Exception:
+                    # Playback success must not be rolled back solely because a
+                    # Telegram status message could not be edited or replaced.
+                    logger.exception(
+                        "Playback connected but its play card failed in chat %s",
+                        chat_id,
+                    )
+
                 await db.save_queue(chat_id, queue.get_queue(chat_id))
                 await db.save_playback(chat_id, "playing", seek_time)
                 if not new_session:
@@ -193,17 +213,6 @@ class TgCall(PyTgCalls):
                             chat_id,
                             exc_info=True,
                         )
-                try:
-                    await self._show_play_card(
-                        chat_id, message, media, _lang, _thumb
-                    )
-                except Exception:
-                    # Playback success must not be rolled back solely because a
-                    # Telegram status message could not be edited or replaced.
-                    logger.exception(
-                        "Playback connected but its play card failed in chat %s",
-                        chat_id,
-                    )
             logger.info(
                 "Playback started in chat %s at position %s.",
                 chat_id,
@@ -238,6 +247,9 @@ class TgCall(PyTgCalls):
             await self.stop(chat_id)
             await message.edit_text(_lang["error_tg_server"])
             return False
+        finally:
+            if artwork_task is not None and not artwork_task.done():
+                artwork_task.cancel()
 
 
     async def replay(self, chat_id: int) -> None:

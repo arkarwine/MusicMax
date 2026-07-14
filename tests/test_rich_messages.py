@@ -28,13 +28,26 @@ def centered_heading(text: str, *, divider: bool = True) -> str:
         + rich_messages.unicode_heading(text)
         + "</th></tr></table>"
     )
-    return result + ("<hr/>" if divider else "")
+    return result
+
+def table_header(text: str) -> str:
+    return f'<th align="center">{rich_messages.unicode_heading(text)}</th>'
+
 
 
 
 
 
 class HeadingPromotionTests(unittest.TestCase):
+    def test_heading_font_uses_title_case_small_caps(self):
+        self.assertEqual(
+            rich_messages.unicode_heading("bot insights"),
+            "Bᴏᴛ Iɴsɪɢʜᴛs",
+        )
+        self.assertEqual(
+            rich_messages.unicode_heading("what would you like to do?"),
+            "Wʜᴀᴛ Wᴏᴜʟᴅ Yᴏᴜ Lɪᴋᴇ Tᴏ Dᴏ?",
+        )
     def test_primary_play_heading_and_track_entity(self):
         title = "Cyberpunk: Edgerunners | I Really Want to Stay at Your House"
         source = (
@@ -95,15 +108,12 @@ class HeadingPromotionTests(unittest.TestCase):
             "<blockquote>🎵 <b>12 plays today</b>\n"
             "├ 3 active chats\n"
             "└ 4 daily average</blockquote>\n\n"
-            "<blockquote>🟢 <b>Ready</b>\n"
-            "├ 2 assistants\n"
-            "└ Up 04h</blockquote>"
         )
 
         result = rich_messages.promote_heading(source)
 
         self.assertIn("<table bordered striped>", result)
-        self.assertEqual(result.count("<table bordered striped>"), 3)
+        self.assertEqual(result.count("<table bordered striped>"), 2)
         self.assertIn('<tr><td colspan="2">👥 <b>6 total</b></td></tr>', result)
         self.assertIn(
             '<tr><td><b>People</b></td><td align="center">2</td></tr>', result
@@ -111,10 +121,8 @@ class HeadingPromotionTests(unittest.TestCase):
         self.assertIn(
             '<tr><td><b>Groups</b></td><td align="center">4</td></tr>', result
         )
-        self.assertIn('<tr><td colspan="2">🟢 <b>Ready</b></td></tr>', result)
-        self.assertIn('<tr><td><b>Up</b></td><td align="center">04h</td></tr>', result)
         self.assertNotIn("<blockquote>", result)
-        self.assertEqual(result.count("<hr/>"), 1)
+        self.assertEqual(result.count("<hr/>"), 0)
 
     def test_stats_activity_uses_period_columns(self):
         source = (
@@ -132,12 +140,14 @@ class HeadingPromotionTests(unittest.TestCase):
         result = rich_messages.promote_heading(source)
 
         self.assertIn(
-            '<tr><th align="center">Overview</th><th align="center">Value</th></tr>', result
+            "<tr>" + table_header("Overview") + table_header("Value") + "</tr>", result
         )
         self.assertEqual(result.count("<table bordered striped>"), 2)
-        self.assertEqual(result.count("<hr/>"), 1)
+        self.assertEqual(result.count("<hr/>"), 0)
         self.assertIn(
-            '<tr><th align="center">Activity</th><th align="center">Today</th><th align="center">7 days</th><th align="center">30 days</th></tr>',
+            "<tr>" + table_header("Activity") + table_header("Today")
+            + table_header("7 days") + table_header("30 days")
+            + "</tr>",
             result,
         )
         self.assertIn(
@@ -157,7 +167,7 @@ class HeadingPromotionTests(unittest.TestCase):
 
         result = rich_messages.promote_heading(source)
 
-        self.assertEqual(result.count("<hr/>"), 2)
+        self.assertEqual(result.count("<hr/>"), 1)
         self.assertIn("</blockquote><hr/><blockquote>", result)
 
     def test_configuration_and_status_use_tables(self):
@@ -175,9 +185,10 @@ class HeadingPromotionTests(unittest.TestCase):
             "└ Updated 14 Jul · 17:29 UTC</blockquote>"
         )
 
-        self.assertEqual(configuration.count("<hr/>"), 2)
+        self.assertEqual(configuration.count("<hr/>"), 1)
         self.assertIn(
-            '<table striped><tr><th align="center">Setting</th><th align="center">Value</th></tr>', configuration
+            "<table striped><tr>" + table_header("Setting")
+            + table_header("Value") + "</tr>", configuration
         )
         self.assertIn("<tr><td>Queue limit</td><td><code>15</code></td></tr>", configuration)
         self.assertIn("<tr><td>Auto end •</td><td><code>on</code></td></tr>", configuration)
@@ -197,7 +208,7 @@ class HeadingPromotionTests(unittest.TestCase):
             "<tr><td><b>Memory</b></td><td><code>34%</code></td></tr>", status
         )
         self.assertNotIn("<blockquote>", status)
-        self.assertEqual(status.count("<hr/>"), 1)
+        self.assertEqual(status.count("<hr/>"), 0)
 
     def test_trending_uses_rank_track_and_play_columns(self):
         source = (
@@ -212,9 +223,8 @@ class HeadingPromotionTests(unittest.TestCase):
 
         self.assertIn("<table striped>", result)
         self.assertIn(
-            '<tr><th align="center">Rank</th>'
-            '<th align="center">Track</th>'
-            '<th align="center">Plays</th></tr>',
+            "<tr>" + table_header("Rank") + table_header("Track")
+            + table_header("Plays") + "</tr>",
             result,
         )
         self.assertIn(
@@ -228,6 +238,35 @@ class HeadingPromotionTests(unittest.TestCase):
             result,
         )
         self.assertNotIn("<code>12 plays</code>", result)
+
+    def test_sudo_access_uses_a_bordered_role_table(self):
+        source = (
+            "<b>Sudo access</b>\n\n"
+            "<blockquote>Role · Account\n"
+            '├ Owner: <a href="tg://user?id=1">Owner</a>\n'
+            '└ Sudo user: <a href="tg://user?id=2">Helper</a>'
+            "</blockquote>"
+        )
+
+        result = rich_messages.promote_heading(source)
+
+        self.assertTrue(result.startswith(centered_heading("Sudo access")))
+        self.assertIn("<table bordered striped>", result)
+        self.assertIn(
+            "<tr>" + table_header("Role") + table_header("Account")
+            + "</tr>",
+            result,
+        )
+        self.assertIn(
+            '<tr><td><b>Owner</b></td><td align="center">'
+            '<a href="tg://user?id=1">Owner</a></td></tr>',
+            result,
+        )
+        self.assertIn(
+            '<tr><td><b>Sudo user</b></td><td align="center">'
+            '<a href="tg://user?id=2">Helper</a></td></tr>',
+            result,
+        )
 
     def test_sessions_dashboard_and_detail_use_tables(self):
         dashboard = rich_messages.promote_heading(
@@ -592,12 +631,16 @@ class LocaleHeadingTests(unittest.TestCase):
         ))
         self.assertIn("ခေါင်းစဉ်", languages["my"]["play_media"])
         self.assertTrue(languages["my"]["help_menu"].startswith(
-            "<b>𝗪𝗵𝗮𝘁 𝘄𝗼𝘂𝗹𝗱 𝘆𝗼𝘂 𝗹𝗶𝗸𝗲 𝘁𝗼 𝗱𝗼?</b>"
+            f"<b>{rich_messages.unicode_heading('What would you like to do?')}</b>"
         ))
         self.assertEqual(
             languages["my"]["heading_stats"],
             rich_messages.unicode_heading("Bot insights"),
         )
+        self.assertNotIn("{9}", languages["en"]["stats_caption"])
+        self.assertNotIn("{6}", languages["en"]["stats_caption"])
+        self.assertNotIn("{9}", languages["my"]["stats_caption"])
+        self.assertNotIn("{6}", languages["my"]["stats_caption"])
         self.assertTrue(
             rich_messages.promote_heading(languages["my"]["play_media"])
             .startswith(centered_heading("Now playing"))
