@@ -180,11 +180,19 @@ class Bot(pyrogram.Client):
         media = self._call_value(
             rendered_args, rendered_kwargs, 1, media_key
         )
+        placement = (
+            "after_first_block"
+            if rich_text.startswith(
+                '<table><tr><td align="center">'
+            )
+            else "before"
+        )
+
         return await self.rich_messages.send(
             chat_id,
             rich_text,
             fallback_text=caption,
-            media=RichMedia(media, kind),
+            media=RichMedia(media, kind, placement),
             reply_markup=rendered_kwargs.get("reply_markup"),
             reply_parameters=self._reply_parameters(rendered_kwargs),
             message_thread_id=rendered_kwargs.get("message_thread_id"),

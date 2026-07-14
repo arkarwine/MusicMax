@@ -89,13 +89,17 @@ class HeadingPromotionTests(unittest.TestCase):
 
         result = rich_messages.promote_heading(source)
 
-        self.assertIn("<table striped>", result)
-        self.assertEqual(result.count("<table striped>"), 3)
+        self.assertIn("<table bordered striped>", result)
+        self.assertEqual(result.count("<table bordered striped>"), 3)
         self.assertIn('<tr><td colspan="2">👥 <b>6 total</b></td></tr>', result)
-        self.assertIn("<tr><td><b>People</b></td><td>2</td></tr>", result)
-        self.assertIn("<tr><td><b>Groups</b></td><td>4</td></tr>", result)
+        self.assertIn(
+            '<tr><td><b>People</b></td><td align="center">2</td></tr>', result
+        )
+        self.assertIn(
+            '<tr><td><b>Groups</b></td><td align="center">4</td></tr>', result
+        )
         self.assertIn('<tr><td colspan="2">🟢 <b>Ready</b></td></tr>', result)
-        self.assertIn("<tr><td><b>Up</b></td><td>04h</td></tr>", result)
+        self.assertIn('<tr><td><b>Up</b></td><td align="center">04h</td></tr>', result)
         self.assertNotIn("<blockquote>", result)
         self.assertEqual(result.count("<hr/>"), 2)
 
@@ -117,14 +121,14 @@ class HeadingPromotionTests(unittest.TestCase):
         self.assertIn(
             "<tr><th>Overview</th><th>Value</th></tr>", result
         )
-        self.assertEqual(result.count("<table striped>"), 2)
+        self.assertEqual(result.count("<table bordered striped>"), 2)
         self.assertEqual(result.count("<hr/>"), 1)
         self.assertIn(
             "<tr><th>Activity</th><th>Today</th><th>7 days</th><th>30 days</th></tr>",
             result,
         )
         self.assertIn(
-            "<tr><td><b>Plays</b></td><td>3</td>", result
+            '<tr><td><b>Plays</b></td><td align="center">3</td>', result
         )
 
 
@@ -155,7 +159,7 @@ class HeadingPromotionTests(unittest.TestCase):
             "<blockquote>⚙️ <b>System</b>\n"
             "├ CPU: <code>12%</code>\n└ Memory: <code>34%</code></blockquote>\n\n"
             "<blockquote>🟢 <b>Ready</b>\n"
-            "└ Updated now</blockquote>"
+            "└ Updated 14 Jul · 17:29 UTC</blockquote>"
         )
 
         self.assertEqual(configuration.count("<hr/>"), 1)
@@ -166,7 +170,13 @@ class HeadingPromotionTests(unittest.TestCase):
         self.assertIn("<tr><td>Auto end •</td><td><code>on</code></td></tr>", configuration)
         self.assertIn("</table><hr/><blockquote>", configuration)
         self.assertEqual(status.count("<table striped>"), 2)
-        self.assertIn('<tr><td colspan="2">⚙️ <b>System</b></td></tr>', status)
+        self.assertEqual(status.count("<details>"), 2)
+        self.assertIn("<details><summary>⚙️ <b>System</b></summary>", status)
+        self.assertIn("<details><summary>🟢 <b>Ready</b></summary>", status)
+        self.assertIn(
+            '<tr><td colspan="2">Updated 14 Jul · 17:29 UTC</td></tr>',
+            status,
+        )
         self.assertIn(
             "<tr><td><b>CPU</b></td><td><code>12%</code></td></tr>", status
         )
@@ -208,7 +218,9 @@ class HeadingPromotionTests(unittest.TestCase):
             "<b>Assistant session 3</b>\n"
             "<b>Account:</b> @helper\n"
             "Session 3 · Active · startup\n"
-            "<code>123456</code> · 2 active calls"
+            "<code>123456</code> · 2 active calls\n\n"
+            "<blockquote expandable><b>Action failed</b>\n"
+            "RuntimeError · At least one session must remain active.</blockquote>"
         )
 
         self.assertIn(
@@ -233,6 +245,20 @@ class HeadingPromotionTests(unittest.TestCase):
         self.assertIn(
             "<tr><td><b>Active calls</b></td><td><code>2</code></td></tr>", detail
         )
+        self.assertIn("<blockquote><b>Action failed</b>", detail)
+        self.assertIn("RuntimeError", detail)
+
+    def test_welcome_is_a_centered_borderless_table(self):
+        result = rich_messages.promote_heading(
+            "👋 <b>Welcome, ArKar</b>\n\nYour music room."
+        )
+
+        self.assertTrue(result.startswith(
+            '<table><tr><td align="center">'
+            + rich_messages.unicode_heading("Welcome, ArKar")
+            + "</td></tr></table>"
+        ))
+        self.assertNotIn("<table bordered", result)
 
     def test_plain_body_newlines_are_explicit_but_preformatted_lines_are_not(self):
         result = rich_messages.promote_heading(
@@ -318,6 +344,28 @@ class SerializationTests(unittest.TestCase):
             url_message["media"][0]["media"]["media"],
             "https://example.com/art.jpg",
         )
+
+    def test_media_can_follow_the_first_table(self):
+        service = rich_messages.RichMessageService(
+            AsyncMock(), "token", logging.getLogger(__name__)
+        )
+        with ExitStack() as stack:
+            message, _ = service._rich_message(
+                "<table><tr><td>Welcome</td></tr></table><p>Body</p>",
+                rich_messages.RichMedia(
+                    "https://example.com/art.jpg",
+                    "photo",
+                    "after_first_block",
+                ),
+                stack,
+            )
+
+        html = message["html"]
+        self.assertLess(
+            html.index("</table>"),
+            html.index('<img src="tg://photo?id=hero"/>'),
+        )
+        self.assertLess(html.index('<img src="tg://photo?id=hero"/>'), html.index("<p>"))
 
     def test_local_media_uses_multipart_attachment(self):
         service = rich_messages.RichMessageService(

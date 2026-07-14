@@ -208,15 +208,18 @@ def _legacy_summary_table(rich: str) -> str:
     return rich[:quotes[0].start()] + table + rich[quotes[-1].end():]
 
 
-def _summary_metric_row(line: str) -> str:
+def _summary_metric_row(line: str, *, center_value: bool = False) -> str:
     line = re.sub(r"^[\u251c\u2514\u2502]\s*", "", line).strip()
-    if ":" in line:
-        label, value = line.split(":", 1)
-        if label.strip() and value.strip():
-            return (
-                f"<tr><td><b>{label.strip()}</b></td>"
-                f"<td>{value.strip()}</td></tr>"
-            )
+    value_attr = ' align="center"' if center_value else ""
+    label_value = re.fullmatch(
+        r"(?P<label>[^:]+):\s+(?P<value>.+)", line, re.S
+    )
+    if label_value:
+        return (
+            f"<tr><td><b>{label_value.group('label').strip()}</b></td>"
+            f"<td{value_attr}>"
+            f"{label_value.group('value').strip()}</td></tr>"
+        )
 
     leading_value = re.fullmatch(
         r"(?P<value>\d[\d.,]*(?:[KMB])?)\s+(?P<label>.+)",
@@ -228,7 +231,7 @@ def _summary_metric_row(line: str) -> str:
         label = label[:1].upper() + label[1:]
         return (
             f"<tr><td><b>{label}</b></td>"
-            f"<td>{leading_value.group('value')}</td></tr>"
+            f"<td{value_attr}>{leading_value.group('value')}</td></tr>"
         )
 
     trailing_value = re.fullmatch(
@@ -240,14 +243,19 @@ def _summary_metric_row(line: str) -> str:
     if trailing_value:
         return (
             f"<tr><td><b>{trailing_value.group('label')}</b></td>"
-            f"<td>{trailing_value.group('value')}</td></tr>"
+            f"<td{value_attr}>{trailing_value.group('value')}</td></tr>"
         )
 
     return f'<tr><td colspan="2">{line}</td></tr>'
 
 
-def _summary_table(lines: list[str]) -> str:
+def _summary_table(
+    lines: list[str], *, bordered: bool = False,
+    center_values: bool = False, expandable: bool = False,
+) -> str:
     headers = [part.strip() for part in lines[0].split(" · ")]
+    table_tag = "<table bordered striped>" if bordered else "<table striped>"
+    value_attr = ' align="center"' if center_values else ""
     period_rows = []
     period_pattern = re.compile(
         r"^[\u251c\u2514\u2502]\s*(?P<label>[^:]+):\s*"
@@ -261,9 +269,9 @@ def _summary_table(lines: list[str]) -> str:
         if match:
             period_rows.append(
                 f"<tr><td><b>{match.group('label').strip()}</b></td>"
-                f"<td>{match.group('today')}</td>"
-                f"<td>{match.group('week')}</td>"
-                f"<td>{match.group('month')}</td></tr>"
+                f"<td{value_attr}>{match.group('today')}</td>"
+                f"<td{value_attr}>{match.group('week')}</td>"
+                f"<td{value_attr}>{match.group('month')}</td></tr>"
             )
 
     if period_rows and len(period_rows) == len(lines) - 1:
@@ -277,17 +285,28 @@ def _summary_table(lines: list[str]) -> str:
                 "<th>7 days</th><th>30 days</th></tr>"
             )
         rows = header + "".join(period_rows)
-        return f"<table striped>{rows}</table>"
+        return f"{table_tag}{rows}</table>"
 
-    if len(headers) == 2:
+    if expandable:
+        rows = []
+    elif len(headers) == 2:
         rows = [f"<tr><th>{headers[0]}</th><th>{headers[1]}</th></tr>"]
     else:
         rows = [f'<tr><td colspan="2">{lines[0]}</td></tr>']
-    rows.extend(_summary_metric_row(line) for line in lines[1:])
-    return "<table striped>" + "".join(rows) + "</table>"
+    rows.extend(
+        _summary_metric_row(line, center_value=center_values)
+        for line in lines[1:]
+    )
+    table = table_tag + "".join(rows) + "</table>"
+    if expandable:
+        return f"<details><summary>{lines[0]}</summary>{table}</details>"
+    return table
 
 
-def _format_summary_table(rich: str) -> str:
+def _format_summary_table(
+    rich: str, *, bordered: bool = False,
+    center_values: bool = False, expandable: bool = False,
+) -> str:
     quotes = list(_BLOCKQUOTE_RE.finditer(rich))
     if not quotes:
         return rich
@@ -300,7 +319,12 @@ def _format_summary_table(rich: str) -> str:
         lines = [line.strip() for line in quote.group("body").split("<br>")]
         if len(lines) < 2 or any(not line for line in lines):
             return rich
-        tables.append(_summary_table(lines))
+        tables.append(_summary_table(
+            lines,
+            bordered=bordered,
+            center_values=center_values,
+            expandable=expandable,
+        ))
     return (
         rich[:quotes[0].start()] + "<hr/>".join(tables)
         + rich[quotes[-1].end():]
@@ -363,7 +387,7 @@ def _format_session_detail_table(rich: str) -> str:
     heading = re.match(r"(?P<heading><h2>.*?</h2>)", rich, re.I | re.S)
     if heading is None:
         return rich
-    match = re.fullmatch(
+    match = re.match(
         r"\s*(?:<b>Account:</b> (?P<account>.*?)\n)?"
         r"Session (?P<slot>\d+) · (?P<state>[^\n]+)\n"
         r"<code>(?P<user_id>.*?)</code> · "
@@ -396,7 +420,8 @@ def _format_session_detail_table(rich: str) -> str:
         f"<td><code>{match.group('calls')}</code></td></tr>",
     ])
     table = "<table striped>" + "".join(rows) + "</table>"
-    return heading.group("heading") + table
+    suffix = rich[heading.end() + match.end():]
+    return heading.group("heading") + table + suffix
 
 
 def _plain_title(value: str) -> str:
@@ -506,8 +531,17 @@ def promote_heading(text: str) -> str | None:
     if title in {"Now playing", "Queue"} or title.startswith("Added to queue"):
         rich = _SECONDARY_TRACK_RE.sub(r"\n\n<h2>\1</h2>", rich, count=1)
     rich = _HEADING_TAG_RE.sub(_style_heading, rich)
-    if title in {"Bot insights", "Advanced status"}:
-        rich = _format_summary_table(rich)
+    if title.startswith("Welcome"):
+        rich = re.sub(
+            r"^<h1>(?P<body>.*?)</h1>",
+            r'<table><tr><td align="center">\g<body></td></tr></table>',
+            rich,
+            count=1,
+        )
+    if title == "Bot insights":
+        rich = _format_summary_table(rich, bordered=True, center_values=True)
+    elif title == "Advanced status":
+        rich = _format_summary_table(rich, expandable=True)
     elif title == "Trending tracks":
         rich = _format_trending_table(rich)
     elif title == "Assistant sessions":
@@ -551,6 +585,7 @@ def bot_api_dict(value):
 class RichMedia:
     media: object
     kind: str = "photo"
+    placement: str = "before"
 
 
 class RichMessageService:
@@ -618,7 +653,8 @@ class RichMessageService:
         input_media = {"type": media.kind, "media": attachment}
         if "blocks" in result:
             field = media.kind
-            result["blocks"].insert(0, {
+            index = 1 if media.placement == "after_first_block" else 0
+            result["blocks"].insert(index, {
                 "type": media.kind,
                 field: input_media,
             })
@@ -630,7 +666,18 @@ class RichMessageService:
             else:
                 media_tag = '<video src="tg://video?id=hero"></video>'
             if "html" in result:
-                result["html"] = f'{media_tag}\n{result["html"]}'
+                if media.placement == "after_first_block":
+                    block_end = result["html"].find("</table>")
+                    if block_end >= 0:
+                        block_end += len("</table>")
+                        result["html"] = (
+                            result["html"][:block_end] + "\n" + media_tag
+                            + result["html"][block_end:]
+                        )
+                    else:
+                        result["html"] = f'{media_tag}\n{result["html"]}'
+                else:
+                    result["html"] = f'{media_tag}\n{result["html"]}'
             else:
                 result["markdown"] = (
                     f'![](tg://{media_type}?id=hero)\n{result["markdown"]}'
