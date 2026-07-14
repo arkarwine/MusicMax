@@ -22,10 +22,12 @@ SPEC.loader.exec_module(rich_messages)
 
 def heading(level: int, text: str) -> str:
     return f"<h{level}>{rich_messages.unicode_heading(text)}</h{level}>"
-def centered_heading(text: str, *, divider: bool = True) -> str:
+def centered_heading(
+    text: str, *, divider: bool = True, icon: str | None = None
+) -> str:
+    icon = rich_messages.heading_icon(text) if icon is None else icon
     result = (
         '<table><tr><th align="center">'
-        + rich_messages.unicode_heading(text)
         + "</th></tr></table>"
     )
     return result
@@ -60,14 +62,15 @@ class HeadingPromotionTests(unittest.TestCase):
 
         self.assertTrue(result.startswith(centered_heading("Now playing")))
         self.assertIn(
-            f'<h2><a href="https://t.me/example">{rich_messages.unicode_heading(title)}</a></h2>',
+            f'<b><a href="https://t.me/example">{title}</a></b>',
             result,
+        self.assertNotIn("<h2>", result)
         )
         self.assertIn(
             '<a href="tg://user?id=7935506256">Arkar</a>', result
         )
         self.assertNotIn("href=tg://", result)
-        self.assertNotIn("🎵", result.split("</table>", 1)[0])
+        self.assertEqual(result.split("</table>", 1)[0].count("🎵"), 1)
 
     def test_action_and_setup_heading_levels(self):
         queued = rich_messages.promote_heading(

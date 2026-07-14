@@ -118,6 +118,47 @@ _TITLE_RENAMES = {
     "pong!": "Pong",
 }
 
+_HEADER_ICONS = {
+    "Now playing": "🎵",
+    "Queue": "☰",
+    "What would you like to do?": "🎛️",
+    "Choose a language": "🌐",
+    "Assistant sessions": "🤖",
+    "Advanced status": "⚙️",
+    "Trending tracks": "🔥",
+    "Runtime configuration": "⚙️",
+    "Ready to play": "✅",
+    "Setup required": "⚠️",
+    "Welcome": "👋",
+    "New chat log": "📝",
+    "New user log": "📝",
+    "Active streams": "🎧",
+    "Playback access": "👤",
+    "Add an assistant": "➕",
+    "Phone number": "📱",
+    "Check Telegram": "✉️",
+    "Two-step verification": "🔐",
+    "Request failed": "⚠️",
+    "Bot insights": "📊",
+    "Settings": "⚙️",
+    "Controls": "🛠️",
+    "Access": "🔐",
+    "Safety": "🛡️",
+    "Bot": "🤖",
+    "Music": "🎵",
+    "Insights": "📊",
+    "Sudo": "⚡",
+    "Sudo access": "⚡",
+    "Which song would you like?": "🎵",
+    "Sign-in failed": "⚠️",
+    "Log group configured": "✅",
+    "Log group cleared": "✅",
+    "Could not configure the log group": "⚠️",
+    "Online": "🟢",
+    "Pong": "⚡",
+}
+
+
 _PRIMARY = {
     "Now playing", "Queue", "What would you like to do?", "Choose a language",
     "Assistant sessions", "Advanced status", "Trending tracks",
@@ -149,6 +190,23 @@ def unicode_heading(value: str) -> str:
         value,
     )
     return titled.translate(_HEADING_FONT)
+
+def heading_icon(title: str) -> str:
+    icon = _HEADER_ICONS.get(title)
+    if icon:
+        return icon
+    lowered = title.casefold()
+    if lowered.startswith("added "):
+        return "✅"
+    if lowered.startswith("assistant session"):
+        return "🤖"
+    if lowered.startswith("remove session"):
+        return "🗑️"
+    if lowered.startswith("welcome"):
+        return "👋"
+    if any(word in lowered for word in ("failed", "error", "could not")):
+        return "⚠️"
+    return ""
 
 
 def _style_heading(match: re.Match) -> str:
@@ -580,9 +638,12 @@ def promote_heading(text: str) -> str | None:
         rich,
     )
     rich = _UNQUOTED_HREF_RE.sub(r'\1"\2"', rich)
-    if title in {"Now playing", "Queue"} or title.startswith("Added to queue"):
+    if title == "Queue" or title.startswith("Added to queue"):
         rich = _SECONDARY_TRACK_RE.sub(r"\n\n<h2>\1</h2>", rich, count=1)
     rich = _HEADING_TAG_RE.sub(_style_heading, rich)
+    icon = heading_icon(title)
+    if icon:
+        rich = rich.replace(f"<h{level}>", f"<h{level}>{icon} ", 1)
     if title.startswith("Welcome"):
         rich = re.sub(
             r"^<h1>(?P<body>.*?)</h1>",
