@@ -90,14 +90,35 @@ class HeadingPromotionTests(unittest.TestCase):
         result = rich_messages.promote_heading(source)
 
         self.assertIn("<table striped>", result)
-        self.assertIn(
-            "<tr><th>👥 <b>6 total</b></th>"
-            "<td>2 people<br>4 groups</td></tr>",
-            result,
-        )
-        self.assertIn("<tr><th>🟢 <b>Ready</b></th>", result)
+        self.assertEqual(result.count("<table striped>"), 3)
+        self.assertIn('<tr><td colspan="2">👥 <b>6 total</b></td></tr>', result)
+        self.assertIn("<tr><td><b>People</b></td><td>2</td></tr>", result)
+        self.assertIn("<tr><td><b>Groups</b></td><td>4</td></tr>", result)
+        self.assertIn('<tr><td colspan="2">🟢 <b>Ready</b></td></tr>', result)
+        self.assertIn("<tr><td><b>Up</b></td><td>04h</td></tr>", result)
         self.assertNotIn("<blockquote>", result)
         self.assertNotIn("<hr/>", result)
+
+    def test_stats_activity_uses_period_columns(self):
+        source = (
+            "<b>Bot insights</b>\n\n"
+            "<blockquote>Activity\n"
+            "\u251c Plays: <code>3</code> \u00b7 <code>12</code> "
+            "\u00b7 <code>450</code>\n"
+            "\u2514 New chats: <code>1</code> \u00b7 <code>4</code> "
+            "\u00b7 <code>80</code></blockquote>"
+        )
+
+        result = rich_messages.promote_heading(source)
+
+        self.assertIn(
+            "<tr><th>Metric</th><th>Today</th>"
+            "<th>This week</th><th>All time</th></tr>",
+            result,
+        )
+        self.assertIn(
+            "<tr><td><b>Plays</b></td><td><code>3</code></td>", result
+        )
 
 
 
@@ -137,12 +158,14 @@ class HeadingPromotionTests(unittest.TestCase):
         self.assertIn("<tr><td>Queue limit</td><td><code>15</code></td></tr>", configuration)
         self.assertIn("<tr><td>Auto end •</td><td><code>on</code></td></tr>", configuration)
         self.assertIn("</table><hr/><blockquote>", configuration)
+        self.assertEqual(status.count("<table striped>"), 2)
+        self.assertIn('<tr><td colspan="2">⚙️ <b>System</b></td></tr>', status)
         self.assertIn(
-            "<tr><th>⚙️ <b>System</b></th>"
-            "<td>CPU: <code>12%</code><br>Memory: <code>34%</code></td></tr>",
-            status,
+            "<tr><td><b>CPU</b></td><td><code>12%</code></td></tr>", status
         )
-        self.assertIn("<tr><th>🟢 <b>Ready</b></th>", status)
+        self.assertIn(
+            "<tr><td><b>Memory</b></td><td><code>34%</code></td></tr>", status
+        )
         self.assertNotIn("<blockquote>", status)
         self.assertNotIn("<hr/>", status)
 
@@ -159,12 +182,12 @@ class HeadingPromotionTests(unittest.TestCase):
 
         self.assertIn("<table striped>", result)
         self.assertIn(
-            '<tr><th>1️⃣</th><td><a href="https://example.com/one">'
+            '<tr><td><b>1️⃣</b></td><td><a href="https://example.com/one">'
             "First track</a></td><td><code>12 plays</code></td></tr>",
             result,
         )
         self.assertIn(
-            "<tr><th>2️⃣</th><td>Second track</td>"
+            "<tr><td><b>2️⃣</b></td><td>Second track</td>"
             "<td><code>8 plays</code></td></tr>",
             result,
         )
@@ -182,26 +205,26 @@ class HeadingPromotionTests(unittest.TestCase):
         )
 
         self.assertIn(
-            "<tr><th>Active</th><td><code>2</code></td></tr>", dashboard
+            "<tr><td><b>Active</b></td><td><code>2</code></td></tr>", dashboard
         )
         self.assertIn(
-            "<tr><th>Disabled</th><td><code>3</code></td></tr>", dashboard
+            "<tr><td><b>Disabled</b></td><td><code>3</code></td></tr>", dashboard
         )
         self.assertIn(
-            "<tr><th>Total</th><td><code>5</code></td></tr>", dashboard
+            "<tr><td><b>Total</b></td><td><code>5</code></td></tr>", dashboard
         )
         self.assertIn("Choose an account.", dashboard)
         self.assertIn(
-            "<tr><th>Session</th><td><code>3</code></td></tr>", detail
+            "<tr><td><b>Session</b></td><td><code>3</code></td></tr>", detail
         )
-        self.assertIn("<tr><th>State</th><td>Active</td></tr>", detail)
-        self.assertIn("<tr><th>Account</th><td>@helper</td></tr>", detail)
-        self.assertIn("<tr><th>Source</th><td>Startup</td></tr>", detail)
+        self.assertIn("<tr><td><b>State</b></td><td>Active</td></tr>", detail)
+        self.assertIn("<tr><td><b>Account</b></td><td>@helper</td></tr>", detail)
+        self.assertIn("<tr><td><b>Source</b></td><td>Startup</td></tr>", detail)
         self.assertIn(
-            "<tr><th>User ID</th><td><code>123456</code></td></tr>", detail
+            "<tr><td><b>User ID</b></td><td><code>123456</code></td></tr>", detail
         )
         self.assertIn(
-            "<tr><th>Active calls</th><td><code>2</code></td></tr>", detail
+            "<tr><td><b>Active calls</b></td><td><code>2</code></td></tr>", detail
         )
 
     def test_plain_body_newlines_are_explicit_but_preformatted_lines_are_not(self):

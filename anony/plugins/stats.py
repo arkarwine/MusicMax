@@ -35,6 +35,7 @@ async def _stats_data() -> dict:
     bot_ready = bool(getattr(app, "is_connected", False))
     database_ready = db.connection is not None
     month = await db.get_analytics(30)
+    totals = await db.get_analytics_totals()
     if bot_ready and database_ready and assistants:
         status = "Ready"
     elif bot_ready and database_ready:
@@ -53,6 +54,7 @@ async def _stats_data() -> dict:
         "status": status,
         "days": month[-7:],
         "month": month,
+        "totals": totals,
         "updated": datetime.now(timezone.utc).strftime("%d %b · %H:%M"),
     }
 
@@ -104,6 +106,11 @@ def _stats_caption(_lang: dict, data: dict) -> str:
         _compact(today_new_chats),
         _compact(daily_average),
         escape(data["updated"]),
+        _compact(
+            int(data["totals"].get("users_added", 0))
+            + int(data["totals"].get("groups_added", 0))
+        ),
+        _compact(int(data["totals"].get("plays", 0))),
     )
     return f'<b>{_lang["heading_stats"]}</b>\n\n{body}'
 

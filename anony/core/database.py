@@ -809,6 +809,19 @@ class SQLiteDB:
             )
         return result
 
+    async def get_analytics_totals(self) -> dict:
+        cursor = await self.conn.execute(
+            "SELECT COALESCE(SUM(users_added), 0), "
+            "COALESCE(SUM(groups_added), 0), COALESCE(SUM(plays), 0) "
+            "FROM analytics_daily"
+        )
+        row = await cursor.fetchone()
+        return {
+            "users_added": int(row[0] if row else 0),
+            "groups_added": int(row[1] if row else 0),
+            "plays": int(row[2] if row else 0),
+        }
+
     async def is_chat(self, chat_id: int) -> bool:
         return chat_id in self.chats
 

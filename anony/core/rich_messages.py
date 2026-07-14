@@ -187,7 +187,7 @@ def _format_runtime_config_table(rich: str) -> str:
 
 
 
-def _format_summary_table(rich: str) -> str:
+def _legacy_summary_table(rich: str) -> str:
     quotes = list(_BLOCKQUOTE_RE.finditer(rich))
     if not quotes:
         return rich
@@ -200,12 +200,102 @@ def _format_summary_table(rich: str) -> str:
         lines = [line.strip() for line in quote.group("body").split("<br>")]
         if len(lines) < 2 or any(not line for line in lines):
             return rich
-        details = [re.sub(r"^[├└│]\s*", "", line) for line in lines[1:]]
+        details = [re.sub(r"^[\u251c\u2514\u2502]\s*", "", line) for line in lines[1:]]
         rows.append(
             f"<tr><th>{lines[0]}</th><td>{'<br>'.join(details)}</td></tr>"
         )
     table = "<table striped>" + "".join(rows) + "</table>"
     return rich[:quotes[0].start()] + table + rich[quotes[-1].end():]
+
+
+def _summary_metric_row(line: str) -> str:
+    line = re.sub(r"^[\u251c\u2514\u2502]\s*", "", line).strip()
+    if ":" in line:
+        label, value = line.split(":", 1)
+        if label.strip() and value.strip():
+            return (
+                f"<tr><td><b>{label.strip()}</b></td>"
+                f"<td>{value.strip()}</td></tr>"
+            )
+
+    leading_value = re.fullmatch(
+        r"(?P<value>\d[\d.,]*(?:[KMB])?)\s+(?P<label>.+)",
+        line,
+        re.IGNORECASE,
+    )
+    if leading_value:
+        label = leading_value.group("label")
+        label = label[:1].upper() + label[1:]
+        return (
+            f"<tr><td><b>{label}</b></td>"
+            f"<td>{leading_value.group('value')}</td></tr>"
+        )
+
+    trailing_value = re.fullmatch(
+        r"(?P<label>.+?)\s+"
+        r"(?P<value>\d[\w:.,%+-]*(?:\s+\d[\w:.,%+-]*)*)",
+        line,
+        re.IGNORECASE,
+    )
+    if trailing_value:
+        return (
+            f"<tr><td><b>{trailing_value.group('label')}</b></td>"
+            f"<td>{trailing_value.group('value')}</td></tr>"
+        )
+
+    return f'<tr><td colspan="2">{line}</td></tr>'
+
+
+def _summary_table(lines: list[str]) -> str:
+    period_rows = []
+    period_pattern = re.compile(
+        r"^[\u251c\u2514\u2502]\s*(?P<label>[^:]+):\s*"
+        r"<code>(?P<today>.*?)</code>\s*\u00b7\s*"
+        r"<code>(?P<week>.*?)</code>\s*\u00b7\s*"
+        r"<code>(?P<all_time>.*?)</code>$",
+        re.I | re.S,
+    )
+    for line in lines[1:]:
+        match = period_pattern.fullmatch(line)
+        if match:
+            period_rows.append(
+                f"<tr><td><b>{match.group('label').strip()}</b></td>"
+                f"<td><code>{match.group('today')}</code></td>"
+                f"<td><code>{match.group('week')}</code></td>"
+                f"<td><code>{match.group('all_time')}</code></td></tr>"
+            )
+
+    if period_rows and len(period_rows) == len(lines) - 1:
+        rows = (
+            f'<tr><td colspan="4">{lines[0]}</td></tr>'
+            "<tr><th>Metric</th><th>Today</th>"
+            "<th>This week</th><th>All time</th></tr>"
+            + "".join(period_rows)
+        )
+        return f"<table striped>{rows}</table>"
+
+    rows = [f'<tr><td colspan="2">{lines[0]}</td></tr>']
+    rows.extend(_summary_metric_row(line) for line in lines[1:])
+    return "<table striped>" + "".join(rows) + "</table>"
+
+
+def _format_summary_table(rich: str) -> str:
+    quotes = list(_BLOCKQUOTE_RE.finditer(rich))
+    if not quotes:
+        return rich
+    section = rich[quotes[0].start():quotes[-1].end()]
+    if _BLOCKQUOTE_RE.sub("", section).strip():
+        return rich
+
+    tables = []
+    for quote in quotes:
+        lines = [line.strip() for line in quote.group("body").split("<br>")]
+        if len(lines) < 2 or any(not line for line in lines):
+            return rich
+        tables.append(_summary_table(lines))
+    return (
+        rich[:quotes[0].start()] + "".join(tables) + rich[quotes[-1].end():]
+    )
 
 
 def _format_trending_table(rich: str) -> str:
@@ -225,7 +315,7 @@ def _format_trending_table(rich: str) -> str:
         if match is None:
             return rich
         rows.append(
-            f"<tr><th>{match.group('rank')}</th>"
+            f"<tr><td><b>{match.group('rank')}</b></td>"
             f"<td>{match.group('title')}</td>"
             f"<td><code>{match.group('plays')}</code></td></tr>"
         )
@@ -250,9 +340,10 @@ def _format_sessions_table(rich: str) -> str:
     active = int(match.group("active"))
     total = int(match.group("total"))
     rows = (
-        f"<tr><th>Active</th><td><code>{active}</code></td></tr>"
-        f"<tr><th>Disabled</th><td><code>{max(total - active, 0)}</code></td></tr>"
-        f"<tr><th>Total</th><td><code>{total}</code></td></tr>"
+        f"<tr><td><b>Active</b></td><td><code>{active}</code></td></tr>"
+        f"<tr><td><b>Disabled</b></td>"
+        f"<td><code>{max(total - active, 0)}</code></td></tr>"
+        f"<tr><td><b>Total</b></td><td><code>{total}</code></td></tr>"
     )
     prompt = match.group("prompt")
     suffix = f"\n{prompt}" if prompt else ""
@@ -278,17 +369,22 @@ def _format_session_detail_table(rich: str) -> str:
     if startup:
         state = state.rsplit(" · ", 1)[0]
     rows = [
-        f"<tr><th>Session</th><td><code>{match.group('slot')}</code></td></tr>"
+        f"<tr><td><b>Session</b></td>"
+        f"<td><code>{match.group('slot')}</code></td></tr>"
     ]
     if match.group("account"):
         rows.append(
-            f"<tr><th>Account</th><td>{match.group('account')}</td></tr>"
+            f"<tr><td><b>Account</b></td>"
+            f"<td>{match.group('account')}</td></tr>"
         )
     rows.extend([
-        f"<tr><th>State</th><td>{state}</td></tr>",
-        f"<tr><th>Source</th><td>{'Startup' if startup else 'Database'}</td></tr>",
-        f"<tr><th>User ID</th><td><code>{match.group('user_id')}</code></td></tr>",
-        f"<tr><th>Active calls</th><td><code>{match.group('calls')}</code></td></tr>",
+        f"<tr><td><b>State</b></td><td>{state}</td></tr>",
+        f"<tr><td><b>Source</b></td>"
+        f"<td>{'Startup' if startup else 'Database'}</td></tr>",
+        f"<tr><td><b>User ID</b></td>"
+        f"<td><code>{match.group('user_id')}</code></td></tr>",
+        f"<tr><td><b>Active calls</b></td>"
+        f"<td><code>{match.group('calls')}</code></td></tr>",
     ])
     table = "<table striped>" + "".join(rows) + "</table>"
     return heading.group("heading") + table

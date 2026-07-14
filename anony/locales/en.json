@@ -221,7 +221,7 @@
     "settings_not_allowed": "Only this group's admins can change its settings.",
     "settings_unavailable": "I couldn't open settings for that group. Open them again from the group.",
     "stats_fetching": "⏳ Gathering our latest reach…",
-    "stats_caption": "<blockquote>👥 <b>{1} total</b>\n├ {10} people\n└ {11} groups</blockquote>\n\n<blockquote>🎵 <b>{2} plays today</b>\n├ {3} active chats today\n├ {12} new chats today\n└ {13} daily average</blockquote>\n\n<blockquote>{9} {6}\n├ {4} assistants\n├ Up {5}\n└ Updated {14} UTC</blockquote>",
+    "stats_caption": "<blockquote>👥 <b>Audience</b>\n├ People: <code>{10}</code>\n├ Groups: <code>{11}</code>\n└ Total: <code>{1}</code></blockquote>\n\n<blockquote>🎵 <b>Activity</b>\n├ Plays: <code>{2}</code> · <code>{8}</code> · <code>{16}</code>\n└ New chats: <code>{12}</code> · <code>{7}</code> · <code>{15}</code></blockquote>\n\n<blockquote>{9} <b>{6}</b>\n├ Active chats: <code>{3}</code>\n├ Daily average: <code>{13}</code>\n├ Assistants: <code>{4}</code>\n├ Uptime: <code>{5}</code>\n└ Updated: {14} UTC</blockquote>",
     "stats_status_ready": "Ready",
     "stats_status_needs_assistant": "Preparing",
     "stats_status_unavailable": "Resting",
