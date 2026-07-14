@@ -247,12 +247,13 @@ def _summary_metric_row(line: str) -> str:
 
 
 def _summary_table(lines: list[str]) -> str:
+    headers = [part.strip() for part in lines[0].split(" · ")]
     period_rows = []
     period_pattern = re.compile(
         r"^[\u251c\u2514\u2502]\s*(?P<label>[^:]+):\s*"
         r"<code>(?P<today>.*?)</code>\s*\u00b7\s*"
         r"<code>(?P<week>.*?)</code>\s*\u00b7\s*"
-        r"<code>(?P<all_time>.*?)</code>$",
+        r"<code>(?P<month>.*?)</code>$",
         re.I | re.S,
     )
     for line in lines[1:]:
@@ -260,21 +261,28 @@ def _summary_table(lines: list[str]) -> str:
         if match:
             period_rows.append(
                 f"<tr><td><b>{match.group('label').strip()}</b></td>"
-                f"<td><code>{match.group('today')}</code></td>"
-                f"<td><code>{match.group('week')}</code></td>"
-                f"<td><code>{match.group('all_time')}</code></td></tr>"
+                f"<td>{match.group('today')}</td>"
+                f"<td>{match.group('week')}</td>"
+                f"<td>{match.group('month')}</td></tr>"
             )
 
     if period_rows and len(period_rows) == len(lines) - 1:
-        rows = (
-            f'<tr><td colspan="4">{lines[0]}</td></tr>'
-            "<tr><th>Metric</th><th>Today</th>"
-            "<th>This week</th><th>All time</th></tr>"
-            + "".join(period_rows)
-        )
+        if len(headers) == 4:
+            header = "<tr>" + "".join(
+                f"<th>{value}</th>" for value in headers
+            ) + "</tr>"
+        else:
+            header = (
+                "<tr><th>Activity</th><th>Today</th>"
+                "<th>7 days</th><th>30 days</th></tr>"
+            )
+        rows = header + "".join(period_rows)
         return f"<table striped>{rows}</table>"
 
-    rows = [f'<tr><td colspan="2">{lines[0]}</td></tr>']
+    if len(headers) == 2:
+        rows = [f"<tr><th>{headers[0]}</th><th>{headers[1]}</th></tr>"]
+    else:
+        rows = [f'<tr><td colspan="2">{lines[0]}</td></tr>']
     rows.extend(_summary_metric_row(line) for line in lines[1:])
     return "<table striped>" + "".join(rows) + "</table>"
 
@@ -294,7 +302,8 @@ def _format_summary_table(rich: str) -> str:
             return rich
         tables.append(_summary_table(lines))
     return (
-        rich[:quotes[0].start()] + "".join(tables) + rich[quotes[-1].end():]
+        rich[:quotes[0].start()] + "<hr/>".join(tables)
+        + rich[quotes[-1].end():]
     )
 
 

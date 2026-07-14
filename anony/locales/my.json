@@ -110,7 +110,7 @@
     "start_gp": "🎵 <b>သီချင်းဖွင့်ရန် အသင့်ဖြစ်ပါပြီ</b>\n\n<b>{0}</b> ကို ဒီအဖွဲ့အတွက် ပြင်ဆင်ပြီးပါပြီ။\n\n<blockquote>ဗီဒီယိုချတ် စတင်ပြီး\nနားထောင်ရန် <code>/play သီချင်း သို့မဟုတ် လင့်ခ်</code>\nသိမ်းရန် <code>/song သီချင်း သို့မဟုတ် လင့်ခ်</code></blockquote>",
     "start_settings": "<u><b>{0} ဆက်တင်များ</b></u>\n\nဤချတ်၏ လက်ရှိဆက်တင်များကို ပြောင်းလဲရန် အောက်ပါခလုတ်များကို နှိပ်ပါ။",
     "stats_fetching": "⏳ နောက်ဆုံးအသုံးပြုမှုကို စုစည်းနေပါတယ်…",
-    "stats_caption": "<blockquote>👥 <b>အသုံးပြုသူများ</b>\n├ လူ: <code>{10}</code>\n├ အဖွဲ့: <code>{11}</code>\n└ စုစုပေါင်း: <code>{1}</code></blockquote>\n\n<blockquote>🎵 <b>အသုံးပြုမှု</b>\n├ ဖွင့်မှု: <code>{2}</code> · <code>{8}</code> · <code>{16}</code>\n└ ချတ်အသစ်: <code>{12}</code> · <code>{7}</code> · <code>{15}</code></blockquote>\n\n<blockquote>{9} <b>{6}</b>\n├ အသုံးပြုချတ်: <code>{3}</code>\n├ နေ့စဉ်ပျမ်းမျှ: <code>{13}</code>\n├ လက်ထောက်: <code>{4}</code>\n├ အွန်လိုင်း: <code>{5}</code>\n└ ပြန်တင်ချိန်: {14} UTC</blockquote>",
+    "stats_caption": "<blockquote>အကျဉ်းချုပ် · တန်ဖိုး\n├ အသုံးပြုသူ: {10}\n├ အဖွဲ့: {11}\n└ စုစုပေါင်းဖွင့်မှု: <b>{16}</b></blockquote>\n\n<blockquote>အသုံးပြုမှု · ယနေ့ · ၇ ရက် · ၃၀ ရက်\n├ ဖွင့်မှု: <code>{2}</code> · <code>{8}</code> · <code>{15}</code>\n├ အသုံးပြုချတ်: <code>{3}</code> · <code>{17}</code> · <code>{18}</code>\n└ ချတ်အသစ်: <code>{12}</code> · <code>{7}</code> · <code>{13}</code></blockquote>\n\n{9} <b>{6}</b> · အွန်လိုင်း {5} · 🤖 လက်ထောက် {4} · 🎧 လက်ရှိ {3}",
     "stats_status_ready": "အသင့်",
     "stats_status_needs_assistant": "ပြင်ဆင်ဆဲ",
     "stats_status_unavailable": "ခဏနား",

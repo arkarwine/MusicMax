@@ -31,6 +31,8 @@ async def _stats_data() -> dict:
     users = len(await db.get_users())
     groups = len(await db.get_chats())
     activity = await db.get_stream_activity(24)
+    activity_7d = await db.get_stream_activity(24 * 7)
+    activity_30d = await db.get_stream_activity(24 * 30)
     assistants = len(set(userbot.clients) & set(anon.clients))
     bot_ready = bool(getattr(app, "is_connected", False))
     database_ready = db.connection is not None
@@ -49,6 +51,8 @@ async def _stats_data() -> dict:
         "chats": users + groups,
         "streams_24h": activity["streams"],
         "active_chats_24h": activity["active_chats"],
+        "active_chats_7d": activity_7d["active_chats"],
+        "active_chats_30d": activity_30d["active_chats"],
         "assistants": assistants,
         "uptime": _uptime(),
         "status": status,
@@ -83,7 +87,11 @@ def _stats_caption(_lang: dict, data: dict) -> str:
     today_new_chats = int(today.get("users_added", 0)) + int(
         today.get("groups_added", 0)
     )
-    daily_average = round(week_plays / len(days)) if days else 0
+    month_new_chats = sum(
+        int(day.get("users_added", 0)) + int(day.get("groups_added", 0))
+        for day in data["month"]
+    )
+    month_plays = sum(int(day.get("plays", 0)) for day in data["month"])
     status = _lang[
         {
             "Ready": "stats_status_ready",
@@ -104,13 +112,12 @@ def _stats_caption(_lang: dict, data: dict) -> str:
         _compact(data["users"]),
         _compact(data["groups"]),
         _compact(today_new_chats),
-        _compact(daily_average),
+        _compact(month_new_chats),
         escape(data["updated"]),
-        _compact(
-            int(data["totals"].get("users_added", 0))
-            + int(data["totals"].get("groups_added", 0))
-        ),
+        _compact(month_plays),
         _compact(int(data["totals"].get("plays", 0))),
+        _compact(data["active_chats_7d"]),
+        _compact(data["active_chats_30d"]),
     )
     return f'<b>{_lang["heading_stats"]}</b>\n\n{body}'
 

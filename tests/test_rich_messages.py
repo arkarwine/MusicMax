@@ -97,12 +97,15 @@ class HeadingPromotionTests(unittest.TestCase):
         self.assertIn('<tr><td colspan="2">🟢 <b>Ready</b></td></tr>', result)
         self.assertIn("<tr><td><b>Up</b></td><td>04h</td></tr>", result)
         self.assertNotIn("<blockquote>", result)
-        self.assertNotIn("<hr/>", result)
+        self.assertEqual(result.count("<hr/>"), 2)
 
     def test_stats_activity_uses_period_columns(self):
         source = (
             "<b>Bot insights</b>\n\n"
-            "<blockquote>Activity\n"
+            "<blockquote>Overview · Value\n"
+            "\u251c Users: 2\n"
+            "\u2514 Lifetime plays: <b>450</b></blockquote>\n\n"
+            "<blockquote>Activity · Today · 7 days · 30 days\n"
             "\u251c Plays: <code>3</code> \u00b7 <code>12</code> "
             "\u00b7 <code>450</code>\n"
             "\u2514 New chats: <code>1</code> \u00b7 <code>4</code> "
@@ -112,12 +115,16 @@ class HeadingPromotionTests(unittest.TestCase):
         result = rich_messages.promote_heading(source)
 
         self.assertIn(
-            "<tr><th>Metric</th><th>Today</th>"
-            "<th>This week</th><th>All time</th></tr>",
+            "<tr><th>Overview</th><th>Value</th></tr>", result
+        )
+        self.assertEqual(result.count("<table striped>"), 2)
+        self.assertEqual(result.count("<hr/>"), 1)
+        self.assertIn(
+            "<tr><th>Activity</th><th>Today</th><th>7 days</th><th>30 days</th></tr>",
             result,
         )
         self.assertIn(
-            "<tr><td><b>Plays</b></td><td><code>3</code></td>", result
+            "<tr><td><b>Plays</b></td><td>3</td>", result
         )
 
 
@@ -167,7 +174,7 @@ class HeadingPromotionTests(unittest.TestCase):
             "<tr><td><b>Memory</b></td><td><code>34%</code></td></tr>", status
         )
         self.assertNotIn("<blockquote>", status)
-        self.assertNotIn("<hr/>", status)
+        self.assertEqual(status.count("<hr/>"), 1)
 
     def test_trending_uses_rank_track_and_play_columns(self):
         source = (
