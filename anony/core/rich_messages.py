@@ -142,6 +142,26 @@ def _style_heading(match: re.Match) -> str:
     )
     return f'<h{match.group("level")}>{body}</h{match.group("level")}>'
 
+
+def _center_leading_heading(rich: str, *, divider: bool = True) -> str:
+    heading = re.match(
+        r"<h(?P<level>[1-6])>(?P<body>.*?)</h(?P=level)>",
+        rich,
+        re.I | re.S,
+    )
+    if heading is None:
+        return rich
+    header = (
+        '<table><tr><th align="center">'
+        + heading.group("body")
+        + "</th></tr></table>"
+    )
+    remainder = rich[heading.end():]
+    has_content = bool(re.sub(r"(?:<br\s*/?>|\s)+", "", remainder, flags=re.I))
+    separator = "<hr/>" if divider and has_content else ""
+    return header + separator + remainder
+
+
 def _insert_before_last_blockquote(rich: str) -> str:
     index = rich.rfind("<blockquote>")
     if index < 0:
@@ -326,7 +346,7 @@ def _format_summary_table(
             expandable=expandable,
         ))
     return (
-        rich[:quotes[0].start()] + "<hr/>".join(tables)
+        rich[:quotes[0].start()] + "".join(tables)
         + rich[quotes[-1].end():]
     )
 
@@ -337,7 +357,9 @@ def _format_trending_table(rich: str) -> str:
         return rich
     intro_end += len("</blockquote>")
     lines = [line.strip() for line in rich[intro_end:].splitlines() if line.strip()]
-    rows = []
+    rows = [
+        "<tr><th>Rank</th><th>Track</th><th>Plays</th></tr>"
+    ]
     pattern = re.compile(
         r"(?P<rank><tg-emoji\b[^>]*>.*?</tg-emoji\s*>|\S+)\s+"
         r"(?P<title>.*?)\s{2,}<code>(?P<plays>.*?)</code>",
@@ -347,12 +369,16 @@ def _format_trending_table(rich: str) -> str:
         match = pattern.fullmatch(line)
         if match is None:
             return rich
+        plays = match.group("plays").strip()
+        count = re.match(r"\d[\d.,]*(?:[KMB])?", plays, re.I)
+        if count:
+            plays = count.group(0)
         rows.append(
             f"<tr><td><b>{match.group('rank')}</b></td>"
             f"<td>{match.group('title')}</td>"
-            f"<td><code>{match.group('plays')}</code></td></tr>"
+            f"<td><code>{plays}</code></td></tr>"
         )
-    if not rows:
+    if len(rows) == 1:
         return rich
     return rich[:intro_end] + "<table striped>" + "".join(rows) + "</table>"
 
@@ -534,7 +560,7 @@ def promote_heading(text: str) -> str | None:
     if title.startswith("Welcome"):
         rich = re.sub(
             r"^<h1>(?P<body>.*?)</h1>",
-            r'<table><tr><td align="center">\g<body></td></tr></table>',
+            r'<table><tr><th align="center">\g<body></th></tr></table>',
             rich,
             count=1,
         )
@@ -551,6 +577,11 @@ def promote_heading(text: str) -> str | None:
     rich = _add_section_separators(rich, title)
     if title == "Runtime configuration":
         rich = _format_runtime_config_table(rich)
+    rich = _center_leading_heading(
+        rich,
+        divider=not title.startswith("Welcome"),
+    )
+    rich = rich.replace("<th>", '<th align="center">')
     rich = _explicit_rich_breaks(rich)
     return rich
 
@@ -670,6 +701,9 @@ class RichMessageService:
                     block_end = result["html"].find("</table>")
                     if block_end >= 0:
                         block_end += len("</table>")
+                        if result["html"][block_end:].startswith("<hr/>"):
+                            block_end += len("<hr/>")
+
                         result["html"] = (
                             result["html"][:block_end] + "\n" + media_tag
                             + result["html"][block_end:]

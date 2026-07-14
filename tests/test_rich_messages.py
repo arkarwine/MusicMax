@@ -22,6 +22,15 @@ SPEC.loader.exec_module(rich_messages)
 
 def heading(level: int, text: str) -> str:
     return f"<h{level}>{rich_messages.unicode_heading(text)}</h{level}>"
+def centered_heading(text: str, *, divider: bool = True) -> str:
+    result = (
+        '<table><tr><th align="center">'
+        + rich_messages.unicode_heading(text)
+        + "</th></tr></table>"
+    )
+    return result + ("<hr/>" if divider else "")
+
+
 
 
 
@@ -36,7 +45,7 @@ class HeadingPromotionTests(unittest.TestCase):
 
         result = rich_messages.promote_heading(source)
 
-        self.assertIn(heading(1, "Now playing"), result)
+        self.assertTrue(result.startswith(centered_heading("Now playing")))
         self.assertIn(
             f'<h2><a href="https://t.me/example">{rich_messages.unicode_heading(title)}</a></h2>',
             result,
@@ -45,7 +54,7 @@ class HeadingPromotionTests(unittest.TestCase):
             '<a href="tg://user?id=7935506256">Arkar</a>', result
         )
         self.assertNotIn("href=tg://", result)
-        self.assertNotIn("🎵", result.split("</h1>", 1)[0])
+        self.assertNotIn("🎵", result.split("</table>", 1)[0])
 
     def test_action_and_setup_heading_levels(self):
         queued = rich_messages.promote_heading(
@@ -55,8 +64,8 @@ class HeadingPromotionTests(unittest.TestCase):
             "⚠️ <b>One thing left</b>\n\nAllow invitations"
         )
 
-        self.assertTrue(queued.startswith(heading(3, "Added to queue · #3")))
-        self.assertTrue(setup.startswith(heading(3, "Setup required")))
+        self.assertTrue(queued.startswith(centered_heading("Added to queue · #3")))
+        self.assertTrue(setup.startswith(centered_heading("Setup required")))
 
     def test_playlist_and_session_action_cards_use_compact_headings(self):
         playlist = rich_messages.promote_heading(
@@ -69,9 +78,13 @@ class HeadingPromotionTests(unittest.TestCase):
             "🎵 <b>Which song would you like?</b>\n\nReply with a title."
         )
 
-        self.assertTrue(playlist.startswith(f"<h3>{rich_messages.unicode_heading('Added 12 tracks')}"))
-        self.assertTrue(remove.startswith(heading(3, "Remove session 2?")))
-        self.assertTrue(prompt.startswith(heading(3, "Which song would you like?")))
+        self.assertTrue(playlist.startswith(
+            centered_heading("Added 12 tracks from the playlist to queue", divider=False)
+        ))
+        self.assertTrue(remove.startswith(centered_heading("Remove session 2?")))
+        self.assertTrue(prompt.startswith(
+            centered_heading("Which song would you like?")
+        ))
 
     def test_stats_summary_uses_localized_table_rows(self):
         source = (
@@ -101,7 +114,7 @@ class HeadingPromotionTests(unittest.TestCase):
         self.assertIn('<tr><td colspan="2">🟢 <b>Ready</b></td></tr>', result)
         self.assertIn('<tr><td><b>Up</b></td><td align="center">04h</td></tr>', result)
         self.assertNotIn("<blockquote>", result)
-        self.assertEqual(result.count("<hr/>"), 2)
+        self.assertEqual(result.count("<hr/>"), 1)
 
     def test_stats_activity_uses_period_columns(self):
         source = (
@@ -119,12 +132,12 @@ class HeadingPromotionTests(unittest.TestCase):
         result = rich_messages.promote_heading(source)
 
         self.assertIn(
-            "<tr><th>Overview</th><th>Value</th></tr>", result
+            '<tr><th align="center">Overview</th><th align="center">Value</th></tr>', result
         )
         self.assertEqual(result.count("<table bordered striped>"), 2)
         self.assertEqual(result.count("<hr/>"), 1)
         self.assertIn(
-            "<tr><th>Activity</th><th>Today</th><th>7 days</th><th>30 days</th></tr>",
+            '<tr><th align="center">Activity</th><th align="center">Today</th><th align="center">7 days</th><th align="center">30 days</th></tr>',
             result,
         )
         self.assertIn(
@@ -144,7 +157,7 @@ class HeadingPromotionTests(unittest.TestCase):
 
         result = rich_messages.promote_heading(source)
 
-        self.assertEqual(result.count("<hr/>"), 1)
+        self.assertEqual(result.count("<hr/>"), 2)
         self.assertIn("</blockquote><hr/><blockquote>", result)
 
     def test_configuration_and_status_use_tables(self):
@@ -162,9 +175,9 @@ class HeadingPromotionTests(unittest.TestCase):
             "└ Updated 14 Jul · 17:29 UTC</blockquote>"
         )
 
-        self.assertEqual(configuration.count("<hr/>"), 1)
+        self.assertEqual(configuration.count("<hr/>"), 2)
         self.assertIn(
-            "<table striped><tr><th>Setting</th><th>Value</th></tr>", configuration
+            '<table striped><tr><th align="center">Setting</th><th align="center">Value</th></tr>', configuration
         )
         self.assertIn("<tr><td>Queue limit</td><td><code>15</code></td></tr>", configuration)
         self.assertIn("<tr><td>Auto end •</td><td><code>on</code></td></tr>", configuration)
@@ -199,15 +212,22 @@ class HeadingPromotionTests(unittest.TestCase):
 
         self.assertIn("<table striped>", result)
         self.assertIn(
+            '<tr><th align="center">Rank</th>'
+            '<th align="center">Track</th>'
+            '<th align="center">Plays</th></tr>',
+            result,
+        )
+        self.assertIn(
             '<tr><td><b>1️⃣</b></td><td><a href="https://example.com/one">'
-            "First track</a></td><td><code>12 plays</code></td></tr>",
+            "First track</a></td><td><code>12</code></td></tr>",
             result,
         )
         self.assertIn(
             "<tr><td><b>2️⃣</b></td><td>Second track</td>"
-            "<td><code>8 plays</code></td></tr>",
+            "<td><code>8</code></td></tr>",
             result,
         )
+        self.assertNotIn("<code>12 plays</code>", result)
 
     def test_sessions_dashboard_and_detail_use_tables(self):
         dashboard = rich_messages.promote_heading(
@@ -254,9 +274,9 @@ class HeadingPromotionTests(unittest.TestCase):
         )
 
         self.assertTrue(result.startswith(
-            '<table><tr><td align="center">'
+            '<table><tr><th align="center">'
             + rich_messages.unicode_heading("Welcome, ArKar")
-            + "</td></tr></table>"
+            + "</th></tr></table>"
         ))
         self.assertNotIn("<table bordered", result)
 
@@ -284,9 +304,13 @@ class HeadingPromotionTests(unittest.TestCase):
             "👤 <b>Pʟᴀʏʙᴀᴄᴋ Aᴄᴄᴇss · 4</b>\n"
         )
 
-        self.assertTrue(help_text.startswith(heading(1, "Controls")))
-        self.assertTrue(session.startswith(heading(2, "Assistant Session 2")))
-        self.assertTrue(access.startswith(heading(1, "Playback access")))
+        self.assertTrue(help_text.startswith(centered_heading("Controls")))
+        self.assertTrue(session.startswith(
+            centered_heading("Assistant Session 2")
+        ))
+        self.assertTrue(access.startswith(
+            centered_heading("Playback access", divider=False)
+        ))
 
     def test_non_heading_and_burmese_body_are_unchanged(self):
         self.assertIsNone(rich_messages.promote_heading("Searching…"))
@@ -351,7 +375,7 @@ class SerializationTests(unittest.TestCase):
         )
         with ExitStack() as stack:
             message, _ = service._rich_message(
-                "<table><tr><td>Welcome</td></tr></table><p>Body</p>",
+                "<table><tr><td>Title</td></tr></table><hr/><p>Body</p>",
                 rich_messages.RichMedia(
                     "https://example.com/art.jpg",
                     "photo",
@@ -365,6 +389,7 @@ class SerializationTests(unittest.TestCase):
             html.index("</table>"),
             html.index('<img src="tg://photo?id=hero"/>'),
         )
+        self.assertLess(html.index("<hr/>"), html.index('<img src="tg://photo?id=hero"/>'))
         self.assertLess(html.index('<img src="tg://photo?id=hero"/>'), html.index("<p>"))
 
     def test_local_media_uses_multipart_attachment(self):
@@ -575,11 +600,11 @@ class LocaleHeadingTests(unittest.TestCase):
         )
         self.assertTrue(
             rich_messages.promote_heading(languages["my"]["play_media"])
-            .startswith(heading(1, "Now playing"))
+            .startswith(centered_heading("Now playing"))
         )
         self.assertTrue(
             rich_messages.promote_heading(languages["my"]["help_menu"])
-            .startswith(heading(1, "What would you like to do?"))
+            .startswith(centered_heading("What would you like to do?"))
         )
 
 
