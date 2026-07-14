@@ -27,19 +27,24 @@ def heading(level: int, text: str) -> str:
 
 class HeadingPromotionTests(unittest.TestCase):
     def test_primary_play_heading_and_track_entity(self):
+        title = "Cyberpunk: Edgerunners | I Really Want to Stay at Your House"
         source = (
             '🎵 <b>Nᴏᴡ Pʟᴀʏɪɴɢ</b>\n\n'
-            '<b><a href="https://t.me/example">Track title</a></b>\n'
-            '<blockquote>3:15 · requested by Arkar</blockquote>'
+            f'<b><a href="https://t.me/example">{title}</a></b>\n'
+            '<blockquote>3:15 · requested by <a href=tg://user?id=7935506256>Arkar</a></blockquote>'
         )
 
         result = rich_messages.promote_heading(source)
 
         self.assertIn(heading(1, "Now playing"), result)
         self.assertIn(
-            f'<h2><a href="https://t.me/example">{rich_messages.unicode_heading("Track title")}</a></h2>',
+            f'<h2><a href="https://t.me/example">{rich_messages.unicode_heading(title)}</a></h2>',
             result,
         )
+        self.assertIn(
+            '<a href="tg://user?id=7935506256">Arkar</a>', result
+        )
+        self.assertNotIn("href=tg://", result)
         self.assertNotIn("🎵", result.split("</h1>", 1)[0])
 
     def test_action_and_setup_heading_levels(self):
@@ -68,32 +73,34 @@ class HeadingPromotionTests(unittest.TestCase):
         self.assertTrue(remove.startswith(heading(3, "Remove session 2?")))
         self.assertTrue(prompt.startswith(heading(3, "Which song would you like?")))
 
-    def test_blockquote_tree_lines_use_explicit_rich_breaks(self):
+    def test_stats_summary_uses_localized_table_rows(self):
         source = (
             "<b>Bot insights</b>\n\n"
             "<blockquote>👥 <b>6 total</b>\n"
             "├ 2 people\n"
-            "└ 4 groups</blockquote>"
+            "└ 4 groups</blockquote>\n\n"
+            "<blockquote>🎵 <b>12 plays today</b>\n"
+            "├ 3 active chats\n"
+            "└ 4 daily average</blockquote>\n\n"
+            "<blockquote>🟢 <b>Ready</b>\n"
+            "├ 2 assistants\n"
+            "└ Up 04h</blockquote>"
         )
 
         result = rich_messages.promote_heading(source)
 
+        self.assertIn("<table striped>", result)
         self.assertIn(
-            "<blockquote>👥 <b>6 total</b><br>├ 2 people<br>└ 4 groups</blockquote>",
+            "<tr><th>👥 <b>6 total</b></th>"
+            "<td>2 people<br>4 groups</td></tr>",
             result,
         )
+        self.assertIn("<tr><th>🟢 <b>Ready</b></th>", result)
+        self.assertNotIn("<blockquote>", result)
+        self.assertNotIn("<hr/>", result)
 
-    def test_stats_separates_only_its_summary_groups(self):
-        source = (
-            "<b>Bot insights</b>\n\n"
-            "<blockquote>Audience</blockquote>\n\n"
-            "<blockquote>Playback</blockquote>\n\n"
-            "<blockquote>Health</blockquote>"
-        )
 
-        result = rich_messages.promote_heading(source)
 
-        self.assertEqual(result.count("<hr/>"), 2)
 
     def test_queue_separates_current_track_from_upcoming_tracks(self):
         source = (
@@ -108,7 +115,7 @@ class HeadingPromotionTests(unittest.TestCase):
         self.assertEqual(result.count("<hr/>"), 1)
         self.assertIn("</blockquote><hr/><blockquote>", result)
 
-    def test_configuration_uses_table_and_status_separates_final_summary(self):
+    def test_configuration_and_status_use_tables(self):
         configuration = rich_messages.promote_heading(
             "<b>Runtime configuration</b>\n\n"
             "<b>Queue limit</b>\n<code>15</code>\n\n"
@@ -117,8 +124,10 @@ class HeadingPromotionTests(unittest.TestCase):
         )
         status = rich_messages.promote_heading(
             "<b>Advanced status</b>\n\n"
-            "<blockquote>System details</blockquote>\n\n"
-            "<blockquote>Ready</blockquote>"
+            "<blockquote>⚙️ <b>System</b>\n"
+            "├ CPU: <code>12%</code>\n└ Memory: <code>34%</code></blockquote>\n\n"
+            "<blockquote>🟢 <b>Ready</b>\n"
+            "└ Updated now</blockquote>"
         )
 
         self.assertEqual(configuration.count("<hr/>"), 1)
@@ -128,10 +137,71 @@ class HeadingPromotionTests(unittest.TestCase):
         self.assertIn("<tr><td>Queue limit</td><td><code>15</code></td></tr>", configuration)
         self.assertIn("<tr><td>Auto end •</td><td><code>on</code></td></tr>", configuration)
         self.assertIn("</table><hr/><blockquote>", configuration)
-        self.assertEqual(status.count("<hr/>"), 1)
         self.assertIn(
-            "<blockquote>System details</blockquote><hr/><blockquote>Ready</blockquote>",
+            "<tr><th>⚙️ <b>System</b></th>"
+            "<td>CPU: <code>12%</code><br>Memory: <code>34%</code></td></tr>",
             status,
+        )
+        self.assertIn("<tr><th>🟢 <b>Ready</b></th>", status)
+        self.assertNotIn("<blockquote>", status)
+        self.assertNotIn("<hr/>", status)
+
+    def test_trending_uses_rank_track_and_play_columns(self):
+        source = (
+            "🔥 <b>Trending tracks</b>\n"
+            "<blockquote>Most played · last 30 days</blockquote>\n"
+            '1️⃣ <a href="https://example.com/one">First track</a>  '
+            "<code>12 plays</code>\n"
+            "2️⃣ Second track  <code>8 plays</code>"
+        )
+
+        result = rich_messages.promote_heading(source)
+
+        self.assertIn("<table striped>", result)
+        self.assertIn(
+            '<tr><th>1️⃣</th><td><a href="https://example.com/one">'
+            "First track</a></td><td><code>12 plays</code></td></tr>",
+            result,
+        )
+        self.assertIn(
+            "<tr><th>2️⃣</th><td>Second track</td>"
+            "<td><code>8 plays</code></td></tr>",
+            result,
+        )
+
+    def test_sessions_dashboard_and_detail_use_tables(self):
+        dashboard = rich_messages.promote_heading(
+            "🤖 <b>Assistants</b> · 2 active / 5 total\n\n"
+            "Choose an account."
+        )
+        detail = rich_messages.promote_heading(
+            "<b>Assistant session 3</b>\n"
+            "<b>Account:</b> @helper\n"
+            "Session 3 · Active · startup\n"
+            "<code>123456</code> · 2 active calls"
+        )
+
+        self.assertIn(
+            "<tr><th>Active</th><td><code>2</code></td></tr>", dashboard
+        )
+        self.assertIn(
+            "<tr><th>Disabled</th><td><code>3</code></td></tr>", dashboard
+        )
+        self.assertIn(
+            "<tr><th>Total</th><td><code>5</code></td></tr>", dashboard
+        )
+        self.assertIn("Choose an account.", dashboard)
+        self.assertIn(
+            "<tr><th>Session</th><td><code>3</code></td></tr>", detail
+        )
+        self.assertIn("<tr><th>State</th><td>Active</td></tr>", detail)
+        self.assertIn("<tr><th>Account</th><td>@helper</td></tr>", detail)
+        self.assertIn("<tr><th>Source</th><td>Startup</td></tr>", detail)
+        self.assertIn(
+            "<tr><th>User ID</th><td><code>123456</code></td></tr>", detail
+        )
+        self.assertIn(
+            "<tr><th>Active calls</th><td><code>2</code></td></tr>", detail
         )
 
     def test_plain_body_newlines_are_explicit_but_preformatted_lines_are_not(self):

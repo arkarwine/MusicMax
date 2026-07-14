@@ -125,7 +125,7 @@ class Telegram:
                 file_path=file_path,
                 message_id=sent.id,
                 url=msg.link,
-                title=file_title[:25],
+                title=file_title,
                 video=video,
             )
         except asyncio.CancelledError:

@@ -42,6 +42,9 @@ _HEADING_TAG_RE = re.compile(
     r"<h(?P<level>[1-6])>(?P<body>.*?)</h(?P=level)>", re.I | re.S
 )
 _HTML_TOKEN_RE = re.compile(r"(<[^>]+>|&(?:#\d+|#x[0-9a-f]+|\w+);)", re.I)
+_UNQUOTED_HREF_RE = re.compile(
+    r'(<a\b[^>]*\bhref\s*=\s*)(?!["\x27])([^\s>]+)', re.I
+)
 _ADJACENT_BLOCKQUOTES_RE = re.compile(
     r"</blockquote>\s*<blockquote>", re.I
 )
@@ -147,12 +150,10 @@ def _insert_before_last_blockquote(rich: str) -> str:
 
 
 def _add_section_separators(rich: str, title: str) -> str:
-    replacement = "</blockquote>\n<hr/>\n<blockquote>"
-    if title == "Bot insights":
-        return _ADJACENT_BLOCKQUOTES_RE.sub(replacement, rich)
     if title == "Queue":
+        replacement = "</blockquote>\n<hr/>\n<blockquote>"
         return _ADJACENT_BLOCKQUOTES_RE.sub(replacement, rich, count=1)
-    if title in {"Runtime configuration", "Advanced status"}:
+    if title == "Runtime configuration":
         return _insert_before_last_blockquote(rich)
     return rich
 
@@ -185,6 +186,112 @@ def _format_runtime_config_table(rich: str) -> str:
     )
 
 
+
+def _format_summary_table(rich: str) -> str:
+    quotes = list(_BLOCKQUOTE_RE.finditer(rich))
+    if not quotes:
+        return rich
+    section = rich[quotes[0].start():quotes[-1].end()]
+    if _BLOCKQUOTE_RE.sub("", section).strip():
+        return rich
+
+    rows = []
+    for quote in quotes:
+        lines = [line.strip() for line in quote.group("body").split("<br>")]
+        if len(lines) < 2 or any(not line for line in lines):
+            return rich
+        details = [re.sub(r"^[├└│]\s*", "", line) for line in lines[1:]]
+        rows.append(
+            f"<tr><th>{lines[0]}</th><td>{'<br>'.join(details)}</td></tr>"
+        )
+    table = "<table striped>" + "".join(rows) + "</table>"
+    return rich[:quotes[0].start()] + table + rich[quotes[-1].end():]
+
+
+def _format_trending_table(rich: str) -> str:
+    intro_end = rich.find("</blockquote>")
+    if intro_end < 0:
+        return rich
+    intro_end += len("</blockquote>")
+    lines = [line.strip() for line in rich[intro_end:].splitlines() if line.strip()]
+    rows = []
+    pattern = re.compile(
+        r"(?P<rank><tg-emoji\b[^>]*>.*?</tg-emoji\s*>|\S+)\s+"
+        r"(?P<title>.*?)\s{2,}<code>(?P<plays>.*?)</code>",
+        re.I | re.S,
+    )
+    for line in lines:
+        match = pattern.fullmatch(line)
+        if match is None:
+            return rich
+        rows.append(
+            f"<tr><th>{match.group('rank')}</th>"
+            f"<td>{match.group('title')}</td>"
+            f"<td><code>{match.group('plays')}</code></td></tr>"
+        )
+    if not rows:
+        return rich
+    return rich[:intro_end] + "<table striped>" + "".join(rows) + "</table>"
+
+
+def _format_sessions_table(rich: str) -> str:
+    heading_end = rich.find("</h1>")
+    if heading_end < 0:
+        return rich
+    heading_end += len("</h1>")
+    match = re.fullmatch(
+        r"\s*·\s*(?P<active>\d+)\s+active\s*/\s*"
+        r"(?P<total>\d+)\s+total\s*(?P<prompt>.*?)\s*",
+        rich[heading_end:],
+        re.I | re.S,
+    )
+    if match is None:
+        return rich
+    active = int(match.group("active"))
+    total = int(match.group("total"))
+    rows = (
+        f"<tr><th>Active</th><td><code>{active}</code></td></tr>"
+        f"<tr><th>Disabled</th><td><code>{max(total - active, 0)}</code></td></tr>"
+        f"<tr><th>Total</th><td><code>{total}</code></td></tr>"
+    )
+    prompt = match.group("prompt")
+    suffix = f"\n{prompt}" if prompt else ""
+    return rich[:heading_end] + f"<table striped>{rows}</table>" + suffix
+
+
+def _format_session_detail_table(rich: str) -> str:
+    heading = re.match(r"(?P<heading><h2>.*?</h2>)", rich, re.I | re.S)
+    if heading is None:
+        return rich
+    match = re.fullmatch(
+        r"\s*(?:<b>Account:</b> (?P<account>.*?)\n)?"
+        r"Session (?P<slot>\d+) · (?P<state>[^\n]+)\n"
+        r"<code>(?P<user_id>.*?)</code> · "
+        r"(?P<calls>\d+) active calls\s*",
+        rich[heading.end():],
+        re.I | re.S,
+    )
+    if match is None:
+        return rich
+    state = match.group("state")
+    startup = state.lower().endswith(" · startup")
+    if startup:
+        state = state.rsplit(" · ", 1)[0]
+    rows = [
+        f"<tr><th>Session</th><td><code>{match.group('slot')}</code></td></tr>"
+    ]
+    if match.group("account"):
+        rows.append(
+            f"<tr><th>Account</th><td>{match.group('account')}</td></tr>"
+        )
+    rows.extend([
+        f"<tr><th>State</th><td>{state}</td></tr>",
+        f"<tr><th>Source</th><td>{'Startup' if startup else 'Database'}</td></tr>",
+        f"<tr><th>User ID</th><td><code>{match.group('user_id')}</code></td></tr>",
+        f"<tr><th>Active calls</th><td><code>{match.group('calls')}</code></td></tr>",
+    ])
+    table = "<table striped>" + "".join(rows) + "</table>"
+    return heading.group("heading") + table
 
 
 def _plain_title(value: str) -> str:
@@ -290,9 +397,18 @@ def promote_heading(text: str) -> str | None:
         + "</blockquote>",
         rich,
     )
+    rich = _UNQUOTED_HREF_RE.sub(r'\1"\2"', rich)
     if title in {"Now playing", "Queue"} or title.startswith("Added to queue"):
         rich = _SECONDARY_TRACK_RE.sub(r"\n\n<h2>\1</h2>", rich, count=1)
     rich = _HEADING_TAG_RE.sub(_style_heading, rich)
+    if title in {"Bot insights", "Advanced status"}:
+        rich = _format_summary_table(rich)
+    elif title == "Trending tracks":
+        rich = _format_trending_table(rich)
+    elif title == "Assistant sessions":
+        rich = _format_sessions_table(rich)
+    rich = _format_session_detail_table(rich)
+
     rich = _add_section_separators(rich, title)
     if title == "Runtime configuration":
         rich = _format_runtime_config_table(rich)

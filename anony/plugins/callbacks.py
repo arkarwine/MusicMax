@@ -3,7 +3,6 @@
 # This file is part of AnonXMusic
 
 
-import re
 from html import escape
 
 from pyrogram import enums, errors, filters, types
@@ -78,7 +77,6 @@ async def _controls(_, query: types.CallbackQuery):
                 reply_markup=buttons.queue_markup(chat_id, query.lang["paused"], False)
             )
         status = query.lang["paused"]
-        reply = query.lang["play_paused"].format(user)
 
     elif action == "resume":
         if await db.playing(chat_id):
@@ -89,7 +87,6 @@ async def _controls(_, query: types.CallbackQuery):
             return await query.edit_message_reply_markup(
                 reply_markup=buttons.queue_markup(chat_id, query.lang["playing"], True)
             )
-        reply = query.lang["play_resumed"].format(user)
 
     elif action == "skip":
         await feedback.toast(query, query.lang["skipping"])
@@ -145,29 +142,19 @@ async def _controls(_, query: types.CallbackQuery):
         await feedback.toast(query, query.lang["stopping"])
         await anon.stop(chat_id)
         status = query.lang["stopped"]
-        reply = query.lang["play_stopped"].format(user)
 
+    keyboard = buttons.controls(
+        chat_id,
+        status=status if action != "resume" else None,
+        remove=action == "stop",
+        playing=action != "pause",
+    )
     try:
-        content = query.message.caption or query.message.text
-        message_html = getattr(content, "html", str(content or ""))
-        mtext = re.sub(
-            r"\n\n<blockquote><i>.*?</i></blockquote>",
-            "",
-            message_html,
-            flags=re.DOTALL,
-        )
-        keyboard = buttons.controls(
-            chat_id,
-            status=status if action != "resume" else None,
-            remove=action == "stop",
-            playing=action != "pause",
-        )
-        updated = f"{mtext}\n\n<blockquote><i>{reply}</i></blockquote>"
-        if query.message.caption is not None:
-            await query.message.edit_caption(updated, reply_markup=keyboard)
-        else:
-            await query.edit_message_text(updated, reply_markup=keyboard)
-    except (errors.MessageIdInvalid, errors.MessageNotModified, errors.QueryIdInvalid):
+        await query.edit_message_reply_markup(reply_markup=keyboard)
+    except (
+        errors.MessageIdInvalid, errors.MessageNotModified,
+        errors.QueryIdInvalid,
+    ):
         return
 
 

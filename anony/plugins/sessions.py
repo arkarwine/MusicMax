@@ -132,7 +132,8 @@ def _detail(session: dict, page: int = 0) -> tuple[str, types.InlineKeyboardMark
     state = "Active" if active else "Disabled"
     source = " · startup" if session["source"] == "environment" else ""
     text = (
-        f"<b>{_identity(session)}</b>\n"
+        f"<b>Assistant session {slot}</b>\n"
+        f"<b>Account:</b> {_identity(session)}\n"
         f"Session {slot} · {state}{source}\n"
         f"<code>{session['user_id'] or 'Unknown'}</code> · {calls} active calls"
     )
