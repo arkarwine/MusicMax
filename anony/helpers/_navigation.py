@@ -11,14 +11,16 @@ async def navigate(
     query: types.CallbackQuery,
     text: str,
     reply_markup: types.InlineKeyboardMarkup,
+    *,
+    send_new: bool = False,
 ):
-    """Navigate in place, while preserving media-based launcher cards."""
+    """Navigate in place unless the destination needs a fresh message."""
     try:
         await query.answer()
     except errors.QueryIdInvalid:
         pass
 
-    if query.message.caption is not None:
+    if send_new or query.message.caption is not None:
         chat_id = query.message.chat.id
         return await app.send_message(
             chat_id,

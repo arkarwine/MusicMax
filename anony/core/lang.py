@@ -14,6 +14,7 @@ from pyrogram import enums, errors
 
 from anony import app, db, logger
 from anony.core.custom_emoji import localized_text
+from anony.core.rich_messages import unicode_heading
 
 lang_codes = {
     "en": "English",
@@ -65,7 +66,9 @@ _HEADING_MESSAGES = {
 def _compose_heading(text: str, heading: str, suffix: str, replace_all: bool):
     match = _TITLE_RE.match(text)
     remainder = text[match.end():] if match else ("" if replace_all else text)
-    return localized_text(f"<b>{heading}{suffix}</b>{remainder}")
+    return localized_text(
+        f"<b>{unicode_heading(heading)}{suffix}</b>{remainder}"
+    )
 
 
 class Language:
@@ -97,6 +100,11 @@ class Language:
             for code, translations in languages.items()
         }
         for translations in languages.values():
+            for key, value in list(translations.items()):
+                if key.startswith("heading_"):
+                    translations[key] = localized_text(
+                        unicode_heading(value)
+                    )
             for message_key, definition in _HEADING_MESSAGES.items():
                 heading_key, suffix, replace_all = definition
                 text = translations.get(message_key)

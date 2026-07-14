@@ -20,6 +20,10 @@ rich_messages = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = rich_messages
 SPEC.loader.exec_module(rich_messages)
 
+def heading(level: int, text: str) -> str:
+    return f"<h{level}>{rich_messages.unicode_heading(text)}</h{level}>"
+
+
 
 class HeadingPromotionTests(unittest.TestCase):
     def test_primary_play_heading_and_track_entity(self):
@@ -31,9 +35,9 @@ class HeadingPromotionTests(unittest.TestCase):
 
         result = rich_messages.promote_heading(source)
 
-        self.assertIn("<h1>Now playing</h1>", result)
+        self.assertIn(heading(1, "Now playing"), result)
         self.assertIn(
-            '<h2><a href="https://t.me/example">Track title</a></h2>',
+            f'<h2><a href="https://t.me/example">{rich_messages.unicode_heading("Track title")}</a></h2>',
             result,
         )
         self.assertNotIn("🎵", result.split("</h1>", 1)[0])
@@ -46,8 +50,8 @@ class HeadingPromotionTests(unittest.TestCase):
             "⚠️ <b>One thing left</b>\n\nAllow invitations"
         )
 
-        self.assertTrue(queued.startswith("<h3>Added to queue · #3</h3>"))
-        self.assertTrue(setup.startswith("<h3>Setup required</h3>"))
+        self.assertTrue(queued.startswith(heading(3, "Added to queue · #3")))
+        self.assertTrue(setup.startswith(heading(3, "Setup required")))
 
     def test_playlist_and_session_action_cards_use_compact_headings(self):
         playlist = rich_messages.promote_heading(
@@ -60,9 +64,9 @@ class HeadingPromotionTests(unittest.TestCase):
             "🎵 <b>Which song would you like?</b>\n\nReply with a title."
         )
 
-        self.assertTrue(playlist.startswith("<h3>Added 12 tracks"))
-        self.assertTrue(remove.startswith("<h3>Remove session 2?</h3>"))
-        self.assertTrue(prompt.startswith("<h3>Which song would you like?</h3>"))
+        self.assertTrue(playlist.startswith(f"<h3>{rich_messages.unicode_heading('Added 12 tracks')}"))
+        self.assertTrue(remove.startswith(heading(3, "Remove session 2?")))
+        self.assertTrue(prompt.startswith(heading(3, "Which song would you like?")))
 
     def test_blockquote_tree_lines_use_explicit_rich_breaks(self):
         source = (
@@ -79,6 +83,51 @@ class HeadingPromotionTests(unittest.TestCase):
             result,
         )
 
+    def test_stats_separates_only_its_summary_groups(self):
+        source = (
+            "<b>Bot insights</b>\n\n"
+            "<blockquote>Audience</blockquote>\n\n"
+            "<blockquote>Playback</blockquote>\n\n"
+            "<blockquote>Health</blockquote>"
+        )
+
+        result = rich_messages.promote_heading(source)
+
+        self.assertEqual(result.count("<hr/>"), 2)
+
+    def test_queue_separates_current_track_from_upcoming_tracks(self):
+        source = (
+            "☰ <b>Queue</b>\n\n"
+            '<b><a href="https://example.com">Current track</a></b>\n'
+            "<blockquote>Requested by someone</blockquote>\n"
+            "<blockquote expandable>2 · Next track</blockquote>"
+        )
+
+        result = rich_messages.promote_heading(source)
+
+        self.assertEqual(result.count("<hr/>"), 1)
+        self.assertIn("</blockquote>\n<hr/>\n<blockquote>", result)
+
+    def test_configuration_and_status_separate_their_final_summary(self):
+        configuration = rich_messages.promote_heading(
+            "<b>Runtime configuration</b>\n\n"
+            "<b>Queue limit</b>\n<code>15</code>\n\n"
+            "<blockquote>Use the controls below.</blockquote>"
+        )
+        status = rich_messages.promote_heading(
+            "<b>Advanced status</b>\n\n"
+            "<blockquote>System details</blockquote>\n\n"
+            "<blockquote>Ready</blockquote>"
+        )
+
+        self.assertEqual(configuration.count("<hr/>"), 1)
+        self.assertIn("<code>15</code>\n<hr/>\n<blockquote>", configuration)
+        self.assertEqual(status.count("<hr/>"), 1)
+        self.assertIn(
+            "<blockquote>System details</blockquote>\n<hr/>\n<blockquote>Ready</blockquote>",
+            status,
+        )
+
     def test_help_session_and_access_headings(self):
         help_text = rich_messages.promote_heading(
             "<b>Commands in the 🛠 Controls category:</b>\n\n/setup"
@@ -90,9 +139,9 @@ class HeadingPromotionTests(unittest.TestCase):
             "👤 <b>Pʟᴀʏʙᴀᴄᴋ Aᴄᴄᴇss · 4</b>\n"
         )
 
-        self.assertTrue(help_text.startswith("<h1>Controls</h1>"))
-        self.assertTrue(session.startswith("<h2>Assistant Session 2</h2>"))
-        self.assertTrue(access.startswith("<h1>Playback access</h1>"))
+        self.assertTrue(help_text.startswith(heading(1, "Controls")))
+        self.assertTrue(session.startswith(heading(2, "Assistant Session 2")))
+        self.assertTrue(access.startswith(heading(1, "Playback access")))
 
     def test_non_heading_and_burmese_body_are_unchanged(self):
         self.assertIsNone(rich_messages.promote_heading("Searching…"))
@@ -307,6 +356,9 @@ class LocaleHeadingTests(unittest.TestCase):
         fake_core = stdlib_types.ModuleType("anony.core")
         fake_core.__path__ = []
         fake_custom = stdlib_types.ModuleType("anony.core.custom_emoji")
+        fake_rich = stdlib_types.ModuleType("anony.core.rich_messages")
+        fake_rich.unicode_heading = rich_messages.unicode_heading
+
 
         class LocalizedText(str):
             def format(self, *args, **kwargs):
@@ -318,12 +370,14 @@ class LocaleHeadingTests(unittest.TestCase):
             "anony.core",
             "anony.core.custom_emoji",
             "language_headings_under_test",
+            "anony.core.rich_messages",
         )
         saved = {name: sys.modules.get(name) for name in module_names}
         sys.modules.update({
             "anony": fake_anony,
             "anony.core": fake_core,
             "anony.core.custom_emoji": fake_custom,
+            "anony.core.rich_messages": fake_rich,
         })
         try:
             spec = importlib.util.spec_from_file_location(
@@ -342,19 +396,23 @@ class LocaleHeadingTests(unittest.TestCase):
                     sys.modules[name] = previous
 
         self.assertTrue(languages["my"]["play_media"].startswith(
-            "<b>Now playing</b>"
+            f"<b>{rich_messages.unicode_heading('Now playing')}</b>"
         ))
         self.assertIn("ခေါင်းစဉ်", languages["my"]["play_media"])
         self.assertTrue(languages["my"]["help_menu"].startswith(
             "<b>𝗪𝗵𝗮𝘁 𝘄𝗼𝘂𝗹𝗱 𝘆𝗼𝘂 𝗹𝗶𝗸𝗲 𝘁𝗼 𝗱𝗼?</b>"
         ))
+        self.assertEqual(
+            languages["my"]["heading_stats"],
+            rich_messages.unicode_heading("Bot insights"),
+        )
         self.assertTrue(
             rich_messages.promote_heading(languages["my"]["play_media"])
-            .startswith("<h1>Now playing</h1>")
+            .startswith(heading(1, "Now playing"))
         )
         self.assertTrue(
             rich_messages.promote_heading(languages["my"]["help_menu"])
-            .startswith("<h1>𝗪𝗵𝗮𝘁 𝘄𝗼𝘂𝗹𝗱 𝘆𝗼𝘂 𝗹𝗶𝗸𝗲 𝘁𝗼 𝗱𝗼?</h1>")
+            .startswith(heading(1, "What would you like to do?"))
         )
 
 

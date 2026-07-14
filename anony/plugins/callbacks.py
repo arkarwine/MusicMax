@@ -214,6 +214,7 @@ async def _help(_, query: types.CallbackQuery):
                 query.lang,
                 private=True,
             ),
+            send_new=True,
         )
 
     if data[1] == "sudo" and query.from_user.id not in app.sudoers:

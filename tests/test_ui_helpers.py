@@ -150,6 +150,57 @@ class StatusMessageTests(unittest.IsolatedAsyncioTestCase):
         await status.remove()
         sent.delete.assert_awaited_once_with()
 
+class NavigationTests(unittest.IsolatedAsyncioTestCase):
+    async def test_start_home_navigation_sends_a_fresh_message(self):
+        sent = stdlib_types.SimpleNamespace(id=91)
+        fake_app = stdlib_types.SimpleNamespace(
+            send_message=AsyncMock(return_value=sent)
+        )
+        fake_anony = stdlib_types.ModuleType("anony")
+        fake_anony.__path__ = []
+        fake_anony.app = fake_app
+        module_name = "navigation_under_test"
+        saved_anony = sys.modules.get("anony")
+        saved_navigation = sys.modules.get(module_name)
+        sys.modules["anony"] = fake_anony
+        try:
+            navigation = load_module(
+                module_name,
+                "anony/helpers/_navigation.py",
+            )
+        finally:
+            if saved_anony is None:
+                sys.modules.pop("anony", None)
+            else:
+                sys.modules["anony"] = saved_anony
+            if saved_navigation is None:
+                sys.modules.pop(module_name, None)
+            else:
+                sys.modules[module_name] = saved_navigation
+
+        query = stdlib_types.SimpleNamespace(
+            answer=AsyncMock(),
+            edit_message_text=AsyncMock(),
+            message=stdlib_types.SimpleNamespace(
+                caption=None,
+                chat=stdlib_types.SimpleNamespace(id=123),
+            ),
+        )
+        markup = types.InlineKeyboardMarkup([])
+
+        result = await navigation.navigate(
+            query, "Start menu", markup, send_new=True
+        )
+
+        self.assertIs(result, sent)
+        fake_app.send_message.assert_awaited_once_with(
+            123,
+            "Start menu",
+            reply_markup=markup,
+            disable_notification=True,
+        )
+        query.edit_message_text.assert_not_awaited()
+
 
 if __name__ == "__main__":
     unittest.main()

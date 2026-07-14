@@ -38,6 +38,13 @@ _SECONDARY_TRACK_RE = re.compile(
 _BLOCKQUOTE_RE = re.compile(
     r"<blockquote>(?P<body>.*?)</blockquote>", re.I | re.S
 )
+_HEADING_TAG_RE = re.compile(
+    r"<h(?P<level>[1-6])>(?P<body>.*?)</h(?P=level)>", re.I | re.S
+)
+_HTML_TOKEN_RE = re.compile(r"(<[^>]+>|&(?:#\d+|#x[0-9a-f]+|\w+);)", re.I)
+_ADJACENT_BLOCKQUOTES_RE = re.compile(
+    r"</blockquote>\s*<blockquote>", re.I
+)
 
 _SMALL_CAPS = str.maketrans({
     "ᴀ": "a", "ʙ": "b", "ᴄ": "c", "ᴅ": "d", "ᴇ": "e",
@@ -59,7 +66,9 @@ _TITLE_RENAMES = {
     "runtime configuration": "Runtime configuration",
     "ready to play": "Ready to play",
     "one thing left": "Setup required",
+    "setup required": "Setup required",
     "thanks for adding me": "Welcome",
+    "welcome": "Welcome",
     "new chat log": "New chat log",
     "new user log": "New user log",
     "list of active streams:": "Active streams",
@@ -95,9 +104,43 @@ _PRIMARY = {
     "Controls", "Access", "Safety", "Bot", "Music", "Insights", "Sudo",
 }
 _EXCLUDED = {"usage:", "output:", "owner:", "sudo users:"}
-_DISPLAY_TITLES = {
-    "What would you like to do?": "𝗪𝗵𝗮𝘁 𝘄𝗼𝘂𝗹𝗱 𝘆𝗼𝘂 𝗹𝗶𝗸𝗲 𝘁𝗼 𝗱𝗼?",
-}
+_HEADING_FONT = str.maketrans({
+    **{ord("A") + index: chr(0x1D5D4 + index) for index in range(26)},
+    **{ord("a") + index: chr(0x1D5EE + index) for index in range(26)},
+    **{ord("0") + index: chr(0x1D7EC + index) for index in range(10)},
+})
+
+
+def unicode_heading(value: str) -> str:
+    """Apply the bot's mathematical sans-bold display face to heading text."""
+    return value.translate(_HEADING_FONT)
+
+
+def _style_heading(match: re.Match) -> str:
+    parts = _HTML_TOKEN_RE.split(match.group("body"))
+    body = "".join(
+        part if part.startswith(("<", "&")) else unicode_heading(part)
+        for part in parts
+    )
+    return f'<h{match.group("level")}>{body}</h{match.group("level")}>'
+
+def _insert_before_last_blockquote(rich: str) -> str:
+    index = rich.rfind("<blockquote>")
+    if index < 0:
+        return rich
+    return rich[:index].rstrip() + "\n<hr/>\n" + rich[index:]
+
+
+def _add_section_separators(rich: str, title: str) -> str:
+    replacement = "</blockquote>\n<hr/>\n<blockquote>"
+    if title == "Bot insights":
+        return _ADJACENT_BLOCKQUOTES_RE.sub(replacement, rich)
+    if title == "Queue":
+        return _ADJACENT_BLOCKQUOTES_RE.sub(replacement, rich, count=1)
+    if title in {"Runtime configuration", "Advanced status"}:
+        return _insert_before_last_blockquote(rich)
+    return rich
+
 
 
 
@@ -171,8 +214,7 @@ def promote_heading(text: str) -> str | None:
     if heading is None:
         return None
     title, level = heading
-    display_title = _DISPLAY_TITLES.get(title, title)
-    rich = f"<h{level}>{display_title}</h{level}>" + text[match.end():]
+    rich = f"<h{level}>{title}</h{level}>" + text[match.end():]
     rich = rich.replace("<blockquote expandable>", "<blockquote>")
     rich = _BLOCKQUOTE_RE.sub(
         lambda match: "<blockquote>"
@@ -182,6 +224,8 @@ def promote_heading(text: str) -> str | None:
     )
     if title in {"Now playing", "Queue"} or title.startswith("Added to queue"):
         rich = _SECONDARY_TRACK_RE.sub(r"\n\n<h2>\1</h2>", rich, count=1)
+    rich = _HEADING_TAG_RE.sub(_style_heading, rich)
+    rich = _add_section_separators(rich, title)
     return rich
 
 
