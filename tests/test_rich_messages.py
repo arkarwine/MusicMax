@@ -64,6 +64,21 @@ class HeadingPromotionTests(unittest.TestCase):
         self.assertTrue(remove.startswith("<h3>Remove session 2?</h3>"))
         self.assertTrue(prompt.startswith("<h3>Which song would you like?</h3>"))
 
+    def test_blockquote_tree_lines_use_explicit_rich_breaks(self):
+        source = (
+            "<b>Bot insights</b>\n\n"
+            "<blockquote>👥 <b>6 total</b>\n"
+            "├ 2 people\n"
+            "└ 4 groups</blockquote>"
+        )
+
+        result = rich_messages.promote_heading(source)
+
+        self.assertIn(
+            "<blockquote>👥 <b>6 total</b><br>├ 2 people<br>└ 4 groups</blockquote>",
+            result,
+        )
+
     def test_help_session_and_access_headings(self):
         help_text = rich_messages.promote_heading(
             "<b>Commands in the 🛠 Controls category:</b>\n\n/setup"
@@ -331,7 +346,7 @@ class LocaleHeadingTests(unittest.TestCase):
         ))
         self.assertIn("ခေါင်းစဉ်", languages["my"]["play_media"])
         self.assertTrue(languages["my"]["help_menu"].startswith(
-            "<b>What would you like to do?</b>"
+            "<b>𝗪𝗵𝗮𝘁 𝘄𝗼𝘂𝗹𝗱 𝘆𝗼𝘂 𝗹𝗶𝗸𝗲 𝘁𝗼 𝗱𝗼?</b>"
         ))
         self.assertTrue(
             rich_messages.promote_heading(languages["my"]["play_media"])
@@ -339,7 +354,7 @@ class LocaleHeadingTests(unittest.TestCase):
         )
         self.assertTrue(
             rich_messages.promote_heading(languages["my"]["help_menu"])
-            .startswith("<h1>What would you like to do?</h1>")
+            .startswith("<h1>𝗪𝗵𝗮𝘁 𝘄𝗼𝘂𝗹𝗱 𝘆𝗼𝘂 𝗹𝗶𝗸𝗲 𝘁𝗼 𝗱𝗼?</h1>")
         )
 
 

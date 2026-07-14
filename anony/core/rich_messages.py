@@ -35,6 +35,9 @@ _UNDERLINE_HEADING_RE = re.compile(
 _SECONDARY_TRACK_RE = re.compile(
     r"\n\n<b>(<a\b[^>]*>.*?</a>)</b>", re.I | re.S
 )
+_BLOCKQUOTE_RE = re.compile(
+    r"<blockquote>(?P<body>.*?)</blockquote>", re.I | re.S
+)
 
 _SMALL_CAPS = str.maketrans({
     "ᴀ": "a", "ʙ": "b", "ᴄ": "c", "ᴅ": "d", "ᴇ": "e",
@@ -92,6 +95,10 @@ _PRIMARY = {
     "Controls", "Access", "Safety", "Bot", "Music", "Insights", "Sudo",
 }
 _EXCLUDED = {"usage:", "output:", "owner:", "sudo users:"}
+_DISPLAY_TITLES = {
+    "What would you like to do?": "𝗪𝗵𝗮𝘁 𝘄𝗼𝘂𝗹𝗱 𝘆𝗼𝘂 𝗹𝗶𝗸𝗲 𝘁𝗼 𝗱𝗼?",
+}
+
 
 
 def _plain_title(value: str) -> str:
@@ -164,8 +171,15 @@ def promote_heading(text: str) -> str | None:
     if heading is None:
         return None
     title, level = heading
-    rich = f"<h{level}>{title}</h{level}>" + text[match.end():]
+    display_title = _DISPLAY_TITLES.get(title, title)
+    rich = f"<h{level}>{display_title}</h{level}>" + text[match.end():]
     rich = rich.replace("<blockquote expandable>", "<blockquote>")
+    rich = _BLOCKQUOTE_RE.sub(
+        lambda match: "<blockquote>"
+        + match.group("body").replace("\n", "<br>")
+        + "</blockquote>",
+        rich,
+    )
     if title in {"Now playing", "Queue"} or title.startswith("Added to queue"):
         rich = _SECONDARY_TRACK_RE.sub(r"\n\n<h2>\1</h2>", rich, count=1)
     return rich
