@@ -63,6 +63,8 @@ class CallbackBuilderTests(unittest.TestCase):
         self.assertEqual(callbacks.help(), "help")
         self.assertEqual(callbacks.help("back"), "help back")
         self.assertEqual(callbacks.language_change("my"), "lang_change my")
+        self.assertEqual(callbacks.help("new"), "help new")
+        self.assertEqual(callbacks.LANGUAGE_ROOT_NEW, "language new")
         self.assertEqual(
             callbacks.settings(-100123, "language"),
             "settings -100123 language",

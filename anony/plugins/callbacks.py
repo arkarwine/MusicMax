@@ -189,10 +189,21 @@ async def _help(_, query: types.CallbackQuery):
             ),
         )
     if data[1] not in {
-        "back", "home", "admins", "auth", "blist", "lang",
+        "back", "home", "new", "admins", "auth", "blist", "lang",
         "ping", "play", "queue", "stats", "sudo",
     }:
         return await feedback.toast(query, query.lang["play_expired"])
+
+    if data[1] == "new":
+        return await navigate(
+            query,
+            query.lang["help_menu"],
+            buttons.help_markup(
+                query.lang,
+                sudo=query.from_user.id in app.sudoers,
+            ),
+            send_new=True,
+        )
 
     if data[1] == "back":
         return await navigate(

@@ -8,6 +8,7 @@ MAX_CALLBACK_BYTES = 64
 
 CANCEL_DOWNLOAD = "cancel_dl"
 LANGUAGE_ROOT = "language"
+LANGUAGE_ROOT_NEW = "language new"
 HELP_HOME = "help home"
 
 

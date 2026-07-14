@@ -106,12 +106,13 @@ class HeadingPromotionTests(unittest.TestCase):
         result = rich_messages.promote_heading(source)
 
         self.assertEqual(result.count("<hr/>"), 1)
-        self.assertIn("</blockquote>\n<hr/>\n<blockquote>", result)
+        self.assertIn("</blockquote><hr/><blockquote>", result)
 
-    def test_configuration_and_status_separate_their_final_summary(self):
+    def test_configuration_uses_table_and_status_separates_final_summary(self):
         configuration = rich_messages.promote_heading(
             "<b>Runtime configuration</b>\n\n"
             "<b>Queue limit</b>\n<code>15</code>\n\n"
+            "<b>Auto end</b> •\n<code>on</code>\n\n"
             "<blockquote>Use the controls below.</blockquote>"
         )
         status = rich_messages.promote_heading(
@@ -121,12 +122,30 @@ class HeadingPromotionTests(unittest.TestCase):
         )
 
         self.assertEqual(configuration.count("<hr/>"), 1)
-        self.assertIn("<code>15</code>\n<hr/>\n<blockquote>", configuration)
+        self.assertIn(
+            "<table striped><tr><th>Setting</th><th>Value</th></tr>", configuration
+        )
+        self.assertIn("<tr><td>Queue limit</td><td><code>15</code></td></tr>", configuration)
+        self.assertIn("<tr><td>Auto end •</td><td><code>on</code></td></tr>", configuration)
+        self.assertIn("</table><hr/><blockquote>", configuration)
         self.assertEqual(status.count("<hr/>"), 1)
         self.assertIn(
-            "<blockquote>System details</blockquote>\n<hr/>\n<blockquote>Ready</blockquote>",
+            "<blockquote>System details</blockquote><hr/><blockquote>Ready</blockquote>",
             status,
         )
+
+    def test_plain_body_newlines_are_explicit_but_preformatted_lines_are_not(self):
+        result = rich_messages.promote_heading(
+            "<b>Controls</b>\n\n"
+            "First line\nSecond line\n\n"
+            "<pre>raw\nlines</pre>\nTail"
+        )
+
+        self.assertIn(
+            "First line<br>Second line<pre>raw\nlines</pre>Tail",
+            result,
+        )
+        self.assertNotIn("<pre>raw<br>lines</pre>", result)
 
     def test_help_session_and_access_headings(self):
         help_text = rich_messages.promote_heading(

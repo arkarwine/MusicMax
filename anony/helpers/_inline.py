@@ -340,10 +340,10 @@ class Inline:
                 style=enums.ButtonStyle.DANGER,
             )])
             rows += [[
-                self.ikb(text=lang["help"], callback_data=callbacks.help()),
+                self.ikb(text=lang["help"], callback_data=callbacks.help("new")),
                 self.ikb(
                     text=lang["language"],
-                    callback_data=callbacks.LANGUAGE_ROOT,
+                    callback_data=callbacks.LANGUAGE_ROOT_NEW,
                 ),
                 self.ikb(
                     text=lang["stats"],

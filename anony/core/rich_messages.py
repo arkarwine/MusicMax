@@ -45,6 +45,21 @@ _HTML_TOKEN_RE = re.compile(r"(<[^>]+>|&(?:#\d+|#x[0-9a-f]+|\w+);)", re.I)
 _ADJACENT_BLOCKQUOTES_RE = re.compile(
     r"</blockquote>\s*<blockquote>", re.I
 )
+_BLOCK_TAGS = (
+    r"(?:h[1-6]|blockquote|pre|table|details|ul|ol|footer|aside|"
+    r"tg-collage|tg-slideshow)"
+)
+_BREAKS_AFTER_BLOCK_RE = re.compile(
+    rf"((?:</?{_BLOCK_TAGS}\b[^>]*>|<hr\s*/?>))(?:<br>)+", re.I
+)
+_BREAKS_BEFORE_BLOCK_RE = re.compile(
+    rf"(?:<br>)+(?=(?:</?{_BLOCK_TAGS}\b[^>]*>|<hr\s*/?>))", re.I
+)
+
+_RUNTIME_SETTING_RE = re.compile(
+    r"<b>(?P<label>[^<]+)</b>(?P<marker> •)?\s*\n"
+    r"<code>(?P<value>.*?)</code>", re.S
+)
 
 _SMALL_CAPS = str.maketrans({
     "ᴀ": "a", "ʙ": "b", "ᴄ": "c", "ᴅ": "d", "ᴇ": "e",
@@ -141,6 +156,34 @@ def _add_section_separators(rich: str, title: str) -> str:
         return _insert_before_last_blockquote(rich)
     return rich
 
+def _format_runtime_config_table(rich: str) -> str:
+    heading_end = rich.find("</h1>")
+    divider_start = rich.find("<hr/>", heading_end)
+    if heading_end < 0 or divider_start < 0:
+        return rich
+
+    heading_end += len("</h1>")
+    settings = rich[heading_end:divider_start]
+    matches = list(_RUNTIME_SETTING_RE.finditer(settings))
+    if not matches or _RUNTIME_SETTING_RE.sub("", settings).strip():
+        return rich
+
+    rows = ["<tr><th>Setting</th><th>Value</th></tr>"]
+    for match in matches:
+        label = match.group("label") + (match.group("marker") or "")
+        rows.append(
+            f"<tr><td>{label}</td>"
+            f"<td><code>{match.group('value')}</code></td></tr>"
+        )
+    table = "<table striped>" + "".join(rows) + "</table>"
+    return (
+        rich[:heading_end]
+        + "\n"
+        + table
+        + "\n"
+        + rich[divider_start:]
+    )
+
 
 
 
@@ -154,6 +197,31 @@ def _plain_title(value: str) -> str:
         and char not in {"\ufe0f", "\u200d"}
     )
     return " ".join(value.split()).strip()
+
+
+def _explicit_rich_breaks(rich: str) -> str:
+    """Keep legacy line breaks visible in Telegram rich HTML."""
+    parts = _HTML_TOKEN_RE.split(rich)
+    rendered = []
+    in_pre = False
+    for part in parts:
+        lowered = part.lower()
+        if lowered.startswith("<pre"):
+            in_pre = True
+        if not in_pre and not part.startswith(("<", "&")):
+            part = (
+                part.replace("\r\n", "\n")
+                .replace("\r", "\n")
+                .replace("\n", "<br>")
+            )
+        rendered.append(part)
+        if lowered.startswith("</pre"):
+            in_pre = False
+
+    result = "".join(rendered)
+    result = _BREAKS_AFTER_BLOCK_RE.sub(r"\1", result)
+    return _BREAKS_BEFORE_BLOCK_RE.sub("", result)
+
 
 
 def _clean_title(value: str, text: str) -> tuple[str, int] | None:
@@ -226,6 +294,9 @@ def promote_heading(text: str) -> str | None:
         rich = _SECONDARY_TRACK_RE.sub(r"\n\n<h2>\1</h2>", rich, count=1)
     rich = _HEADING_TAG_RE.sub(_style_heading, rich)
     rich = _add_section_separators(rich, title)
+    if title == "Runtime configuration":
+        rich = _format_runtime_config_table(rich)
+    rich = _explicit_rich_breaks(rich)
     return rich
 
 
