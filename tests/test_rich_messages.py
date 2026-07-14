@@ -8,7 +8,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
-from pyrogram import types
+from pyrogram import enums, types
 
 
 ROOT = Path(__file__).parents[1]
@@ -96,6 +96,22 @@ class SerializationTests(unittest.TestCase):
         self.assertNotIn("_", result["inline_keyboard"][0][0])
         self.assertEqual(
             result["inline_keyboard"][0][0]["callback_data"], "play"
+        )
+        self.assertNotIn("style", result["inline_keyboard"][0][0])
+
+    def test_keyboard_styles_use_bot_api_values(self):
+        markup = types.InlineKeyboardMarkup([[
+            types.InlineKeyboardButton(
+                "Remove",
+                callback_data="remove",
+                style=enums.ButtonStyle.DANGER,
+            )
+        ]])
+
+        result = rich_messages.bot_api_dict(markup)
+
+        self.assertEqual(
+            result["inline_keyboard"][0][0]["style"], "danger"
         )
 
     def test_media_sources_use_documented_rich_references(self):

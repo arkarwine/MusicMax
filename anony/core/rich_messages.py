@@ -9,6 +9,7 @@ import re
 import unicodedata
 from contextlib import ExitStack
 from dataclasses import dataclass
+from enum import Enum
 from html import unescape
 from io import IOBase
 from pathlib import Path
@@ -174,16 +175,25 @@ def bot_api_dict(value):
     """Serialize Pyrogram objects without their diagnostic `_` type keys."""
     if value is None:
         return None
+    if isinstance(value, Enum):
+        return value.value
     if isinstance(value, (str, int, float, bool)):
         return value
     if isinstance(value, list):
         return [bot_api_dict(item) for item in value]
     if isinstance(value, dict):
-        return {
-            key: bot_api_dict(item)
-            for key, item in value.items()
-            if key != "_" and item is not None
-        }
+        result = {}
+        for key, item in value.items():
+            if key == "_" or item is None:
+                continue
+            converted = bot_api_dict(item)
+            if key == "style" and isinstance(converted, str):
+                converted = converted.removeprefix("ButtonStyle.").lower()
+                if converted == "default":
+                    continue
+            if converted is not None:
+                result[key] = converted
+        return result
     return bot_api_dict(json.loads(str(value)))
 
 
