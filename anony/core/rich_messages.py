@@ -93,12 +93,14 @@ _TITLE_RENAMES = {
     "new chat log": "New chat log",
     "new user log": "New user log",
     "list of active streams:": "Active streams",
+    "active streams": "Active streams",
     "playback access": "Playback access",
     "add an assistant": "Add an assistant",
     "phone number": "Phone number",
     "check telegram": "Check Telegram",
     "two-step verification": "Two-step verification",
     "request failed": "Request failed",
+    "assistant required": "Assistant required",
     "bot insights": "Bot insights",
     "settings": "Settings",
     "controls": "Controls",
@@ -139,6 +141,7 @@ _HEADER_ICONS = {
     "Check Telegram": "✉️",
     "Two-step verification": "🔐",
     "Request failed": "⚠️",
+    "Assistant required": "🎧",
     "Bot insights": "📊",
     "Settings": "⚙️",
     "Controls": "🛠️",
@@ -697,7 +700,8 @@ def promote_heading(text: str) -> str | None:
     rich = _add_section_separators(rich, title)
     if title == "Runtime configuration":
         rich = _format_runtime_config_table(rich)
-    rich = _center_leading_heading(rich)
+    if title != "Now playing":
+        rich = _center_leading_heading(rich)
     rich = _TABLE_HEADER_RE.sub(_style_table_header, rich)
     rich = _explicit_rich_breaks(rich)
     return rich
@@ -815,9 +819,14 @@ class RichMessageService:
                 media_tag = '<video src="tg://video?id=hero"></video>'
             if "html" in result:
                 if media.placement == "after_first_block":
-                    block_end = result["html"].find("</table>")
-                    if block_end >= 0:
-                        block_end += len("</table>")
+                    closing_blocks = [
+                        (result["html"].find(tag), tag)
+                        for tag in ("</table>", "</h1>")
+                        if result["html"].find(tag) >= 0
+                    ]
+                    if closing_blocks:
+                        block_end, closing_tag = min(closing_blocks)
+                        block_end += len(closing_tag)
                         if result["html"][block_end:].startswith("<hr/>"):
                             block_end += len("<hr/>")
 

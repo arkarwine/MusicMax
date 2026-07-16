@@ -188,14 +188,24 @@ async def assistant_membership(
 
 async def ensure_assistant(m: types.Message) -> bool:
     chat_id = m.chat.id
+    available_slots = [
+        slot for slot in userbot.clients if slot in anon.clients
+    ]
+    if not available_slots:
+        if getattr(m, "outgoing", False):
+            await feedback.error_edit(m, m.lang["play_session_required"])
+        else:
+            await feedback.error(m, m.lang["play_session_required"])
+        return False
+
     selected = await db.get_client(chat_id)
     selected_slot = next(
         slot for slot, client in userbot.clients.items() if client is selected
     )
     slots = [selected_slot] + [
         slot
-        for slot in userbot.clients
-        if slot != selected_slot and slot in anon.clients
+        for slot in available_slots
+        if slot != selected_slot
     ]
     status = None
     results = []

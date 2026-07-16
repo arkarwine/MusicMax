@@ -182,9 +182,10 @@ class Bot(pyrogram.Client):
         )
         placement = (
             "after_first_block"
-            if rich_text.startswith(
-                '<table><tr><th align="center">'
-            )
+            if rich_text.startswith((
+                '<table><tr><th align="center">',
+                "<h1>",
+            ))
             else "before"
         )
 

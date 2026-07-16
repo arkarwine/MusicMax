@@ -57,6 +57,16 @@ class PlaybackRecovery:
         return restored
 
     async def run_startup(self) -> None:
+        if not anon.clients:
+            if any(
+                session["state"] in {"playing", "paused"}
+                for session in self.sessions
+            ):
+                logger.warning(
+                    "Saved playback was not resumed because no assistant "
+                    "session is active."
+                )
+            return
         for session in self.sessions:
             if session["state"] not in {"playing", "paused"}:
                 continue

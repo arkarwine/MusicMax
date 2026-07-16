@@ -44,7 +44,15 @@ class TgCall(PyTgCalls):
         await self._leave_assistant_call(chat_id)
 
     async def _leave_assistant_call(self, chat_id: int) -> None:
-        client = await db.get_assistant(chat_id)
+        if not self.clients:
+            return
+        try:
+            client = await db.get_assistant(chat_id)
+        except RuntimeError:
+            logger.info(
+                "No active assistant is available to leave call %s", chat_id
+            )
+            return
         try:
             await client.leave_call(chat_id, close=False)
         except (ConnectionNotFound, exceptions.NotInCallError):
@@ -335,6 +343,25 @@ class TgCall(PyTgCalls):
 
     async def boot(self) -> None:
         PyTgCallsSession.notice_displayed = True
-        for slot, ub in userbot.clients.items():
-            await self.add_client(slot, ub)
-        logger.info("PyTgCalls client(s) started.")
+        failed_slots = []
+        for slot, ub in list(userbot.clients.items()):
+            try:
+                await self.add_client(slot, ub)
+            except Exception:
+                failed_slots.append(slot)
+                logger.exception(
+                    "Voice client for assistant session %s could not start", slot
+                )
+        for slot in failed_slots:
+            try:
+                await userbot.disable_session(slot)
+            except Exception:
+                logger.exception(
+                    "Failed to take unusable assistant session %s offline", slot
+                )
+        if self.clients:
+            logger.info("Started %s PyTgCalls client(s).", len(self.clients))
+        else:
+            logger.warning(
+                "No voice assistant is active; continuing in bot-only mode."
+            )

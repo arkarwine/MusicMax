@@ -90,9 +90,10 @@ class Userbot:
 
         sessions = await db.get_assistant_sessions()
         if not sessions:
-            raise SystemExit(
-                "No assistant session is configured. Set SESSION for the first start."
+            logger.warning(
+                "No assistant session is configured; continuing in bot-only mode."
             )
+            return
 
         for session in sessions:
             if not session["enabled"]:
@@ -110,7 +111,10 @@ class Userbot:
                 await db.update_assistant_session(session["slot"], enabled=False)
 
         if not self.clients:
-            raise SystemExit("No assistant session could be started.")
+            logger.warning(
+                "No assistant session could be started; continuing in bot-only mode."
+            )
+            return
         logger.info("Started %s assistant session(s).", len(self.clients))
 
     async def add_session(
@@ -154,7 +158,16 @@ class Userbot:
     async def _stop_session(self, slot: int) -> None:
         from anony import anon
 
-        anon.clients.pop(slot, None)
+        voice_client = anon.clients.pop(slot, None)
+        if voice_client:
+            try:
+                await voice_client.stop()
+            except Exception:
+                logger.warning(
+                    "Voice client for assistant session %s did not stop cleanly",
+                    slot,
+                    exc_info=True,
+                )
         client = self.clients.pop(slot, None)
         if client:
             await client.stop()
@@ -185,9 +198,6 @@ class Userbot:
                 "Session is currently playing in: "
                 + ", ".join(map(str, active_chats))
             )
-        if slot in self.clients and len(self.clients) == 1:
-            raise RuntimeError("At least one assistant session must remain active.")
-
         await self._stop_session(slot)
         if delete:
             mapping = await db.delete_assistant_session(slot)

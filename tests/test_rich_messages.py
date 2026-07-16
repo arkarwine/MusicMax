@@ -62,17 +62,21 @@ class HeadingPromotionTests(unittest.TestCase):
 
         result = rich_messages.promote_heading(source)
 
-        self.assertTrue(result.startswith(centered_heading("Now playing")))
+        play_heading = (
+            "<h1>🎵 " + rich_messages.unicode_heading("Now playing") + "</h1>"
+        )
+        self.assertTrue(result.startswith(play_heading))
         self.assertIn(
             f'<b><a href="https://t.me/example">{title}</a></b>',
             result,
-        self.assertNotIn("<h2>", result)
         )
+        self.assertNotIn("<h2>", result)
+        self.assertNotIn("<table", result[:result.index("</h1>")])
         self.assertIn(
             '<a href="tg://user?id=7935506256">Arkar</a>', result
         )
         self.assertNotIn("href=tg://", result)
-        self.assertEqual(result.split("</table>", 1)[0].count("🎵"), 1)
+        self.assertEqual(result[:result.index("</h1>")].count("🎵"), 1)
 
     def test_action_and_setup_heading_levels(self):
         queued = rich_messages.promote_heading(
@@ -217,7 +221,7 @@ class HeadingPromotionTests(unittest.TestCase):
 
     def test_active_streams_use_a_bordered_table(self):
         source = (
-            "<u><b>List of active streams:</b></u>\n\n"
+            f"<b>{rich_messages.unicode_heading('Active streams')}</b>\n\n"
             "<blockquote># · Chat · Track\n"
             "├ 1 | <code>-1001</code> | First track\n"
             "└ 2 | <code>-1002</code> | No queued track"
@@ -462,6 +466,31 @@ class SerializationTests(unittest.TestCase):
         self.assertLess(html.index("<hr/>"), html.index('<img src="tg://photo?id=hero"/>'))
         self.assertLess(html.index('<img src="tg://photo?id=hero"/>'), html.index("<p>"))
 
+    def test_media_can_follow_a_native_heading(self):
+        service = rich_messages.RichMessageService(
+            AsyncMock(), "token", logging.getLogger(__name__)
+        )
+        with ExitStack() as stack:
+            message, _ = service._rich_message(
+                "<h1>🎵 Nᴏᴡ Pʟᴀʏɪɴɢ</h1><p>Body</p>",
+                rich_messages.RichMedia(
+                    "https://example.com/art.jpg",
+                    "photo",
+                    "after_first_block",
+                ),
+                stack,
+            )
+
+        html = message["html"]
+        self.assertLess(
+            html.index("</h1>"),
+            html.index('<img src="tg://photo?id=hero"/>'),
+        )
+        self.assertLess(
+            html.index('<img src="tg://photo?id=hero"/>'),
+            html.index("<p>"),
+        )
+
     def test_local_media_uses_multipart_attachment(self):
         service = rich_messages.RichMessageService(
             AsyncMock(), "token", logging.getLogger(__name__)
@@ -674,7 +703,9 @@ class LocaleHeadingTests(unittest.TestCase):
         self.assertNotIn("{6}", languages["my"]["stats_caption"])
         self.assertTrue(
             rich_messages.promote_heading(languages["my"]["play_media"])
-            .startswith(centered_heading("Now playing"))
+            .startswith(
+                "<h1>🎵 " + rich_messages.unicode_heading("Now playing") + "</h1>"
+            )
         )
         self.assertTrue(
             rich_messages.promote_heading(languages["my"]["help_menu"])
