@@ -187,6 +187,16 @@ _SMALL_CAP_GLYPHS = frozenset(
 )
 
 
+PLAY_TITLE_DISPLAY_LIMIT = 27
+
+
+def truncate_play_title(title: str) -> str:
+    title = str(title)
+    if len(title) <= PLAY_TITLE_DISPLAY_LIMIT:
+        return title
+    return title[: PLAY_TITLE_DISPLAY_LIMIT - 3].rstrip() + "..."
+
+
 def unicode_heading(value: str) -> str:
     """Apply title case with Unicode small caps after each initial."""
     if any(char in _SMALL_CAP_GLYPHS for char in value):
@@ -440,6 +450,18 @@ def _format_summary_table(
         rich[:quotes[0].start()] + "".join(tables)
         + rich[quotes[-1].end():]
     )
+
+
+def _format_play_description(rich: str) -> str:
+    heading = re.match(r"(?P<heading><h1>.*?</h1>)", rich, re.I | re.S)
+    if heading is None:
+        return rich
+    body = rich[heading.end():].strip()
+    lines = [line.strip() for line in body.splitlines() if line.strip()]
+    if len(lines) != 3 or any(not line.startswith("<b>") for line in lines):
+        return rich
+    items = "".join(f"<li>{line}</li>" for line in lines)
+    return heading.group("heading") + f"<ul>{items}</ul>"
 
 
 def _format_broadcast_table(rich: str) -> str:
@@ -731,7 +753,9 @@ def promote_heading(text: str) -> str | None:
             rich,
             count=1,
         )
-    if title == "Bot insights":
+    if title == "Now playing":
+        rich = _format_play_description(rich)
+    elif title == "Bot insights":
         rich = _format_summary_table(rich, bordered=True, center_values=True)
     elif title == "Sudo access":
         rich = _format_summary_table(rich, bordered=True, center_values=True)
@@ -788,6 +812,7 @@ class RichMedia:
     media: object
     kind: str = "photo"
     placement: str = "before"
+    layout: str | None = None
 
 
 class RichMessageService:
@@ -815,6 +840,100 @@ class RichMessageService:
     def _source(media: object) -> object:
         return getattr(media, "media", media)
 
+    @staticmethod
+    def _place_media_html(html: str, media_tag: str, placement: str) -> str:
+        if placement != "after_first_block":
+            return f"{media_tag}\n{html}"
+        closing_blocks = [
+            (html.find(tag), tag)
+            for tag in ("</table>", "</h1>")
+            if html.find(tag) >= 0
+        ]
+        if not closing_blocks:
+            return f"{media_tag}\n{html}"
+        block_end, closing_tag = min(closing_blocks)
+        block_end += len(closing_tag)
+        if html[block_end:].startswith("<hr/>"):
+            block_end += len("<hr/>")
+        return html[:block_end] + "\n" + media_tag + html[block_end:]
+
+    def _rich_slideshow(
+        self,
+        result: dict,
+        media: RichMedia,
+        stack: ExitStack,
+    ) -> tuple[dict, dict[str, tuple[object, str]]]:
+        items = list(media.media) if isinstance(media.media, (list, tuple)) else []
+        if len(items) < 2:
+            raise ValueError("A slideshow requires at least two media items")
+
+        files: dict[str, tuple[object, str]] = {}
+        bindings = []
+        blocks = []
+        tags = []
+        media_type = "video" if media.kind == "animation" else media.kind
+        for index, item in enumerate(items):
+            source = self._source(item)
+            attachment = source
+            local_path = None
+            if isinstance(source, Path):
+                source = str(source)
+            if isinstance(source, str) and not source.startswith(
+                ("http://", "https://")
+            ):
+                try:
+                    candidate = Path(source)
+                    if candidate.is_file():
+                        local_path = candidate
+                except OSError:
+                    local_path = None
+            file_key = f"rich_media_{index}"
+            if local_path is not None:
+                handle = stack.enter_context(open(local_path, "rb"))
+                attachment = f"attach://{file_key}"
+                files[file_key] = (handle, local_path.name)
+            elif isinstance(source, IOBase) or hasattr(source, "read"):
+                attachment = f"attach://{file_key}"
+                files[file_key] = (
+                    source,
+                    Path(getattr(source, "name", "media.bin")).name,
+                )
+
+            media_id = f"slide_{index}"
+            input_media = {"type": media.kind, "media": attachment}
+            bindings.append({"id": media_id, "media": input_media})
+            blocks.append({
+                "type": media.kind,
+                media.kind: input_media,
+            })
+            if media_type == "photo":
+                tags.append(f'<img src="tg://photo?id={media_id}"/>')
+            elif media_type == "audio":
+                tags.append(
+                    f'<audio src="tg://audio?id={media_id}"></audio>'
+                )
+            else:
+                tags.append(
+                    f'<video src="tg://video?id={media_id}"></video>'
+                )
+
+        if "blocks" in result:
+            index = 1 if media.placement == "after_first_block" else 0
+            result["blocks"].insert(index, {
+                "type": "slideshow",
+                "blocks": blocks,
+            })
+        else:
+            content_key = "html" if "html" in result else "markdown"
+            slideshow = "<tg-slideshow>" + "".join(tags) + "</tg-slideshow>"
+            result[content_key] = self._place_media_html(
+                result[content_key],
+                slideshow,
+                media.placement,
+            )
+            result["media"] = bindings
+        return result, files
+
     def _rich_message(self, content, media: RichMedia | None, stack: ExitStack):
         if isinstance(content, str):
             result: dict = {"html": content}
@@ -829,6 +948,8 @@ class RichMessageService:
         files: dict[str, tuple[object, str]] = {}
         if media is None:
             return result, files
+        if media.layout == "slideshow":
+            return self._rich_slideshow(result, media, stack)
         source = self._source(media.media)
         attachment = source
         local_path = None

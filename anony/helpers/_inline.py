@@ -65,28 +65,30 @@ class Inline:
                     style=enums.ButtonStyle.DANGER,
                 )
             )
-            keyboard.append(
-                [
-                    self.ikb(
-                        text=self._control("loop"),
-                        callback_data=callbacks.controls("loop", chat_id),
-                    ),
-                    self.ikb(
-                        text=self._control("stop"),
-                        callback_data=callbacks.controls("stop", chat_id),
-                        style=enums.ButtonStyle.DEFAULT,
-                    ),
-                    playback,
-                    self.ikb(
-                        text=self._control("skip"),
-                        callback_data=callbacks.controls("skip", chat_id),
-                        style=enums.ButtonStyle.DEFAULT,
-                    ),
-                    self.ikb(
-                        text=self._control("replay"),
-                        callback_data=callbacks.controls("replay", chat_id),
-                    ),
-                ]
+            controls = {
+                "loop": self.ikb(
+                    text=self._control("loop"),
+                    callback_data=callbacks.controls("loop", chat_id),
+                ),
+                "stop": self.ikb(
+                    text=self._control("stop"),
+                    callback_data=callbacks.controls("stop", chat_id),
+                    style=enums.ButtonStyle.DEFAULT,
+                ),
+                "pause": playback,
+                "skip": self.ikb(
+                    text=self._control("skip"),
+                    callback_data=callbacks.controls("skip", chat_id),
+                    style=enums.ButtonStyle.DEFAULT,
+                ),
+                "replay": self.ikb(
+                    text=self._control("replay"),
+                    callback_data=callbacks.controls("replay", chat_id),
+                ),
+            }
+            keyboard.extend(
+                [controls[name] for name in row]
+                for row in config.play_controls_layout()
             )
         play_button = config.playback_button()
         if play_button:

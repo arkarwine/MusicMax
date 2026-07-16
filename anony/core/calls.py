@@ -17,6 +17,7 @@ from pytgcalls.pytgcalls_session import PyTgCallsSession
 from anony import (app, config, db, lang, logger,
                    queue, thumb, userbot, yt)
 from anony.helpers import Media, Track, buttons
+from anony.core.rich_messages import truncate_play_title
 
 
 class TgCall(PyTgCalls):
@@ -96,15 +97,22 @@ class TgCall(PyTgCalls):
     ) -> None:
         text = _lang["play_media"].format(
             escape(media.url or "", quote=True),
-            escape(media.title or _lang["unknown_track"]),
+            escape(truncate_play_title(
+                media.title or _lang["unknown_track"]
+            )),
             escape(media.duration or "--:--"),
             media.user or _lang["someone"],
         )
         keyboard = buttons.controls(chat_id, playing=True)
+        card_thumb = _thumb
+        if config.play_image_url() and not card_thumb:
+            card_thumb = (
+                getattr(media, "thumbnail", None) or config.DEFAULT_THUMB
+            )
         try:
-            if _thumb:
+            if card_thumb:
                 await message.edit_media(
-                    media=InputMediaPhoto(media=_thumb, caption=text),
+                    media=InputMediaPhoto(media=card_thumb, caption=text),
                     reply_markup=keyboard,
                 )
             else:
@@ -121,11 +129,11 @@ class TgCall(PyTgCalls):
                 sent = (
                     await app.send_photo(
                         chat_id=chat_id,
-                        photo=_thumb,
+                        photo=card_thumb,
                         caption=text,
                         reply_markup=keyboard,
                     )
-                    if _thumb
+                    if card_thumb
                     else await app.send_message(
                         chat_id=chat_id,
                         text=text,

@@ -24,6 +24,8 @@ LABELS = {
     "video_play": "Video playback",
     "play_button_text": "Playback button text",
     "play_button_url": "Playback button link",
+    "play_image": "Playback cover",
+    "play_controls_layout": "Playback controls",
     "lang_code": "Default language",
     "default_thumb": "Default artwork",
     "ping_img": "Stats artwork",

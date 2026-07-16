@@ -6,6 +6,9 @@ from dotenv import load_dotenv
 load_dotenv()
 
 class Config:
+    PLAY_CONTROL_NAMES = ("loop", "stop", "pause", "skip", "replay")
+    DEFAULT_PLAY_CONTROLS_LAYOUT = ",".join(PLAY_CONTROL_NAMES)
+
     RUNTIME_FIELDS = {
         "duration_limit": "DURATION_LIMIT",
         "queue_limit": "QUEUE_LIMIT",
@@ -18,6 +21,8 @@ class Config:
         "video_play": "VIDEO_PLAY",
         "play_button_text": "PLAY_BUTTON_TEXT",
         "play_button_url": "PLAY_BUTTON_URL",
+        "play_image": "PLAY_IMAGE",
+        "play_controls_layout": "PLAY_CONTROLS_LAYOUT",
         "lang_code": "LANG_CODE",
         "default_thumb": "DEFAULT_THUMB",
         "ping_img": "PING_IMG",
@@ -53,6 +58,16 @@ class Config:
         )
         self.PLAY_BUTTON_TEXT = getenv("PLAY_BUTTON_TEXT", "").strip()
         self.PLAY_BUTTON_URL = getenv("PLAY_BUTTON_URL", "").strip()
+        self.PLAY_IMAGE = getenv("PLAY_IMAGE", "").strip()
+        try:
+            self.PLAY_CONTROLS_LAYOUT = self._normalize_play_controls_layout(
+                getenv(
+                    "PLAY_CONTROLS_LAYOUT",
+                    self.DEFAULT_PLAY_CONTROLS_LAYOUT,
+                )
+            )
+        except ValueError:
+            self.PLAY_CONTROLS_LAYOUT = self.DEFAULT_PLAY_CONTROLS_LAYOUT
 
         language = getenv("LANG_CODE", "en").lower()
         self.LANG_CODE = language if language in {"en", "my"} else "en"
@@ -90,6 +105,35 @@ class Config:
             raise ValueError("Use a complete http(s) URL")
         return normalized
 
+    @classmethod
+    def _normalize_play_controls_layout(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if normalized == "-":
+            return "-"
+        if not normalized:
+            raise ValueError(
+                "Control layout cannot be empty; use - to hide all"
+            )
+
+        rows = []
+        seen = set()
+        allowed = set(cls.PLAY_CONTROL_NAMES)
+        for raw_row in normalized.split("|"):
+            tokens = [token.strip() for token in raw_row.split(",")]
+            if not tokens or any(not token for token in tokens):
+                raise ValueError("Control layout contains an empty position")
+            for token in tokens:
+                if token not in allowed:
+                    valid = ", ".join(cls.PLAY_CONTROL_NAMES)
+                    raise ValueError(
+                        f"Unknown control {token}; use: {valid}"
+                    )
+                if token in seen:
+                    raise ValueError(f"Control {token} is duplicated")
+                seen.add(token)
+            rows.append(",".join(tokens))
+        return "|".join(rows)
+
     def set_runtime(self, key: str, raw_value: str) -> str:
         """Validate, normalize, and immediately apply a safe runtime value."""
         key = key.strip().lower()
@@ -121,9 +165,12 @@ class Config:
             if len(value) > 64:
                 raise ValueError("Playback button text must be 64 characters or less")
             stored = value
-        elif key == "play_button_url":
+        elif key in {"play_button_url", "play_image"}:
             normalized = raw_value.strip()
             value = "" if normalized == "-" else self._url(normalized, telegram=True)
+            stored = value
+        elif key == "play_controls_layout":
+            value = self._normalize_play_controls_layout(raw_value)
             stored = value
         elif key in {"support_channel", "support_chat"}:
             value = self._url(raw_value, telegram=True)
@@ -147,7 +194,11 @@ class Config:
         value = getattr(self, attr)
         if key == "duration_limit":
             return str(value // 60)
-        if key in {"play_button_text", "play_button_url"} and not value:
+        if key in {
+            "play_button_text", "play_button_url", "play_image"
+        } and not value:
+            return "disabled"
+        if key == "play_controls_layout" and value == "-":
             return "disabled"
         if isinstance(value, bool):
             return "on" if value else "off"
@@ -162,6 +213,23 @@ class Config:
             return text, self._url(url, telegram=True)
         except ValueError:
             return None
+
+    def play_image_url(self) -> str | None:
+        value = self.PLAY_IMAGE.strip()
+        if not value:
+            return None
+        try:
+            return self._url(value, telegram=True)
+        except ValueError:
+            return None
+
+    def play_controls_layout(self) -> tuple[tuple[str, ...], ...]:
+        value = self.PLAY_CONTROLS_LAYOUT
+        if value == "-":
+            return ()
+        return tuple(
+            tuple(row.split(",")) for row in value.split("|")
+        )
 
     def check(self):
         missing = [

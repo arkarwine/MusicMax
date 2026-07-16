@@ -119,7 +119,7 @@
     "ping_pong": "<u><b>Pong!</b></u>\n\n<b>Latency:</b> <code>{0}ms</code>\n\n<b>Uptime:</b> {1}\n<b>CPU:</b> <code>{2}%</code>\n<b>RAM:</b> <code>{3}%</code>\n<b>Disk:</b> <code>{4}%</code>\n<b>PyTgCalls Latency:</b> <code>{5}ms</code>",
     "play_admin": "🔒 Only admins can add music here.",
     "play_banned": "<u><b>{0} assistant is banned your chat</b></u>\n\n<b>ID:</b> <code>{1}</code>\n<b>Name:</b> {2}\n<b>Username:</b> {3}",
-    "play_media": "🎵 <b>Nᴏᴡ Pʟᴀʏɪɴɢ</b>\n\n<b><a href=\"{0}\">{1}</a></b>\n<blockquote>{2} · requested by {3}</blockquote>",
+    "play_media": "🎵 <b>Nᴏᴡ Pʟᴀʏɪɴɢ</b>\n\n<b>𝖳𝗂𝗍𝗅𝖾 :</b> <a href=\"{0}\">{1}</a>\n<b>𝖣𝗎𝗋𝖺𝗍𝗂𝗈𝗇 :</b> {2} 𝖬𝗂𝗇𝗎𝗍𝖾𝗌\n<b>𝖱𝖾𝗊𝗎𝖾𝗌𝗍𝖾𝖽 𝖡𝗒 :</b> {3}",
     "play_log": "<u>{0} Play Log</u>\n\n<b>Chat:</b> <code>{1}</code> | {2}\n<b>User:</b> <code>{3}</code> | {4}\n<b>Message link:</b> {5}\n\n<b>Title:</b> {6}\n<b>Duration:</b> {7} min",
     "play_queued": "✅ <b>Queued · #{0}</b>\n\n<b><a href=\"{1}\">{2}</a></b>\n<blockquote>{3} · requested by {4}</blockquote>",
     "play_usage": "🎵 Send <code>/play song or link</code> — or reply to audio.",

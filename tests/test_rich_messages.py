@@ -52,12 +52,22 @@ class HeadingPromotionTests(unittest.TestCase):
             rich_messages.unicode_heading("what would you like to do?"),
             "Wʜᴀᴛ Wᴏᴜʟᴅ Yᴏᴜ Lɪᴋᴇ Tᴏ Dᴏ?",
         )
-    def test_primary_play_heading_and_track_entity(self):
-        title = "Cyberpunk: Edgerunners | I Really Want to Stay at Your House"
+    def test_play_title_is_truncated_for_compact_display(self):
+        self.assertEqual(
+            rich_messages.truncate_play_title(
+                "Charlie Puth - Attention [Official Video]"
+            ),
+            "Charlie Puth - Attention...",
+        )
+
+    def test_primary_play_heading_uses_unordered_description_list(self):
+        title = "Charlie Puth - Attention..."
         source = (
             '🎵 <b>Nᴏᴡ Pʟᴀʏɪɴɢ</b>\n\n'
-            f'<b><a href="https://t.me/example">{title}</a></b>\n'
-            '<blockquote>3:15 · requested by <a href=tg://user?id=7935506256>Arkar</a></blockquote>'
+            f'<b>𝖳𝗂𝗍𝗅𝖾 :</b> <a href="https://t.me/example">{title}</a>\n'
+            '<b>𝖣𝗎𝗋𝖺𝗍𝗂𝗈𝗇 :</b> 3:33 𝖬𝗂𝗇𝗎𝗍𝖾𝗌\n'
+            '<b>𝖱𝖾𝗊𝗎𝖾𝗌𝗍𝖾𝖽 𝖡𝗒 :</b> '
+            '<a href=tg://user?id=7935506256>Arkar</a>'
         )
 
         result = rich_messages.promote_heading(source)
@@ -66,8 +76,15 @@ class HeadingPromotionTests(unittest.TestCase):
             "<h1>🎵 " + rich_messages.unicode_heading("Now playing") + "</h1>"
         )
         self.assertTrue(result.startswith(play_heading))
+        self.assertIn("<ul>", result)
+        self.assertEqual(result.count("<li>"), 3)
         self.assertIn(
-            f'<b><a href="https://t.me/example">{title}</a></b>',
+            f'<li><b>𝖳𝗂𝗍𝗅𝖾 :</b> '
+            f'<a href="https://t.me/example">{title}</a></li>',
+            result,
+        )
+        self.assertIn(
+            "<li><b>𝖣𝗎𝗋𝖺𝗍𝗂𝗈𝗇 :</b> 3:33 𝖬𝗂𝗇𝗎𝗍𝖾𝗌</li>",
             result,
         )
         self.assertNotIn("<h2>", result)
@@ -490,6 +507,58 @@ class SerializationTests(unittest.TestCase):
             html.index('<img src="tg://photo?id=hero"/>'),
             html.index("<p>"),
         )
+
+    def test_slideshow_binds_override_then_local_track_artwork(self):
+        service = rich_messages.RichMessageService(
+            AsyncMock(), "token", logging.getLogger(__name__)
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            artwork = Path(directory) / "track.jpg"
+            artwork.write_bytes(b"image")
+            with ExitStack() as stack:
+                message, files = service._rich_message(
+                    "<h1>🎵 Nᴏᴡ Pʟᴀʏɪɴɢ</h1><ul><li>Track</li></ul>",
+                    rich_messages.RichMedia(
+                        ["https://example.com/cover.jpg", artwork],
+                        "photo",
+                        "after_first_block",
+                        "slideshow",
+                    ),
+                    stack,
+                )
+
+                slideshow = (
+                    '<tg-slideshow><img src="tg://photo?id=slide_0"/>'
+                    '<img src="tg://photo?id=slide_1"/></tg-slideshow>'
+                )
+                html = message["html"]
+                self.assertLess(html.index("</h1>"), html.index(slideshow))
+                self.assertLess(html.index(slideshow), html.index("<ul>"))
+                self.assertEqual(
+                    message["media"][0]["media"]["media"],
+                    "https://example.com/cover.jpg",
+                )
+                self.assertEqual(
+                    message["media"][1]["media"]["media"],
+                    "attach://rich_media_1",
+                )
+                self.assertEqual(files["rich_media_1"][1], "track.jpg")
+                self.assertFalse(files["rich_media_1"][0].closed)
+
+    def test_slideshow_requires_two_media_items(self):
+        service = rich_messages.RichMessageService(
+            AsyncMock(), "token", logging.getLogger(__name__)
+        )
+        with ExitStack() as stack, self.assertRaises(ValueError):
+            service._rich_message(
+                "<h1>Now playing</h1>",
+                rich_messages.RichMedia(
+                    ["https://example.com/cover.jpg"],
+                    "photo",
+                    layout="slideshow",
+                ),
+                stack,
+            )
 
     def test_local_media_uses_multipart_attachment(self):
         service = rich_messages.RichMessageService(

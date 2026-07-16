@@ -130,6 +130,24 @@ class Bot(pyrogram.Client):
         reply_id = kwargs.get("reply_to_message_id")
         return {"message_id": reply_id} if reply_id else None
 
+    @staticmethod
+    def _rich_media_spec(
+        rich_text: str,
+        source,
+        kind: str,
+        placement: str,
+    ) -> RichMedia:
+        override = config.play_image_url()
+        if (
+            kind == "photo"
+            and override
+            and rich_text.startswith("<h1>🎵 ")
+        ):
+            return RichMedia(
+                [override, source], kind, "after_first_block", "slideshow"
+            )
+        return RichMedia(source, kind, placement)
+
     async def _rich_text_call(self, args, kwargs, *, edit=False):
         text_index = 2 if edit else 1
         rendered_args, rendered_kwargs = self._render_call(
@@ -193,7 +211,9 @@ class Bot(pyrogram.Client):
             chat_id,
             rich_text,
             fallback_text=caption,
-            media=RichMedia(media, kind, placement),
+            media=self._rich_media_spec(
+                rich_text, media, kind, placement
+            ),
             reply_markup=rendered_kwargs.get("reply_markup"),
             reply_parameters=self._reply_parameters(rendered_kwargs),
             message_thread_id=rendered_kwargs.get("message_thread_id"),
@@ -220,7 +240,12 @@ class Bot(pyrogram.Client):
             message_id,
             rich_text,
             fallback_text=caption,
-            media=RichMedia(media.media, kind),
+            media=self._rich_media_spec(
+                rich_text,
+                media.media,
+                kind,
+                "after_first_block" if rich_text.startswith("<h1>") else "before",
+            ),
             reply_markup=kwargs.get("reply_markup"),
         )
 
