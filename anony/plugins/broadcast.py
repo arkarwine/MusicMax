@@ -45,10 +45,26 @@ async def _broadcast(_, message: types.Message):
         "gcast_mode_copy" if copy else "gcast_mode_forward"
     ]
     started = monotonic()
-    sent = await message.reply_text(
-        message.lang["gcast_start"].format(
-            group_targets, user_targets, total_targets, mode
+    last_progress_edit = started
+
+    def progress_text() -> str:
+        total_delivered = group_delivered + user_delivered
+        total_failed = group_failed + user_failed
+        return message.lang["gcast_start"].format(
+            group_targets,
+            group_delivered,
+            group_failed,
+            user_targets,
+            user_delivered,
+            user_failed,
+            total_targets,
+            total_delivered,
+            total_failed,
+            mode,
         )
+
+    sent = await message.reply_text(
+        progress_text()
     )
 
 
@@ -98,6 +114,19 @@ async def _broadcast(_, message: types.Message):
                 if not failed:
                     failed = open("errors.txt", "w")
                 failed.write(f"{chat} - {error}\n")
+            processed = (
+                group_delivered + user_delivered
+                + group_failed + user_failed
+            )
+            now = monotonic()
+            if processed < total_targets and (
+                processed % 25 == 0 or now - last_progress_edit >= 5
+            ):
+                try:
+                    await sent.edit_text(progress_text())
+                except Exception:
+                    pass
+                last_progress_edit = now
 
     total_delivered = group_delivered + user_delivered
     total_failed = group_failed + user_failed

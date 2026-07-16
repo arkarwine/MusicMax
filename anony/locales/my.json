@@ -36,7 +36,7 @@
     "eval_out": "<b>ရလဒ်:</b>\n<code>{0}</code>",
     "gcast_usage": "သတင်းစကားကို ထုတ်လွှင့်ရန် သတင်းစကားတစ်ခုသို့ ပြန်ကြားပါ။",
     "gcast_active": "ကျေးဇူးပြု၍ လက်ရှိထုတ်လွှင့်မှု ပြီးဆုံးသည်အထိ စောင့်ပါ။",
-    "gcast_start": "<b>Broadcast in progress</b>\n\n<blockquote>ပရိသတ် · ပို့မည့်အရေအတွက်\n├ အဖွဲ့များ: <code>{0}</code>\n├ အသုံးပြုသူများ: <code>{1}</code>\n└ စုစုပေါင်း: <code>{2}</code></blockquote>\n\n{3} နည်းလမ်း",
+    "gcast_start": "<b>Broadcast in progress</b>\n\n<blockquote>ပရိသတ် · ပို့မည့်အရေအတွက် · ပို့ပြီး · မအောင်မြင်\n├ အဖွဲ့များ: <code>{0}</code> · <code>{1}</code> · <code>{2}</code>\n├ အသုံးပြုသူများ: <code>{3}</code> · <code>{4}</code> · <code>{5}</code>\n└ စုစုပေါင်း: <code>{6}</code> · <code>{7}</code> · <code>{8}</code></blockquote>\n\n{9} နည်းလမ်း",
     "gcast_end": "<b>Broadcast complete</b>\n\n<blockquote>ပရိသတ် · ပို့မည့်အရေအတွက် · ပို့ပြီး · မအောင်မြင်\n├ အဖွဲ့များ: <code>{0}</code> · <code>{1}</code> · <code>{2}</code>\n├ အသုံးပြုသူများ: <code>{3}</code> · <code>{4}</code> · <code>{5}</code>\n└ စုစုပေါင်း: <code>{6}</code> · <code>{7}</code> · <code>{8}</code></blockquote>\n\n{9} နည်းလမ်း · {10}",
     "gcast_errors": "ထုတ်လွှင့်မှု အမှားများ · ပို့မရသည့်နေရာ {0} ခု",
     "gcast_mode_copy": "ကူးယူ",

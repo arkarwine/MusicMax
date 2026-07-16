@@ -78,7 +78,7 @@
     "eval_out": "<b>Output:</b>\n<code>{0}</code>",
     "gcast_usage": "Reply to the message you want to broadcast, then send <code>/broadcast</code>. Optional flags: <code>-user</code>, <code>-nochat</code>, <code>-copy</code>.",
     "gcast_active": "ℹ️ A broadcast is already running. Wait for its summary before starting another.",
-    "gcast_start": "<b>Broadcast in progress</b>\n\n<blockquote>Audience · Targets\n├ Groups: <code>{0}</code>\n├ Users: <code>{1}</code>\n└ Total: <code>{2}</code></blockquote>\n\n{3} mode",
+    "gcast_start": "<b>Broadcast in progress</b>\n\n<blockquote>Audience · Targets · Delivered · Failed\n├ Groups: <code>{0}</code> · <code>{1}</code> · <code>{2}</code>\n├ Users: <code>{3}</code> · <code>{4}</code> · <code>{5}</code>\n└ Total: <code>{6}</code> · <code>{7}</code> · <code>{8}</code></blockquote>\n\n{9} mode",
     "gcast_end": "<b>Broadcast complete</b>\n\n<blockquote>Audience · Targets · Delivered · Failed\n├ Groups: <code>{0}</code> · <code>{1}</code> · <code>{2}</code>\n├ Users: <code>{3}</code> · <code>{4}</code> · <code>{5}</code>\n└ Total: <code>{6}</code> · <code>{7}</code> · <code>{8}</code></blockquote>\n\n{9} mode · {10}",
     "gcast_errors": "Broadcast errors · {0} failed deliveries",
     "gcast_mode_copy": "Copy",
