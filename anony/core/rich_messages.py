@@ -435,6 +435,35 @@ def _format_summary_table(
     )
 
 
+def _format_active_streams_table(rich: str) -> str:
+    quotes = list(_BLOCKQUOTE_RE.finditer(rich))
+    if len(quotes) != 1:
+        return rich
+    quote = quotes[0]
+    lines = [line.strip() for line in quote.group("body").split("<br>")]
+    columns = [value.strip() for value in lines[0].split(" · ")]
+    if len(lines) < 2 or len(columns) != 3 or columns[0] != "#":
+        return rich
+    rows = []
+    for line in lines[1:]:
+        values = re.sub(r"^[\u251c\u2514\u2502]\s*", "", line).split(
+            " | ", 2
+        )
+        if len(values) != 3:
+            return rich
+        rank, chat, track = (value.strip() for value in values)
+        rows.append(
+            f'<tr><td align="center">{rank}</td>'
+            f'<td align="center">{chat}</td><td>{track}</td></tr>'
+        )
+    headers = (
+        "<tr>" + "".join(f"<th>{column}</th>" for column in columns) + "</tr>"
+    )
+    table = "<table bordered striped>" + headers + "".join(rows) + "</table>"
+    return rich[:quote.start()] + table + rich[quote.end():]
+
+
+
 def _format_trending_table(rich: str) -> str:
     intro_end = rich.find("</blockquote>")
     if intro_end < 0:
@@ -659,6 +688,8 @@ def promote_heading(text: str) -> str | None:
         rich = _format_summary_table(rich, expandable=True)
     elif title == "Trending tracks":
         rich = _format_trending_table(rich)
+    elif title == "Active streams":
+        rich = _format_active_streams_table(rich)
     elif title == "Assistant sessions":
         rich = _format_sessions_table(rich)
     rich = _format_session_detail_table(rich)

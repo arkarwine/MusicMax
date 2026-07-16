@@ -3,6 +3,7 @@
 # This file is part of AnonXMusic
 
 
+from html import escape
 import os
 
 from pyrogram import filters, types
@@ -20,19 +21,32 @@ async def _activevc(_, m: types.Message):
         return await m.reply_text(m.lang["vc_count"].format(len(db.active_calls)))
 
     sent = await m.reply_text(m.lang["vc_fetching"])
-    text = ""
+    rows = []
+    plain_rows = []
 
     for i, chat in enumerate(db.active_calls):
         playing = queue.get_current(chat)
-        title = playing.title[:25] if playing and playing.title else "No queued track"
-        text += f"\n{i+1}. <code>{chat}</code>\n    ➜ {title}"
+        title = (
+            playing.title[:25]
+            if playing and playing.title
+            else m.lang["vc_no_track"]
+        )
+        branch = "└" if i == len(db.active_calls) - 1 else "├"
+        rows.append(
+            f"{branch} {i + 1} | <code>{chat}</code> | {escape(title)}"
+        )
+        plain_rows.append(f"{i + 1}. {chat} | {title}")
 
-    if len(text) < 4000:
-        return await sent.edit_text(m.lang["vc_list"] + text)
+    table_source = (
+        f'<blockquote># · {m.lang["vc_table_chat"]} · '
+        f'{m.lang["vc_table_track"]}\n' + "\n".join(rows) + "</blockquote>"
+    )
+    message = m.lang["vc_list"] + "\n\n" + table_source
+    if len(message) < 4000:
+        return await sent.edit_text(message)
 
-    with open("activevc.txt", "w") as f:
-        f.write(text)
-    f.close()
+    with open("activevc.txt", "w", encoding="utf-8") as f:
+        f.write("\n".join(plain_rows))
     await sent.edit_media(
         media=types.InputMediaDocument(
             media="activevc.txt",

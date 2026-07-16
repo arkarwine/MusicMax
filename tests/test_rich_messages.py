@@ -28,6 +28,8 @@ def centered_heading(
     icon = rich_messages.heading_icon(text) if icon is None else icon
     result = (
         '<table><tr><th align="center">'
+        + (f"{icon} " if icon else "")
+        + rich_messages.unicode_heading(text)
         + "</th></tr></table>"
     )
     return result
@@ -213,6 +215,36 @@ class HeadingPromotionTests(unittest.TestCase):
         self.assertNotIn("<blockquote>", status)
         self.assertEqual(status.count("<hr/>"), 0)
 
+    def test_active_streams_use_a_bordered_table(self):
+        source = (
+            "<u><b>List of active streams:</b></u>\n\n"
+            "<blockquote># · Chat · Track\n"
+            "├ 1 | <code>-1001</code> | First track\n"
+            "└ 2 | <code>-1002</code> | No queued track"
+            "</blockquote>"
+        )
+
+        result = rich_messages.promote_heading(source)
+
+        self.assertTrue(result.startswith(centered_heading("Active streams")))
+        self.assertIn("<table bordered striped>", result)
+        self.assertIn(
+            "<tr>" + table_header("#") + table_header("Chat")
+            + table_header("Track") + "</tr>",
+            result,
+        )
+        self.assertIn(
+            '<tr><td align="center">1</td>'
+            '<td align="center"><code>-1001</code></td><td>First track</td></tr>',
+            result,
+        )
+        self.assertIn(
+            '<tr><td align="center">2</td>'
+            '<td align="center"><code>-1002</code></td>'
+            "<td>No queued track</td></tr>",
+            result,
+        )
+
     def test_trending_uses_rank_track_and_play_columns(self):
         source = (
             "🔥 <b>Trending tracks</b>\n"
@@ -315,11 +347,7 @@ class HeadingPromotionTests(unittest.TestCase):
             "👋 <b>Welcome, ArKar</b>\n\nYour music room."
         )
 
-        self.assertTrue(result.startswith(
-            '<table><tr><th align="center">'
-            + rich_messages.unicode_heading("Welcome, ArKar")
-            + "</th></tr></table>"
-        ))
+        self.assertTrue(result.startswith(centered_heading("Welcome, ArKar")))
         self.assertNotIn("<table bordered", result)
 
     def test_plain_body_newlines_are_explicit_but_preformatted_lines_are_not(self):
