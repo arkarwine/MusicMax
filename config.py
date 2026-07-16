@@ -16,6 +16,8 @@ class Config:
         "auto_end": "AUTO_END",
         "thumb_gen": "THUMB_GEN",
         "video_play": "VIDEO_PLAY",
+        "play_button_text": "PLAY_BUTTON_TEXT",
+        "play_button_url": "PLAY_BUTTON_URL",
         "lang_code": "LANG_CODE",
         "default_thumb": "DEFAULT_THUMB",
         "ping_img": "PING_IMG",
@@ -49,6 +51,8 @@ class Config:
         self.RICH_MESSAGES: bool = (
             getenv("RICH_MESSAGES", "True").lower() == "true"
         )
+        self.PLAY_BUTTON_TEXT = getenv("PLAY_BUTTON_TEXT", "").strip()
+        self.PLAY_BUTTON_URL = getenv("PLAY_BUTTON_URL", "").strip()
 
         language = getenv("LANG_CODE", "en").lower()
         self.LANG_CODE = language if language in {"en", "my"} else "en"
@@ -110,6 +114,17 @@ class Config:
             if value not in {"en", "my"}:
                 raise ValueError("Language must be en or my")
             stored = value
+        elif key == "play_button_text":
+            value = raw_value.strip()
+            if value == "-":
+                value = ""
+            if len(value) > 64:
+                raise ValueError("Playback button text must be 64 characters or less")
+            stored = value
+        elif key == "play_button_url":
+            normalized = raw_value.strip()
+            value = "" if normalized == "-" else self._url(normalized, telegram=True)
+            stored = value
         elif key in {"support_channel", "support_chat"}:
             value = self._url(raw_value, telegram=True)
             stored = value
@@ -132,9 +147,21 @@ class Config:
         value = getattr(self, attr)
         if key == "duration_limit":
             return str(value // 60)
+        if key in {"play_button_text", "play_button_url"} and not value:
+            return "disabled"
         if isinstance(value, bool):
             return "on" if value else "off"
         return str(value)
+
+    def playback_button(self) -> tuple[str, str] | None:
+        text = self.PLAY_BUTTON_TEXT.strip()
+        url = self.PLAY_BUTTON_URL.strip()
+        if not text or not url or len(text) > 64:
+            return None
+        try:
+            return text, self._url(url, telegram=True)
+        except ValueError:
+            return None
 
     def check(self):
         missing = [

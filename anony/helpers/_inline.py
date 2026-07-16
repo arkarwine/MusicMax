@@ -88,6 +88,12 @@ class Inline:
                     ),
                 ]
             )
+        play_button = config.playback_button()
+        if play_button:
+            text, url = play_button
+            keyboard.append([
+                self.ikb(text=text, url=url)
+            ])
         return self.ikm(keyboard)
 
     def help_markup(

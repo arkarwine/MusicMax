@@ -22,6 +22,8 @@ LABELS = {
     "auto_end": "Auto end",
     "thumb_gen": "Generated artwork",
     "video_play": "Video playback",
+    "play_button_text": "Playback button text",
+    "play_button_url": "Playback button link",
     "lang_code": "Default language",
     "default_thumb": "Default artwork",
     "ping_img": "Stats artwork",
