@@ -276,7 +276,6 @@ async def _send_add_prompt(
         chat_id,
         text,
         reply_markup=types.ForceReply(
-            selective=True,
             placeholder=placeholder,
         ),
     )
@@ -299,7 +298,6 @@ async def _replace_force_prompt(
         chat_id,
         text,
         reply_markup=types.ForceReply(
-            selective=True,
             placeholder=placeholder,
         ),
     )
