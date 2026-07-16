@@ -43,6 +43,8 @@ _HEADING_MESSAGES = {
     "lang_choose": ("heading_language", "", True),
     "play_media": ("heading_now_playing", "", False),
     "play_session_required": ("heading_assistant_required", "", False),
+    "gcast_start": ("heading_broadcast_progress", "", False),
+    "gcast_end": ("heading_broadcast_complete", "", False),
     "play_queued": ("heading_added_to_queue", " · #{0}", False),
     "queue_curr": ("heading_queue", "", False),
     "sessions_list": ("heading_sessions", "", False),

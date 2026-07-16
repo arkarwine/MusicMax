@@ -713,5 +713,53 @@ class LocaleHeadingTests(unittest.TestCase):
         )
 
 
+class BroadcastTableTests(unittest.TestCase):
+    def test_completion_uses_bordered_delivery_table(self):
+        source = (
+            "<b>Broadcast complete</b>\n\n"
+            "<blockquote>Audience · Targets · Delivered · Failed\n"
+            "├ Groups: <code>6</code> · <code>5</code> · <code>1</code>\n"
+            "├ Users: <code>4</code> · <code>4</code> · <code>0</code>\n"
+            "└ Total: <code>10</code> · <code>9</code> · <code>1</code>"
+            "</blockquote>\n\nForward mode · 2.4s"
+        )
+
+        result = rich_messages.promote_heading(source)
+
+        self.assertTrue(result.startswith(centered_heading("Broadcast complete")))
+        self.assertIn("<table bordered striped>", result)
+        self.assertIn(
+            "<tr>" + table_header("Audience") + table_header("Targets")
+            + table_header("Delivered") + table_header("Failed") + "</tr>",
+            result,
+        )
+        self.assertIn(
+            '<tr><td><b>Total</b></td>'
+            '<td align="center"><code>10</code></td>'
+            '<td align="center"><code>9</code></td>'
+            '<td align="center"><code>1</code></td></tr>',
+            result,
+        )
+        self.assertIn("<footer>Forward mode · 2.4s</footer>", result)
+        self.assertNotIn("<blockquote>", result)
+
+    def test_progress_uses_compact_target_table(self):
+        source = (
+            "<b>Broadcast in progress</b>\n\n"
+            "<blockquote>Audience · Targets\n"
+            "├ Groups: <code>6</code>\n"
+            "├ Users: <code>4</code>\n"
+            "└ Total: <code>10</code></blockquote>\n\nCopy mode"
+        )
+
+        result = rich_messages.promote_heading(source)
+
+        self.assertTrue(
+            result.startswith(centered_heading("Broadcast in progress"))
+        )
+        self.assertIn("<table bordered striped>", result)
+        self.assertIn("<footer>Copy mode</footer>", result)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -5,6 +5,7 @@
 
 import os
 import asyncio
+from time import monotonic
 
 from pyrogram import errors, filters, types
 
@@ -30,14 +31,26 @@ async def _broadcast(_, message: types.Message):
             await app.get_media_group(msg.chat.id, msg.id),
             key=lambda item: item.id,
         )
-    count, ucount = 0, 0
+    group_delivered = user_delivered = 0
+    group_failed = user_failed = 0
     groups, users = set(), set()
-    sent = await message.reply_text(message.lang["gcast_start"])
 
     if "-nochat" not in message.command:
         groups = set(await db.get_chats())
     if "-user" in message.command:
         users = set(await db.get_users())
+    group_targets, user_targets = len(groups), len(users)
+    total_targets = group_targets + user_targets
+    mode = message.lang[
+        "gcast_mode_copy" if copy else "gcast_mode_forward"
+    ]
+    started = monotonic()
+    sent = await message.reply_text(
+        message.lang["gcast_start"].format(
+            group_targets, user_targets, total_targets, mode
+        )
+    )
+
 
     chats = list(groups | users)
     failed = None
@@ -73,21 +86,40 @@ async def _broadcast(_, message: types.Message):
 
             if delivered:
                 if chat in groups:
-                    count += 1
+                    group_delivered += 1
                 else:
-                    ucount += 1
+                    user_delivered += 1
                 await asyncio.sleep(0.2)
             else:
+                if chat in groups:
+                    group_failed += 1
+                else:
+                    user_failed += 1
                 if not failed:
                     failed = open("errors.txt", "w")
                 failed.write(f"{chat} - {error}\n")
 
-    text = message.lang["gcast_end"].format(count, ucount)
+    total_delivered = group_delivered + user_delivered
+    total_failed = group_failed + user_failed
+    elapsed = max(monotonic() - started, 0)
+    text = message.lang["gcast_end"].format(
+        group_targets,
+        group_delivered,
+        group_failed,
+        user_targets,
+        user_delivered,
+        user_failed,
+        total_targets,
+        total_delivered,
+        total_failed,
+        mode,
+        f"{elapsed:.1f}s",
+    )
     if failed:
         failed.close()
         await message.reply_document(
             document="errors.txt",
-            caption=text,
+            caption=message.lang["gcast_errors"].format(total_failed),
         )
         try:
             os.remove("errors.txt")

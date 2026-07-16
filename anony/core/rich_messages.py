@@ -101,6 +101,8 @@ _TITLE_RENAMES = {
     "two-step verification": "Two-step verification",
     "request failed": "Request failed",
     "assistant required": "Assistant required",
+    "broadcast in progress": "Broadcast in progress",
+    "broadcast complete": "Broadcast complete",
     "bot insights": "Bot insights",
     "settings": "Settings",
     "controls": "Controls",
@@ -142,6 +144,8 @@ _HEADER_ICONS = {
     "Two-step verification": "🔐",
     "Request failed": "⚠️",
     "Assistant required": "🎧",
+    "Broadcast in progress": "📣",
+    "Broadcast complete": "✅",
     "Bot insights": "📊",
     "Settings": "⚙️",
     "Controls": "🛠️",
@@ -438,6 +442,50 @@ def _format_summary_table(
     )
 
 
+def _format_broadcast_table(rich: str) -> str:
+    quotes = list(_BLOCKQUOTE_RE.finditer(rich))
+    if len(quotes) != 1:
+        return rich
+    quote = quotes[0]
+    lines = [line.strip() for line in quote.group("body").split("<br>")]
+    if len(lines) < 2 or any(not line for line in lines):
+        return rich
+
+    headers = [value.strip() for value in lines[0].split(" · ")]
+    if len(headers) not in {2, 4}:
+        return rich
+
+    rows = [
+        "<tr>" + "".join(f"<th>{header}</th>" for header in headers) + "</tr>"
+    ]
+    for line in lines[1:]:
+        cleaned = re.sub(r"^[\u251c\u2514\u2502]\s*", "", line)
+        match = re.fullmatch(
+            r"(?P<label>[^:]+):\s*(?P<values>.+)",
+            cleaned,
+            re.S,
+        )
+        if match is None:
+            return rich
+        values = [
+            value.strip() for value in match.group("values").split(" · ")
+        ]
+        if len(values) != len(headers) - 1:
+            return rich
+        rows.append(
+            f"<tr><td><b>{match.group('label').strip()}</b></td>"
+            + "".join(
+                f'<td align="center">{value}</td>' for value in values
+            )
+            + "</tr>"
+        )
+
+    table = "<table bordered striped>" + "".join(rows) + "</table>"
+    suffix = rich[quote.end():].strip()
+    footer = f"<footer>{suffix}</footer>" if suffix else ""
+    return rich[:quote.start()] + table + footer
+
+
 def _format_active_streams_table(rich: str) -> str:
     quotes = list(_BLOCKQUOTE_RE.finditer(rich))
     if len(quotes) != 1:
@@ -689,6 +737,8 @@ def promote_heading(text: str) -> str | None:
         rich = _format_summary_table(rich, bordered=True, center_values=True)
     elif title == "Advanced status":
         rich = _format_summary_table(rich, expandable=True)
+    elif title in {"Broadcast in progress", "Broadcast complete"}:
+        rich = _format_broadcast_table(rich)
     elif title == "Trending tracks":
         rich = _format_trending_table(rich)
     elif title == "Active streams":
