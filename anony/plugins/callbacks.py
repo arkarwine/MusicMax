@@ -9,7 +9,6 @@ from pyrogram import enums, errors, filters, types
 
 from anony import anon, app, db, lang, queue, tg, yt
 from anony.helpers import (
-    admin_check,
     buttons,
     can_configure_group,
     can_manage_vc,

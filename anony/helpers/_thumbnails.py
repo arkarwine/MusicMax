@@ -63,7 +63,14 @@ class Thumbnail:
             if os.path.exists(output) and os.path.getsize(output) > 0:
                 return output
             try:
-                await self.save_thumb(source, url)
+                if url.startswith(("http://", "https://")):
+                    await self.save_thumb(source, url)
+                else:
+                    from anony import app
+
+                    downloaded = await app.download_media(url, file_name=source)
+                    if not downloaded:
+                        raise RuntimeError("Telegram media could not be downloaded")
                 with Image.open(source) as image:
                     normalized = image.convert("RGB")
                     normalized.thumbnail(

@@ -30,24 +30,29 @@ _button_fallbacks: dict[int, str] = {}
 class LocalizedText(str):
     """A trusted locale/template string that remains compatible with str."""
 
+    def __new__(cls, value: str, key: str | None = None):
+        instance = super().__new__(cls, value)
+        instance.locale_key = key
+        return instance
+
     def format(self, *args, **kwargs):
-        return type(self)(super().format(*args, **kwargs))
+        return type(self)(super().format(*args, **kwargs), self.locale_key)
 
     def format_map(self, mapping):
-        return type(self)(super().format_map(mapping))
+        return type(self)(super().format_map(mapping), self.locale_key)
 
     def __add__(self, other):
-        return type(self)(super().__add__(other))
+        return type(self)(super().__add__(other), self.locale_key)
 
     def __radd__(self, other):
-        return type(self)(str(other) + str(self))
+        return type(self)(str(other) + str(self), self.locale_key)
 
     def replace(self, old, new, count=-1):
-        return type(self)(super().replace(old, new, count))
+        return type(self)(super().replace(old, new, count), self.locale_key)
 
 
-def localized_text(text: str) -> LocalizedText:
-    return LocalizedText(text)
+def localized_text(text: str, key: str | None = None) -> LocalizedText:
+    return LocalizedText(text, key)
 
 
 def is_localized_text(text) -> bool:
@@ -100,7 +105,10 @@ def strip_custom_emoji_tags(text: str) -> str:
 def render_custom_emoji_text(text: str) -> str:
     if not isinstance(text, str) or custom_emoji_supported():
         return text
-    return strip_custom_emoji_tags(text)
+    rendered = strip_custom_emoji_tags(text)
+    if isinstance(text, LocalizedText):
+        return localized_text(rendered, text.locale_key)
+    return rendered
 
 
 def _button_supports_custom_icons() -> bool:

@@ -55,6 +55,10 @@ def runtime_config(action: str, key: str) -> str:
     return build("runtime_config", action, key)
 
 
+def theme(action: str, theme_id: str) -> str:
+    return build("theme", action, theme_id)
+
+
 def stats(action: str) -> str:
     return build("stats", action)
 

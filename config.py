@@ -122,6 +122,22 @@ class Config:
         return normalized
 
     @classmethod
+    @classmethod
+    def _media(cls, value: str, *, telegram: bool = False) -> str:
+        normalized = value.strip()
+        if normalized.startswith(("http://", "https://")) or (
+            telegram and normalized.startswith("@")
+        ):
+            return cls._url(normalized, telegram=telegram)
+        if (
+            20 <= len(normalized) <= 512
+            and re.fullmatch(r"[A-Za-z0-9_-]+", normalized)
+        ):
+            return normalized
+        raise ValueError(
+            "Use a complete http(s) URL or Telegram media file ID"
+        )
+
     def _normalize_play_controls_layout(cls, value: str) -> str:
         normalized = value.strip().lower()
         if normalized == "-":
@@ -245,11 +261,15 @@ class Config:
             if len(value) > 64:
                 raise ValueError("Playback button text must be 64 characters or less")
             stored = value
-        elif key in {
-            "play_button_url", "play_image", "start_img",
-        }:
+        elif key == "play_button_url":
             normalized = raw_value.strip()
             value = "" if normalized == "-" else self._url(normalized, telegram=True)
+            stored = value
+        elif key in {"play_image", "start_img"}:
+            normalized = raw_value.strip()
+            value = "" if normalized == "-" else self._media(
+                normalized, telegram=True
+            )
             stored = value
         elif key == "play_controls_layout":
             value = self._normalize_play_controls_layout(raw_value)
@@ -261,6 +281,9 @@ class Config:
             stored = value
         elif key in {"support_channel", "support_chat"}:
             value = self._url(raw_value, telegram=True)
+            stored = value
+        elif key in {"default_thumb", "ping_img"}:
+            value = self._media(raw_value)
             stored = value
         else:
             value = self._url(raw_value)
@@ -311,7 +334,7 @@ class Config:
         if not value:
             return None
         try:
-            return self._url(value, telegram=True)
+            return self._media(value, telegram=True)
         except ValueError:
             return None
 
@@ -330,6 +353,55 @@ class Config:
             else "PLAY_MESSAGE_TEMPLATE_EN"
         )
         return getattr(self, attr).strip() or None
+
+    def runtime_export(self, key: str, *, default: bool = False):
+        """Return one safe runtime value in the typed theme JSON format."""
+        key = key.strip().lower()
+        if key not in self.RUNTIME_FIELDS:
+            raise KeyError(key)
+        value = (
+            self._runtime_defaults[key]
+            if default
+            else getattr(self, self.RUNTIME_FIELDS[key])
+        )
+        if key == "duration_limit":
+            return value // 60
+        if key in {"queue_limit", "playlist_limit"}:
+            return int(value)
+        if key in {"auto_leave", "auto_end", "thumb_gen", "video_play"}:
+            return bool(value)
+        if key == "play_controls_layout":
+            if value == "-":
+                return []
+            return [row.split(",") for row in value.split("|")]
+        if key in {
+            "play_button_text", "play_button_url", "play_image", "start_img",
+        } and not value:
+            return None
+        if key in {"play_message_template_en", "play_message_template_my"}:
+            return value or None
+        return value
+
+    @staticmethod
+    def runtime_import_value(key: str, value) -> str:
+        """Convert a typed theme value to the existing runtime validator input."""
+        if isinstance(value, bool):
+            return "on" if value else "off"
+        if value is None:
+            if key in {
+                "play_message_template_en", "play_message_template_my",
+            }:
+                return ""
+            return "-"
+        if key == "play_controls_layout" and isinstance(value, list):
+            if not value:
+                return "-"
+            if any(not isinstance(row, list) for row in value):
+                raise ValueError("Play controls must be an array of rows")
+            return "|".join(",".join(map(str, row)) for row in value)
+        if isinstance(value, (str, int)):
+            return str(value)
+        raise ValueError(f"Unsupported value type for {key}")
 
     def check(self):
         missing = [

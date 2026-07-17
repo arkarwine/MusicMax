@@ -862,6 +862,8 @@ class BroadcastTableTests(unittest.TestCase):
             result,
         )
         self.assertIn(
+
+
             '<tr><td><b>Total</b></td>'
             '<td align="center"><code>10</code></td>'
             '<td align="center"><code>5</code></td>'
@@ -869,6 +871,72 @@ class BroadcastTableTests(unittest.TestCase):
             result,
         )
         self.assertIn("<footer>Copy mode</footer>", result)
+
+
+class ThemeTokenTests(unittest.TestCase):
+    def setUp(self):
+        self.previous = rich_messages.get_theme_ui()
+
+    def tearDown(self):
+        rich_messages.set_theme_ui(self.previous)
+
+    def test_default_theme_uses_plain_left_headings_without_icons(self):
+        rich_messages.set_theme_ui({
+            "heading_font": "plain",
+            "icons": False,
+            "heading_alignment": "left",
+            "separators": False,
+            "media_placement": "automatic",
+            "tables": {
+                "bordered": False,
+                "striped": False,
+                "header_alignment": "left",
+                "value_alignment": "left",
+            },
+            "surfaces": {},
+            "keyboards": {},
+        })
+
+        result = rich_messages.promote_heading(
+            "👋 <b>Welcome, ArKar</b>\n\nYour music room."
+        )
+
+        self.assertTrue(result.startswith("<h1>Welcome, Arkar</h1>"))
+        self.assertNotIn("👋", result)
+        self.assertNotIn("bordered", result)
+
+    def test_surface_tokens_override_global_heading_and_media(self):
+        ui = rich_messages.get_theme_ui()
+        ui["surfaces"] = {
+            "play": {
+                "heading_level": 2,
+                "heading_alignment": "left",
+                "icon": "✨",
+                "media_placement": "after_heading",
+            }
+        }
+        rich_messages.set_theme_ui(ui)
+
+        result = rich_messages.promote_heading(
+            "<b>Now playing</b>\n\nTrack", surface="play"
+        )
+
+        self.assertTrue(result.startswith("<h2>✨ "))
+        self.assertEqual(
+            rich_messages.themed_media_placement("play", "before"),
+            "after_first_block",
+        )
+
+    def test_keyboard_layout_reorders_but_cannot_drop_actions(self):
+        ui = rich_messages.get_theme_ui()
+        ui["keyboards"] = {"help": [["play"], ["stats"]]}
+        rich_messages.set_theme_ui(ui)
+
+        rows = rich_messages.themed_keyboard_layout(
+            "help", [["play", "queue", "stats"]], {"play", "queue", "stats"}
+        )
+
+        self.assertEqual(rows, [["play"], ["stats"], ["queue"]])
 
 
 if __name__ == "__main__":

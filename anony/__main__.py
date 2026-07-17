@@ -9,7 +9,7 @@ import importlib
 from contextlib import suppress
 
 from anony import (anon, app, config, db, logger, stop, tasks,
-                   thumb, userbot, yt)
+                   themes, thumb, userbot, yt)
 from anony.core.recovery import recovery
 from anony.plugins import all_modules
 
@@ -26,6 +26,7 @@ async def idle():
 
 async def main():
     await db.connect()
+    await themes.boot()
     app.logger = await db.get_log_chat()
     await app.boot()
     await userbot.boot()

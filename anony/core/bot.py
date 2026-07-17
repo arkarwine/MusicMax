@@ -19,7 +19,13 @@ from anony.core.custom_emoji import (
     set_custom_emoji_supported,
     strip_custom_emoji_tags,
 )
-from anony.core.rich_messages import RichMedia, RichMessageService, promote_heading
+from anony.core.rich_messages import (
+    RichMedia,
+    RichMessageService,
+    promote_heading,
+    surface_from_text,
+    themed_media_placement,
+)
 
 
 _CUSTOM_EMOJI_TEST_ID = "5465443221003836735"
@@ -150,13 +156,15 @@ class Bot(pyrogram.Client):
 
     async def _rich_text_call(self, args, kwargs, *, edit=False):
         text_index = 2 if edit else 1
+        original_text = self._call_value(args, kwargs, text_index, "text")
+        surface = surface_from_text(original_text)
         rendered_args, rendered_kwargs = self._render_call(
             args, kwargs, text_index, "text"
         )
         text = self._call_value(
             rendered_args, rendered_kwargs, text_index, "text"
         )
-        rich_text = promote_heading(text)
+        rich_text = promote_heading(text, surface)
         if rich_text is None:
             return None
 
@@ -187,10 +195,12 @@ class Bot(pyrogram.Client):
         rendered_args, rendered_kwargs = self._render_call(
             args, kwargs, 2, "caption"
         )
+        original_caption = self._call_value(args, kwargs, 2, "caption")
+        surface = surface_from_text(original_caption)
         caption = self._call_value(
             rendered_args, rendered_kwargs, 2, "caption"
         )
-        rich_text = promote_heading(caption)
+        rich_text = promote_heading(caption, surface)
         if rich_text is None:
             return None
 
@@ -207,6 +217,7 @@ class Bot(pyrogram.Client):
             else "before"
         )
 
+        placement = themed_media_placement(surface, placement)
         return await self.rich_messages.send(
             chat_id,
             rich_text,
@@ -222,9 +233,10 @@ class Bot(pyrogram.Client):
     async def _rich_media_edit(self, args, kwargs):
         media = self._call_value(args, kwargs, 2, "media")
         caption = getattr(media, "caption", None)
+        surface = surface_from_text(caption)
         if is_localized_text(caption):
             caption = render_custom_emoji_text(caption)
-        rich_text = promote_heading(caption)
+        rich_text = promote_heading(caption, surface)
         kind = type(media).__name__.removeprefix("InputMedia").lower()
         if rich_text is None or kind not in {
             "photo", "video", "animation", "audio"
@@ -241,7 +253,10 @@ class Bot(pyrogram.Client):
             media=RichMedia(
                 media.media,
                 kind,
-                "after_first_block" if rich_text.startswith("<h1>") else "before",
+                themed_media_placement(
+                    surface,
+                    "after_first_block" if rich_text.startswith("<h1>") else "before",
+                ),
             ),
             reply_markup=kwargs.get("reply_markup"),
         )
@@ -516,6 +531,9 @@ class Bot(pyrogram.Client):
             ("config", "⚙️ Open runtime configuration"),
             ("setconfig", "✏️ Change a safe runtime setting"),
             ("resetconfig", "↩️ Restore a runtime setting"),
+            ("themes", "🎨 Manage global themes"),
+            ("importtheme", "📥 Import a theme JSON file"),
+            ("exporttheme", "📤 Export a theme JSON file"),
         ]
         commands = [
             pyrogram.types.BotCommand(command, description)

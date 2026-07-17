@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import copy
 import mimetypes
 import re
 import unicodedata
@@ -188,6 +189,91 @@ _SMALL_CAP_GLYPHS = frozenset(
 
 
 PLAY_TITLE_DISPLAY_LIMIT = 27
+_THEME_UI = {
+    "heading_font": "small_caps",
+    "icons": True,
+    "heading_alignment": "center",
+    "separators": True,
+    "media_placement": "automatic",
+    "tables": {
+        "bordered": None,
+        "striped": None,
+        "header_alignment": None,
+        "value_alignment": None,
+    },
+    "surfaces": {"play": {"heading_alignment": "left"}},
+    "keyboards": {},
+}
+
+_LOCALE_SURFACES = {
+    "start_pm": ("start", "Welcome", 1),
+    "start_gp": ("start", "Ready to play", 1),
+    "welcome_group": ("start", "Welcome", 1),
+    "help_menu": ("help", "What would you like to do?", 1),
+    "lang_choose": ("language", "Choose a language", 1),
+    "play_media": ("play", "Now playing", 1),
+    "play_queued": ("queue", "Added to queue", 3),
+    "queue_curr": ("queue", "Queue", 1),
+    "setup_required": ("setup", "Setup required", 3),
+    "setup_ready": ("setup", "Ready to play", 1),
+    "start_settings": ("settings", "Settings", 1),
+    "trending_title": ("trending", "Trending tracks", 1),
+    "trending_empty": ("trending", "Trending tracks", 1),
+    "sessions_list": ("sessions", "Assistant sessions", 1),
+    "session_info": ("session", "Assistant session", 2),
+    "status_sudo": ("status", "Advanced status", 1),
+    "vc_list": ("active_streams", "Active streams", 1),
+    "auth_list": ("access", "Playback access", 1),
+    "gcast_start": ("broadcast", "Broadcast in progress", 1),
+    "gcast_end": ("broadcast", "Broadcast complete", 1),
+}
+
+
+def set_theme_ui(value: dict) -> None:
+    global _THEME_UI
+    _THEME_UI = copy.deepcopy(value)
+
+
+def get_theme_ui() -> dict:
+    return copy.deepcopy(_THEME_UI)
+
+
+def surface_from_text(text: object) -> str | None:
+    key = getattr(text, "locale_key", None)
+    definition = _LOCALE_SURFACES.get(key)
+    return definition[0] if definition else None
+
+
+def themed_media_placement(surface: str | None, automatic: str) -> str:
+    value = _surface_options(surface).get(
+        "media_placement", _THEME_UI.get("media_placement", "automatic")
+    )
+    if value == "before":
+        return "before"
+    if value == "after_heading":
+        return "after_first_block"
+    return automatic
+
+
+def _surface_options(surface: str | None) -> dict:
+    return _THEME_UI.get("surfaces", {}).get(surface or "", {})
+
+
+def themed_keyboard_layout(
+    name: str, default_rows: list[list[str]], available: set[str]
+) -> list[list[str]]:
+    rows = _THEME_UI.get("keyboards", {}).get(name, default_rows)
+    selected = [[action for action in row if action in available] for row in rows]
+    selected = [row for row in selected if row]
+    used = {action for row in selected for action in row}
+    missing = [
+        action for row in default_rows for action in row
+        if action in available and action not in used
+    ]
+    if missing:
+        selected.append(missing)
+    return selected
+
 
 
 def truncate_play_title(title: str) -> str:
@@ -198,17 +284,25 @@ def truncate_play_title(title: str) -> str:
 
 
 def unicode_heading(value: str) -> str:
-    """Apply title case with Unicode small caps after each initial."""
-    if any(char in _SMALL_CAP_GLYPHS for char in value):
-        return value
+    """Apply the active theme's safe heading transform."""
     titled = re.sub(
         r"[A-Za-z]+",
         lambda match: match.group(0)[:1].upper() + match.group(0)[1:].lower(),
         value,
     )
+    if _THEME_UI.get("heading_font") == "plain":
+        return titled
+    if any(char in _SMALL_CAP_GLYPHS for char in value):
+        return value
     return titled.translate(_HEADING_FONT)
 
-def heading_icon(title: str) -> str:
+
+def heading_icon(title: str, surface: str | None = None) -> str:
+    options = _surface_options(surface)
+    if "icon" in options:
+        return options["icon"]
+    if not _THEME_UI.get("icons", True):
+        return ""
     icon = _HEADER_ICONS.get(title)
     if icon:
         return icon
@@ -224,6 +318,50 @@ def heading_icon(title: str) -> str:
     if any(word in lowered for word in ("failed", "error", "could not")):
         return "⚠️"
     return ""
+
+
+def _apply_theme_table_style(rich: str, surface: str | None) -> str:
+    table = dict(_THEME_UI.get("tables", {}))
+    table.update(_surface_options(surface).get("tables", {}))
+
+    def opening(match: re.Match) -> str:
+        original = match.group(1)
+        attributes = re.sub(
+            r"\s+(?:bordered|striped)\b", "", original, flags=re.I
+        )
+        flags = []
+        bordered = table.get("bordered")
+        striped = table.get("striped")
+        if bordered is None:
+            bordered = bool(re.search(r"\bbordered\b", original, re.I))
+        if striped is None:
+            striped = bool(re.search(r"\bstriped\b", original, re.I))
+        if bordered:
+            flags.append("bordered")
+        if striped:
+            flags.append("striped")
+        suffix = (" " + " ".join(flags)) if flags else ""
+        return "<table" + attributes + suffix + ">"
+
+    rich = re.sub(r"<table([^>]*)>", opening, rich, flags=re.I)
+    header_alignment = table.get("header_alignment")
+    value_alignment = table.get("value_alignment")
+    if header_alignment is not None:
+        rich = re.sub(
+            r"<th(?:\s+align=\"(?:left|center|right)\")?>",
+            f'<th align="{header_alignment}">',
+            rich,
+            flags=re.I,
+        )
+    if value_alignment is not None:
+        rich = re.sub(
+            r"<td(?:\s+align=\"(?:left|center|right)\")?>",
+            f'<td align="{value_alignment}">',
+            rich,
+            flags=re.I,
+        )
+    return rich
+
 
 
 def _style_heading(match: re.Match) -> str:
@@ -718,10 +856,14 @@ def _clean_title(value: str, text: str) -> tuple[str, int] | None:
     return None
 
 
-def promote_heading(text: str) -> str | None:
-    """Convert a recognized English legacy title into native rich HTML."""
+def promote_heading(text: str, surface: str | None = None) -> str | None:
+    """Convert a recognized title into native rich HTML using theme tokens."""
     if not isinstance(text, str) or not text:
         return None
+    locale_key = getattr(text, "locale_key", None)
+    definition = _LOCALE_SURFACES.get(locale_key)
+    if surface is None and definition:
+        surface = definition[0]
     match = _LEADING_HEADING_RE.match(text) or _PLAIN_HEADING_RE.match(text)
     if match is None:
         match = _UNDERLINE_HEADING_RE.match(text)
@@ -729,8 +871,14 @@ def promote_heading(text: str) -> str | None:
         return None
     heading = _clean_title(match.group("title"), text)
     if heading is None:
-        return None
-    title, level = heading
+        if definition is None:
+            return None
+        title, level = _plain_title(match.group("title")), definition[2]
+        canonical = definition[1]
+    else:
+        title, level = heading
+        canonical = heading[0]
+    level = _surface_options(surface).get("heading_level", level)
     rich = f"<h{level}>{title}</h{level}>" + text[match.end():]
     rich = rich.replace("<blockquote expandable>", "<blockquote>")
     rich = _BLOCKQUOTE_RE.sub(
@@ -740,43 +888,51 @@ def promote_heading(text: str) -> str | None:
         rich,
     )
     rich = _UNQUOTED_HREF_RE.sub(r'\1"\2"', rich)
-    if title == "Queue" or title.startswith("Added to queue"):
+    if canonical == "Queue" or canonical.startswith("Added to queue"):
         rich = _SECONDARY_TRACK_RE.sub(r"\n\n<h2>\1</h2>", rich, count=1)
     rich = _HEADING_TAG_RE.sub(_style_heading, rich)
-    icon = heading_icon(title)
+    icon = heading_icon(canonical, surface)
     if icon:
         rich = rich.replace(f"<h{level}>", f"<h{level}>{icon} ", 1)
-    if title.startswith("Welcome"):
+    alignment = _surface_options(surface).get(
+        "heading_alignment", _THEME_UI.get("heading_alignment", "center")
+    )
+    if canonical.startswith("Welcome") and alignment == "center":
         rich = re.sub(
             r"^<h1>(?P<body>.*?)</h1>",
             r'<table><tr><th align="center">\g<body></th></tr></table>',
             rich,
             count=1,
         )
-    if title == "Now playing":
+    if canonical == "Now playing":
         rich = _format_play_description(rich)
-    elif title == "Bot insights":
+    elif canonical == "Bot insights":
         rich = _format_summary_table(rich, bordered=True, center_values=True)
-    elif title == "Sudo access":
+    elif canonical == "Sudo access":
         rich = _format_summary_table(rich, bordered=True, center_values=True)
-    elif title == "Advanced status":
+    elif canonical == "Advanced status":
         rich = _format_summary_table(rich, expandable=True)
-    elif title in {"Broadcast in progress", "Broadcast complete"}:
+    elif canonical in {"Broadcast in progress", "Broadcast complete"}:
         rich = _format_broadcast_table(rich)
-    elif title == "Trending tracks":
+    elif canonical == "Trending tracks":
         rich = _format_trending_table(rich)
-    elif title == "Active streams":
+    elif canonical == "Active streams":
         rich = _format_active_streams_table(rich)
-    elif title == "Assistant sessions":
+    elif canonical == "Assistant sessions":
         rich = _format_sessions_table(rich)
     rich = _format_session_detail_table(rich)
 
-    rich = _add_section_separators(rich, title)
-    if title == "Runtime configuration":
+    separators = _surface_options(surface).get(
+        "separators", _THEME_UI.get("separators", True)
+    )
+    if separators:
+        rich = _add_section_separators(rich, canonical)
+    if canonical == "Runtime configuration":
         rich = _format_runtime_config_table(rich)
-    if title != "Now playing":
+    if canonical != "Now playing" and alignment == "center":
         rich = _center_leading_heading(rich)
     rich = _TABLE_HEADER_RE.sub(_style_table_header, rich)
+    rich = _apply_theme_table_style(rich, surface)
     rich = _explicit_rich_breaks(rich)
     return rich
 

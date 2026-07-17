@@ -66,11 +66,25 @@ _HEADING_MESSAGES = {
 }
 
 
+def _localized(value: str, key: str | None = None):
+    """Tag locale strings while remaining compatible with simple str stubs."""
+    try:
+        return localized_text(value, key)
+    except TypeError:
+        result = localized_text(value)
+        try:
+            result.locale_key = key
+        except (AttributeError, TypeError):
+            pass
+        return result
+
+
 def _compose_heading(text: str, heading: str, suffix: str, replace_all: bool):
     match = _TITLE_RE.match(text)
     remainder = text[match.end():] if match else ("" if replace_all else text)
-    return localized_text(
-        f"<b>{unicode_heading(heading)}{suffix}</b>{remainder}"
+    return _localized(
+        f"<b>{unicode_heading(heading)}{suffix}</b>{remainder}",
+        getattr(text, "locale_key", None),
     )
 
 
@@ -82,9 +96,10 @@ class Language:
     def __init__(self):
         self.lang_codes = lang_codes
         self.lang_dir = Path("anony/locales")
-        self.languages = self.load_files()
+        self._theme_overrides: dict[str, dict[str, str]] = {}
+        self.languages = self.load_files(self._theme_overrides)
 
-    def load_files(self):
+    def load_files(self, overrides: dict[str, dict[str, str]] | None = None):
         languages = {}
         lang_files = {
             file.stem: file
@@ -94,7 +109,7 @@ class Language:
         for lang_code, lang_file in lang_files.items():
             with open(lang_file, "r", encoding="utf-8") as file:
                 languages[lang_code] = {
-                    key: localized_text(value)
+                    key: _localized(value, key)
                     for key, value in json.load(file).items()
                 }
         english = languages["en"]
@@ -102,11 +117,17 @@ class Language:
             code: {**english, **translations}
             for code, translations in languages.items()
         }
+        for code, values in (overrides or {}).items():
+            if code in languages:
+                languages[code].update({
+                    key: _localized(value, key)
+                    for key, value in values.items()
+                })
         for translations in languages.values():
             for key, value in list(translations.items()):
                 if key.startswith("heading_"):
-                    translations[key] = localized_text(
-                        unicode_heading(value)
+                    translations[key] = _localized(
+                        unicode_heading(value), key
                     )
             for message_key, definition in _HEADING_MESSAGES.items():
                 heading_key, suffix, replace_all = definition
@@ -120,6 +141,10 @@ class Language:
 
         logger.info(f"Loaded languages: {', '.join(languages.keys())}")
         return languages
+
+    def apply_theme(self, overrides: dict[str, dict[str, str]]) -> None:
+        self._theme_overrides = overrides
+        self.languages = self.load_files(overrides)
 
     async def get_lang(self, chat_id: int) -> dict:
         lang_code = await db.get_lang(chat_id)

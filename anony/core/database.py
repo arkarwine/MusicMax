@@ -103,6 +103,21 @@ class SQLiteDB:
                     value TEXT NOT NULL,
                     updated_at INTEGER NOT NULL DEFAULT (unixepoch())
                 );
+                CREATE TABLE IF NOT EXISTS themes (
+                    theme_id TEXT PRIMARY KEY,
+                    manifest TEXT NOT NULL,
+                    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+                    updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+                );
+                CREATE TABLE IF NOT EXISTS theme_overrides (
+                    theme_id TEXT NOT NULL,
+                    path TEXT NOT NULL,
+                    value TEXT NOT NULL,
+                    updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+                    PRIMARY KEY (theme_id, path),
+                    FOREIGN KEY (theme_id) REFERENCES themes(theme_id)
+                        ON DELETE CASCADE
+                );
                 CREATE TABLE IF NOT EXISTS sudoers (
                     user_id INTEGER PRIMARY KEY
                 );
@@ -958,6 +973,117 @@ class SQLiteDB:
         """Atomically remove every runtime override."""
         await self.conn.execute("DELETE FROM runtime_config")
         await self.conn.commit()
+
+    async def get_setting_value(self, key: str) -> str | None:
+        cursor = await self.conn.execute(
+            "SELECT value FROM settings WHERE key = ?", (key,)
+        )
+        row = await cursor.fetchone()
+        return row[0] if row else None
+
+    async def set_setting_value(self, key: str, value: str) -> None:
+        await self.conn.execute(
+            "INSERT INTO settings (key, value) VALUES (?, ?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            (key, value),
+        )
+        await self.conn.commit()
+
+    async def get_theme_manifests(self) -> dict[str, dict]:
+        cursor = await self.conn.execute(
+            "SELECT theme_id, manifest FROM themes ORDER BY theme_id"
+        )
+        result = {}
+        for theme_id, manifest in await cursor.fetchall():
+            try:
+                result[theme_id] = json.loads(manifest)
+            except (TypeError, json.JSONDecodeError):
+                logger.warning("Ignored invalid stored theme: %s", theme_id)
+        return result
+
+    async def save_theme_manifest(self, theme_id: str, manifest: dict) -> None:
+        encoded = json.dumps(manifest, ensure_ascii=False, separators=(",", ":"))
+        await self.conn.execute(
+            "INSERT INTO themes (theme_id, manifest) VALUES (?, ?) "
+            "ON CONFLICT(theme_id) DO UPDATE SET manifest = excluded.manifest, "
+            "updated_at = unixepoch()",
+            (theme_id, encoded),
+        )
+        await self.conn.commit()
+
+    async def delete_theme_manifest(self, theme_id: str) -> None:
+        await self.conn.execute("DELETE FROM themes WHERE theme_id = ?", (theme_id,))
+        await self.conn.commit()
+
+    async def get_theme_overrides(self, theme_id: str) -> dict[str, object]:
+        cursor = await self.conn.execute(
+            "SELECT path, value FROM theme_overrides WHERE theme_id = ?",
+            (theme_id,),
+        )
+        result = {}
+        for path, value in await cursor.fetchall():
+            try:
+                result[path] = json.loads(value)
+            except (TypeError, json.JSONDecodeError):
+                logger.warning("Ignored invalid theme override: %s %s", theme_id, path)
+        return result
+
+    async def set_theme_override(
+        self, theme_id: str, path: str, value: object
+    ) -> None:
+        encoded = json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+        await self.conn.execute(
+            "INSERT INTO theme_overrides (theme_id, path, value) VALUES (?, ?, ?) "
+            "ON CONFLICT(theme_id, path) DO UPDATE SET value = excluded.value, "
+            "updated_at = unixepoch()",
+            (theme_id, path, encoded),
+        )
+        await self.conn.commit()
+
+    async def reset_theme_override(self, theme_id: str, path: str) -> None:
+        await self.conn.execute(
+            "DELETE FROM theme_overrides WHERE theme_id = ? AND path = ?",
+            (theme_id, path),
+        )
+        await self.conn.commit()
+
+    async def reset_theme_overrides(
+        self, theme_id: str, prefix: str | None = None
+    ) -> None:
+        if prefix is None:
+            await self.conn.execute(
+                "DELETE FROM theme_overrides WHERE theme_id = ?", (theme_id,)
+            )
+        else:
+            await self.conn.execute(
+                "DELETE FROM theme_overrides WHERE theme_id = ? AND path LIKE ?",
+                (theme_id, prefix + "%"),
+            )
+        await self.conn.commit()
+
+    async def complete_theme_migration(
+        self, active_theme: str, manifest: dict | None = None
+    ) -> None:
+        async with self.write_lock:
+            if manifest is not None:
+                encoded = json.dumps(
+                    manifest, ensure_ascii=False, separators=(",", ":")
+                )
+                await self.conn.execute(
+                    "INSERT OR IGNORE INTO themes (theme_id, manifest) VALUES (?, ?)",
+                    (manifest["id"], encoded),
+                )
+            await self.conn.execute(
+                "INSERT INTO settings (key, value) VALUES ('active_theme', ?) "
+                "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                (active_theme,),
+            )
+            await self.conn.execute(
+                "INSERT INTO settings (key, value) VALUES "
+                "('theme_migration_v1', '1') ON CONFLICT(key) DO NOTHING"
+            )
+            await self.conn.execute("DELETE FROM runtime_config")
+            await self.conn.commit()
 
     async def is_logger(self) -> bool:
         return self.logger

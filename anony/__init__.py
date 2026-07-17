@@ -56,6 +56,9 @@ db = SQLiteDB()
 from anony.core.lang import Language  # noqa: E402
 lang = Language()
 
+from anony.core.themes import ThemeManager  # noqa: E402
+themes = ThemeManager(config, lang, db, logger)
+
 from anony.core.telegram import Telegram  # noqa: E402
 from anony.core.youtube import YouTube  # noqa: E402
 tg = Telegram()

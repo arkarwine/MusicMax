@@ -7,6 +7,7 @@ from pyrogram import enums, types
 
 from anony import app, config, lang
 from anony.core.lang import lang_codes
+from anony.core.rich_messages import themed_keyboard_layout
 from anony.ui import callbacks
 from anony.ui.keyboards import back_row, button, cancel_row, grid, markup
 
@@ -104,21 +105,29 @@ class Inline:
         if back:
             return self.ikm([back_row(_lang["back"], callbacks.help("back"))])
 
-        cbs = [
+        actions = [
             "admins", "auth", "blist", "lang", "ping",
             "play", "queue", "stats",
         ]
         if sudo:
-            cbs.append("sudo")
-        help_buttons = [
-            self.ikb(
-                text=_lang[f"help_{i}"],
-                callback_data=callbacks.help(cb),
+            actions.append("sudo")
+        buttons_by_action = {
+            action: self.ikb(
+                text=_lang[f"help_{index}"],
+                callback_data=callbacks.help(action),
                 style=enums.ButtonStyle.DEFAULT,
             )
-            for i, cb in enumerate(cbs)
+            for index, action in enumerate(actions)
+        }
+        defaults = [
+            actions[index:index + 3]
+            for index in range(0, len(actions), 3)
         ]
-        return self.ikm(grid(help_buttons, columns=3))
+        layout = themed_keyboard_layout("help", defaults, set(actions))
+        return self.ikm([
+            [buttons_by_action[action] for action in row]
+            for row in layout
+        ])
 
     def lang_markup(
         self, _lang: str, home: bool = True
@@ -342,46 +351,48 @@ class Inline:
     ) -> types.InlineKeyboardMarkup:
         rows = []
         if private:
-            rows.append([self.ikb(
-                text=lang["start_add_button"].format(lang["add_me"]),
-                url=f"https://t.me/{app.username}?startgroup=true",
-                style=enums.ButtonStyle.DANGER,
-            )])
-            rows += [[
-                self.ikb(text=lang["help"], callback_data=callbacks.help("new")),
-                self.ikb(
+            actions = {
+                "add": self.ikb(
+                    text=lang["start_add_button"].format(lang["add_me"]),
+                    url=f"https://t.me/{app.username}?startgroup=true",
+                    style=enums.ButtonStyle.DANGER,
+                ),
+                "help": self.ikb(
+                    text=lang["help"], callback_data=callbacks.help("new")
+                ),
+                "language": self.ikb(
                     text=lang["language"],
                     callback_data=callbacks.LANGUAGE_ROOT_NEW,
                 ),
-                self.ikb(
+                "stats": self.ikb(
                     text=lang["stats"],
                     callback_data=callbacks.stats("view"),
                 ),
-            ]]
-            rows.append([
-                self.ikb(
+                "trending": self.ikb(
                     text=lang["trending"],
                     callback_data=callbacks.trending(),
-                )
-            ])
-            rows += [
-                [
-                    self.ikb(
-                        text=lang["start_support_button"].format(lang["support"]),
-                        url=config.SUPPORT_CHAT,
-                    ),
-                    self.ikb(
-                        text=lang["start_channel_button"].format(lang["channel"]),
-                        url=config.SUPPORT_CHANNEL,
-                    ),
-                ],
-                [
-                    self.ikb(
-                        text=lang["start_owner_button"].format(lang["owner"]),
-                        url=app.owner_url,
-                    )
-                ]
+                ),
+                "support": self.ikb(
+                    text=lang["start_support_button"].format(lang["support"]),
+                    url=config.SUPPORT_CHAT,
+                ),
+                "channel": self.ikb(
+                    text=lang["start_channel_button"].format(lang["channel"]),
+                    url=config.SUPPORT_CHANNEL,
+                ),
+                "owner": self.ikb(
+                    text=lang["start_owner_button"].format(lang["owner"]),
+                    url=app.owner_url,
+                ),
+            }
+            defaults = [
+                ["add"], ["help", "language", "stats"], ["trending"],
+                ["support", "channel"], ["owner"],
             ]
+            layout = themed_keyboard_layout(
+                "start_private", defaults, set(actions)
+            )
+            rows = [[actions[action] for action in row] for row in layout]
         elif chat_id is not None:
             rows.append([
                 self.ikb(

@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "id": "premium",
+  "name": "Premium",
+  "description": "Compact rich-message presentation with small-cap headings.",
+  "author": "AnonXMusic",
+  "version": "1.0.0",
+  "config": {},
+  "ui": {
+    "heading_font": "small_caps",
+    "icons": true,
+    "heading_alignment": "center",
+    "separators": true,
+    "media_placement": "automatic",
+    "tables": {
+      "bordered": null,
+      "striped": null,
+      "header_alignment": null,
+      "value_alignment": null
+    },
+    "surfaces": {"play": {"heading_alignment": "left"}},
+    "keyboards": {}
+  },
+  "locales": {}
+}

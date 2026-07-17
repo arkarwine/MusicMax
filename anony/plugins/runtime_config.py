@@ -10,7 +10,7 @@ from time import monotonic
 from pyrogram import enums, filters, types
 from pyrogram.errors import BadRequest
 
-from anony import app, config, db, lang, logger
+from anony import app, config, lang, logger, themes
 from anony.helpers import buttons, feedback
 from anony.ui import callbacks
 from anony.ui.keyboards import home_row
@@ -150,6 +150,7 @@ TEMPLATE_KEYS = (
     "play_message_template_my",
 )
 LABELS = {key: spec.label for key, spec in SETTINGS.items()}
+MEDIA_KEYS = frozenset({"play_image", "start_img", "default_thumb", "ping_img"})
 _PENDING_EDITS: dict[int, PendingEdit] = {}
 _CONFIG_LOCK = asyncio.Lock()
 EDIT_TIMEOUT = 300
@@ -195,7 +196,7 @@ def _short_value(key: str, limit: int = 34) -> str:
 
 
 def _source(key: str, overrides: dict[str, str]) -> str:
-    return "Custom" if key in overrides else "Default"
+    return "Override" if key in overrides else "Theme"
 
 
 def _header(icon: str, title: str) -> str:
@@ -217,22 +218,30 @@ def _overview_markup() -> types.InlineKeyboardMarkup:
                 callback_data=callbacks.runtime_config("category", key),
             ))
         rows.append(row)
-    rows.append([
-        buttons.ikb(
-            text="🔄 Refresh",
-            callback_data=callbacks.runtime_config("home", "root"),
-        ),
-        buttons.ikb(
+    actions = [buttons.ikb(
+        text="🔄 Refresh",
+        callback_data=callbacks.runtime_config("home", "root"),
+    )]
+    if themes.editable:
+        actions.append(buttons.ikb(
             text="↩️ Reset all",
             callback_data=callbacks.runtime_config("confirm_all", "all"),
-        ),
-    ])
+        ))
+    else:
+        actions.append(buttons.ikb(
+            text="🧬 Clone theme",
+            callback_data=callbacks.theme("clone", themes.active_id),
+        ))
+    rows.append(actions)
+    rows.append([buttons.ikb(
+        text="🎨 Themes", callback_data=callbacks.theme("home", "root")
+    )])
     rows.append(home_row("⬅️ Home", callbacks.HELP_HOME))
     return buttons.ikm(rows)
 
 
 async def _overview_view() -> ConfigView:
-    overrides = await db.get_runtime_config()
+    overrides = await themes.config_overrides()
     rows = ["<tr><th>Section</th><th>Settings</th><th>Custom</th></tr>"]
     fallback_rows = []
     for category, (icon, label, _) in CATEGORIES.items():
@@ -248,14 +257,16 @@ async def _overview_view() -> ConfigView:
         )
     rich = (
         _header("⚙️", "Runtime configuration")
+        + f"<blockquote>Active theme · {escape(themes.active.name)}</blockquote>"
         + '<table bordered striped>' + "".join(rows) + "</table>"
-        + "<blockquote>Changes apply immediately · Custom values are saved</blockquote>"
+        + "<blockquote>Changes apply immediately · Saved inside this theme</blockquote>"
     )
     fallback = (
         f"⚙️ <b>{_small_caps_title('Runtime configuration')}</b>\n\n"
+        f"<blockquote>Active theme · {escape(themes.active.name)}</blockquote>\n\n"
         + "\n".join(fallback_rows)
         + "\n\n<blockquote>Changes apply immediately · "
-        "Custom values are saved</blockquote>"
+        "Saved inside this theme</blockquote>"
     )
     return ConfigView(rich, fallback, _overview_markup())
 
@@ -290,7 +301,7 @@ def _category_markup(
 
 async def _category_view(category: str) -> ConfigView:
     icon, label, description = CATEGORIES[category]
-    overrides = await db.get_runtime_config()
+    overrides = await themes.config_overrides()
     rows = ["<tr><th>Setting</th><th>Value</th><th>Source</th></tr>"]
     fallback_rows = []
     for key in _category_keys(category):
@@ -329,7 +340,12 @@ def _setting_markup(
 ) -> types.InlineKeyboardMarkup:
     spec = SETTINGS[key]
     rows = []
-    if spec.boolean:
+    if not themes.editable:
+        rows.append([buttons.ikb(
+            text="🧬 Clone to customize",
+            callback_data=callbacks.theme("clone", themes.active_id),
+        )])
+    elif spec.boolean:
         enabled = config.runtime_display(key) == "on"
         rows.append([buttons.ikb(
             text="⏸ Turn off" if enabled else "▶️ Turn on",
@@ -345,9 +361,9 @@ def _setting_markup(
             text="📄 View template",
             callback_data=callbacks.runtime_config("template", key),
         )])
-    if key in overrides:
+    if themes.editable and key in overrides:
         rows.append([buttons.ikb(
-            text="↩️ Restore default",
+            text="↩️ Restore theme value",
             callback_data=callbacks.runtime_config("reset", key),
         )])
     rows.append([
@@ -365,7 +381,7 @@ def _setting_markup(
 
 async def _setting_view(key: str) -> ConfigView:
     spec = SETTINGS[key]
-    overrides = await db.get_runtime_config()
+    overrides = await themes.config_overrides()
     current = _short_value(key, 120)
     source = _source(key, overrides)
     rich = (
@@ -406,7 +422,7 @@ def _effective_template(key: str) -> tuple[str, str]:
 
 async def _template_view(key: str) -> ConfigView:
     spec = SETTINGS[key]
-    overrides = await db.get_runtime_config()
+    overrides = await themes.config_overrides()
     template, source = _effective_template(key)
     if key not in overrides and config.play_message_template(
         "my" if key.endswith("_my") else "en"
@@ -518,41 +534,40 @@ def _setting_input_text(message: types.Message, key: str) -> str:
     return markdown if isinstance(markdown, str) else str(text)
 
 
+def _setting_media_value(message: types.Message, key: str) -> str | None:
+    if key not in MEDIA_KEYS:
+        return None
+    if message.photo:
+        return message.photo.file_id
+    document = message.document
+    if (
+        document
+        and document.mime_type
+        and document.mime_type.startswith("image/")
+    ):
+        return document.file_id
+    return None
+
+
 async def _validate_and_store(key: str, raw_value: str) -> str:
     async with _CONFIG_LOCK:
-        attr = config.RUNTIME_FIELDS[key]
-        previous = getattr(config, attr)
-        stored = config.set_runtime(key, raw_value)
-        normalized = getattr(config, attr)
-        setattr(config, attr, previous)
-        await db.set_runtime_config(key, stored)
-        setattr(config, attr, normalized)
-        return stored
+        return str(await themes.set_config(key, raw_value))
 
 
 async def _restore_setting(key: str) -> None:
     async with _CONFIG_LOCK:
-        await db.reset_runtime_config(key)
-        config.reset_runtime(key)
+        await themes.reset_config(key)
 
 
 async def _toggle_setting(key: str) -> None:
     async with _CONFIG_LOCK:
         raw_value = "off" if config.runtime_display(key) == "on" else "on"
-        attr = config.RUNTIME_FIELDS[key]
-        previous = getattr(config, attr)
-        stored = config.set_runtime(key, raw_value)
-        normalized = getattr(config, attr)
-        setattr(config, attr, previous)
-        await db.set_runtime_config(key, stored)
-        setattr(config, attr, normalized)
+        await themes.set_config(key, raw_value)
 
 
 async def _restore_all() -> None:
     async with _CONFIG_LOCK:
-        await db.reset_all_runtime_config()
-        for key in config.RUNTIME_FIELDS:
-            config.reset_runtime(key)
+        await themes.reset_all_config()
 
 
 async def _clear_pending(user_id: int) -> PendingEdit | None:
@@ -699,14 +714,16 @@ async def _runtime_config_reply(_, message: types.Message):
         return await message.reply_text(
             "Cancelled.", disable_notification=True
         )
-    if not message.text:
+    raw_value = _setting_input_text(message, pending.key)
+    if not raw_value:
+        raw_value = _setting_media_value(message, pending.key) or ""
+    if not raw_value:
         return await _prompt_edit(
             message.chat.id,
             message.from_user.id,
             pending.key,
-            error="Send a text value.",
+            error="Send a text value or a supported image.",
         )
-    raw_value = _setting_input_text(message, pending.key)
     try:
         await _validate_and_store(pending.key, raw_value)
     except (TypeError, ValueError) as exc:
