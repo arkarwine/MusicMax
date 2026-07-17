@@ -506,6 +506,18 @@ async def _edit_view(query: types.CallbackQuery, view: ConfigView) -> None:
             raise
 
 
+def _setting_input_text(message: types.Message, key: str) -> str:
+    text = message.text
+    if not text or key not in TEMPLATE_KEYS:
+        return str(text or "")
+    try:
+        markdown = text.markdown
+    except Exception:
+        logger.debug("Could not reconstruct Markdown entities", exc_info=True)
+        return str(text)
+    return markdown if isinstance(markdown, str) else str(text)
+
+
 async def _validate_and_store(key: str, raw_value: str) -> str:
     async with _CONFIG_LOCK:
         attr = config.RUNTIME_FIELDS[key]
@@ -634,11 +646,12 @@ async def _set_config(_, message: types.Message):
     parts = message.text.split(maxsplit=2)
     if len(parts) < 3:
         return await _send_view(message, await _overview_view())
-    key, raw_value = parts[1].lower(), parts[2]
+    key = parts[1].lower()
     if key not in SETTINGS:
         return await message.reply_text(
             "🔎 That setting doesn't exist. Open /config to browse available settings."
         )
+    raw_value = _setting_input_text(message, key).split(maxsplit=2)[2]
     try:
         await _validate_and_store(key, raw_value)
     except (TypeError, ValueError) as exc:
@@ -693,8 +706,9 @@ async def _runtime_config_reply(_, message: types.Message):
             pending.key,
             error="Send a text value.",
         )
+    raw_value = _setting_input_text(message, pending.key)
     try:
-        await _validate_and_store(pending.key, message.text)
+        await _validate_and_store(pending.key, raw_value)
     except (TypeError, ValueError) as exc:
         return await _prompt_edit(
             message.chat.id,

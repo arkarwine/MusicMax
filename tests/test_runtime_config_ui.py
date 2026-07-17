@@ -69,6 +69,11 @@ class RuntimeConfigUiTests(unittest.TestCase):
         self.assertIn('lang.languages[lang_code]["play_message_template"]', self.source)
         self.assertIn('source = "Environment"', self.source)
 
+    def test_template_editor_recovers_markdown_from_telegram_entities(self):
+        self.assertIn("markdown = text.markdown", self.source)
+        self.assertIn("_setting_input_text(message, key)", self.source)
+        self.assertIn("_setting_input_text(message, pending.key)", self.source)
+
     def test_config_edit_does_not_claim_the_session_cancel_command(self):
         self.assertNotIn('filters.command(["cancel"])', self.source)
         self.assertIn('message.text.strip().lower() == "cancel"', self.source)
