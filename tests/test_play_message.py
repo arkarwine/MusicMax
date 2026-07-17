@@ -123,11 +123,17 @@ class PlayMessageRendererTests(unittest.TestCase):
 
         rendered = self.render(template)
 
-        self.assertEqual(rendered.rich_html.count("<br><br>"), 2)
+        self.assertEqual(rendered.rich_html.count("<p>"), 4)
         self.assertIn(
-            "3:33 ᴍɪɴ<br><b>ʀᴇǫᴜᴇѕᴛᴇᴅ ʙʏ:</b>",
+            "<p><b>| ѕᴛᴀʀᴛᴇᴅ ѕᴛʀᴇᴀᴍɪɴɢ</b></p>",
             rendered.rich_html,
         )
+        self.assertIn(
+            "<p><b>ᴅᴜʀᴀᴛɪᴏɴ:</b> 3:33 ᴍɪɴ</p>"
+            "<p><b>ʀᴇǫᴜᴇѕᴛᴇᴅ ʙʏ:</b>",
+            rendered.rich_html,
+        )
+        self.assertNotIn("<br>", rendered.rich_html)
 
     def test_placeholders_work_inside_markdown_links(self):
         rendered = self.render(
