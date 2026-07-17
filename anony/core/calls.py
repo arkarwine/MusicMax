@@ -217,7 +217,7 @@ class TgCall(PyTgCalls):
         sent = await app.rich_messages.edit(
             chat_id,
             message.id,
-            {"html": rendered.rich_html},
+            rendered.rich_blocks,
             media=rich_media,
             fallback_text=rendered.fallback_html,
             reply_markup=keyboard,

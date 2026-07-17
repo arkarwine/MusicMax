@@ -134,6 +134,23 @@ class PlayMessageRendererTests(unittest.TestCase):
             rendered.rich_html,
         )
         self.assertNotIn("<br>", rendered.rich_html)
+        self.assertEqual(
+            [block["type"] for block in rendered.rich_blocks],
+            ["paragraph"] * 4,
+        )
+        self.assertEqual(
+            rendered.rich_blocks[0]["text"],
+            {
+                "type": "bold",
+                "text": "| ѕᴛᴀʀᴛᴇᴅ ѕᴛʀᴇᴀᴍɪɴɢ",
+            },
+        )
+        title_text = rendered.rich_blocks[1]["text"]
+        self.assertEqual(title_text[0]["type"], "bold")
+        self.assertEqual(title_text[2]["type"], "url")
+        self.assertEqual(
+            title_text[2]["url"], "https://example.com/watch?v=1&list=2"
+        )
 
     def test_placeholders_work_inside_markdown_links(self):
         rendered = self.render(
@@ -146,6 +163,15 @@ class PlayMessageRendererTests(unittest.TestCase):
             rendered.rich_html,
         )
         self.assertNotIn("[Charlie", rendered.rich_html)
+
+    def test_play_delivery_uses_explicit_blocks(self):
+        calls_source = (
+            ROOT / "anony/core/calls.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn(
+            "rendered.rich_blocks,\n            media=rich_media",
+            calls_source,
+        )
 
     def test_render_failure_uses_localized_default(self):
         rendered = self.render("{unknown}")
