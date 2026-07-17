@@ -113,6 +113,34 @@ class PlayMessageRendererTests(unittest.TestCase):
             rendered.rich_html,
         )
 
+    def test_inline_sections_keep_markdown_paragraph_spacing(self):
+        template = (
+            "**| ѕᴛᴀʀᴛᴇᴅ ѕᴛʀᴇᴀᴍɪɴɢ**\n\n"
+            "**ᴛɪᴛʟᴇ:** {title_link}\n\n"
+            "**ᴅᴜʀᴀᴛɪᴏɴ:** {duration} ᴍɪɴ\n"
+            "**ʀᴇǫᴜᴇѕᴛᴇᴅ ʙʏ:** {requester}"
+        )
+
+        rendered = self.render(template)
+
+        self.assertEqual(rendered.rich_html.count("<br><br>"), 2)
+        self.assertIn(
+            "3:33 ᴍɪɴ<br><b>ʀᴇǫᴜᴇѕᴛᴇᴅ ʙʏ:</b>",
+            rendered.rich_html,
+        )
+
+    def test_placeholders_work_inside_markdown_links(self):
+        rendered = self.render(
+            "**ᴛɪᴛʟᴇ:** [{title}]({source_url}) ({source_url})"
+        )
+
+        self.assertIn(
+            '<a href="https://example.com/watch?v=1&amp;list=2">'
+            "Charlie Puth - Attention...</a>",
+            rendered.rich_html,
+        )
+        self.assertNotIn("[Charlie", rendered.rich_html)
+
     def test_render_failure_uses_localized_default(self):
         rendered = self.render("{unknown}")
 

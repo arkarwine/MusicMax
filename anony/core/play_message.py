@@ -110,7 +110,13 @@ def _inline_html(text: str, fragments: dict[str, str]) -> str:
 
         link = _LINK_RE.match(text, index)
         if link:
-            href = _safe_url(link.group(2))
+            target = link.group(2)
+            for token, fragment in fragments.items():
+                if token in target:
+                    target = target.replace(
+                        token, _visible_text(fragment)
+                    )
+            href = _safe_url(target)
             if href:
                 rendered.append(
                     f'<a href="{escape(href, quote=True)}">'
@@ -156,6 +162,25 @@ def _is_block_start(line: str) -> bool:
         or _BLOCKQUOTE_RE.match(line)
         or _HORIZONTAL_RE.match(line)
     )
+
+
+def _join_rich_blocks(blocks: list[str]) -> str:
+    if not blocks:
+        return ""
+    structural = (
+        "<h1>", "<h2>", "<h3>", "<ul>", "<ol>",
+        "<blockquote>", "<pre", "<hr/>", "<table",
+    )
+    rendered = [blocks[0]]
+    for previous, current in zip(blocks, blocks[1:]):
+        separator = (
+            ""
+            if previous.startswith(structural)
+            or current.startswith(structural)
+            else "<br><br>"
+        )
+        rendered.extend((separator, current))
+    return "".join(rendered)
 
 
 def _markdown_html(
@@ -277,8 +302,9 @@ def _markdown_html(
             index += 1
         blocks.append("<br>".join(paragraph))
 
-    separator = "" if rich else "<br><br>"
-    return separator.join(blocks)
+    if rich:
+        return _join_rich_blocks(blocks)
+    return "<br><br>".join(blocks)
 
 
 def _template_with_fragments(
