@@ -74,6 +74,19 @@ class RuntimeConfigUiTests(unittest.TestCase):
         self.assertIn("_setting_input_text(message, key)", self.source)
         self.assertIn("_setting_input_text(message, pending.key)", self.source)
 
+    def test_config_reply_does_not_share_the_session_reply_group(self):
+        session_source = (
+            ROOT / "anony/plugins/sessions.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn(
+            "filters.private & filters.reply & app.sudoers, group=3",
+            self.source,
+        )
+        self.assertIn(
+            "filters.private & filters.text & app.sudoers, group=2",
+            session_source,
+        )
+
     def test_config_edit_does_not_claim_the_session_cancel_command(self):
         self.assertNotIn('filters.command(["cancel"])', self.source)
         self.assertIn('message.text.strip().lower() == "cancel"', self.source)

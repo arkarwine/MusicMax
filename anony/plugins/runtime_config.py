@@ -688,7 +688,7 @@ async def _reset_config(_, message: types.Message):
     await _send_view(message, await _setting_view(key))
 
 
-@app.on_message(filters.private & filters.reply & app.sudoers, group=2)
+@app.on_message(filters.private & filters.reply & app.sudoers, group=3)
 async def _runtime_config_reply(_, message: types.Message):
     pending = _PENDING_EDITS.get(message.from_user.id)
     reply = message.reply_to_message
