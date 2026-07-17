@@ -145,6 +145,10 @@ SETTINGS = {
 }
 
 BOOLEAN_KEYS = tuple(key for key, spec in SETTINGS.items() if spec.boolean)
+TEMPLATE_KEYS = (
+    "play_message_template_en",
+    "play_message_template_my",
+)
 LABELS = {key: spec.label for key, spec in SETTINGS.items()}
 _PENDING_EDITS: dict[int, PendingEdit] = {}
 _CONFIG_LOCK = asyncio.Lock()
@@ -336,6 +340,11 @@ def _setting_markup(
             text="✏️ Change value",
             callback_data=callbacks.runtime_config("edit", key),
         )])
+    if key in TEMPLATE_KEYS:
+        rows.append([buttons.ikb(
+            text="📄 View template",
+            callback_data=callbacks.runtime_config("template", key),
+        )])
     if key in overrides:
         rows.append([buttons.ikb(
             text="↩️ Restore default",
@@ -385,6 +394,57 @@ async def _setting_view(key: str) -> ConfigView:
         fallback,
         _setting_markup(key, spec.category, overrides),
     )
+
+
+def _effective_template(key: str) -> tuple[str, str]:
+    lang_code = "my" if key.endswith("_my") else "en"
+    configured = config.play_message_template(lang_code)
+    if configured:
+        return configured, "Runtime override"
+    return lang.languages[lang_code]["play_message_template"], "Built-in default"
+
+
+async def _template_view(key: str) -> ConfigView:
+    spec = SETTINGS[key]
+    overrides = await db.get_runtime_config()
+    template, source = _effective_template(key)
+    if key not in overrides and config.play_message_template(
+        "my" if key.endswith("_my") else "en"
+    ):
+        source = "Environment"
+    encoded = escape(template)
+    rich = (
+        _header("📄", spec.label)
+        + f"<blockquote>{source} · {len(template)} characters</blockquote>"
+        + f"<pre>{encoded}</pre>"
+    )
+    fallback = (
+        f"📄 <b>{escape(_small_caps_title(spec.label))}</b>\n"
+        f"<blockquote>{source} · {len(template)} characters</blockquote>\n\n"
+        f"<pre>{encoded}</pre>"
+    )
+    rows = [[
+        buttons.ikb(
+            text="✏️ Change template",
+            callback_data=callbacks.runtime_config("edit", key),
+        )
+    ]]
+    if key in overrides:
+        rows.append([buttons.ikb(
+            text="↩️ Restore default",
+            callback_data=callbacks.runtime_config("reset", key),
+        )])
+    rows.append([
+        buttons.ikb(
+            text="⬅️ Details",
+            callback_data=callbacks.runtime_config("view", key),
+        ),
+        buttons.ikb(
+            text="💬 Messages",
+            callback_data=callbacks.runtime_config("category", "messages"),
+        ),
+    ])
+    return ConfigView(rich, fallback, buttons.ikm(rows))
 
 
 def _reset_all_view() -> ConfigView:
@@ -667,6 +727,9 @@ async def _runtime_config_callback(_, query: types.CallbackQuery):
     if action == "view" and target in SETTINGS:
         await query.answer()
         return await _edit_view(query, await _setting_view(target))
+    if action == "template" and target in TEMPLATE_KEYS:
+        await query.answer()
+        return await _edit_view(query, await _template_view(target))
     if action == "edit" and target in SETTINGS:
         await query.answer("Reply with the new value")
         return await _prompt_edit(

@@ -52,6 +52,7 @@ class RuntimeConfigUiTests(unittest.TestCase):
         self.assertIn('runtime_config("category", key)', self.source)
         self.assertIn('runtime_config("view", key)', self.source)
         self.assertIn('runtime_config("edit", key)', self.source)
+        self.assertIn('runtime_config("template", key)', self.source)
 
         force_replies = [
             node
@@ -61,6 +62,12 @@ class RuntimeConfigUiTests(unittest.TestCase):
             and node.func.attr == "ForceReply"
         ]
         self.assertEqual(len(force_replies), 1)
+
+    def test_play_templates_can_be_viewed_without_rendering_markdown(self):
+        self.assertIn('text="📄 View template"', self.source)
+        self.assertIn('f"<pre>{encoded}</pre>"', self.source)
+        self.assertIn('lang.languages[lang_code]["play_message_template"]', self.source)
+        self.assertIn('source = "Environment"', self.source)
 
     def test_config_edit_does_not_claim_the_session_cancel_command(self):
         self.assertNotIn('filters.command(["cancel"])', self.source)
