@@ -163,6 +163,19 @@ class PlaybackButtonConfigTests(unittest.TestCase):
             "default",
         )
 
+    def test_start_artwork_can_be_disabled_and_restored(self):
+        self.config.START_IMG = "https://example.com/start.jpg"
+        self.config._runtime_defaults["start_img"] = self.config.START_IMG
+
+        stored = self.config.set_runtime("start_img", "-")
+        self.assertEqual(stored, "")
+        self.assertEqual(self.config.runtime_display("start_img"), "disabled")
+
+        self.config.reset_runtime("start_img")
+        self.assertEqual(
+            self.config.START_IMG, "https://example.com/start.jpg"
+        )
+
     def test_play_message_template_accepts_markdown_code_fences(self):
         fence = chr(96) * 3
         template = f"{fence}\n**literal markdown**\n{fence}"

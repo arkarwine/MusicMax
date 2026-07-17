@@ -168,11 +168,19 @@ class SQLiteDB:
                 )
             await self.conn.commit()
             overrides = await self.get_runtime_config()
+            invalid_runtime_keys = []
             for key, value in overrides.items():
                 try:
                     config.set_runtime(key, value)
                 except (KeyError, ValueError):
                     logger.warning("Ignored invalid runtime config value: %s", key)
+                    invalid_runtime_keys.append(key)
+            if invalid_runtime_keys:
+                await self.conn.executemany(
+                    "DELETE FROM runtime_config WHERE key = ?",
+                    ((key,) for key in invalid_runtime_keys),
+                )
+                await self.conn.commit()
             await self.compact_assistant_slots()
             logger.info(f"Database connection successful. ({time() - start:.2f}s)")
             await self.load_cache()
@@ -944,6 +952,11 @@ class SQLiteDB:
 
     async def reset_runtime_config(self, key: str) -> None:
         await self.conn.execute("DELETE FROM runtime_config WHERE key = ?", (key,))
+        await self.conn.commit()
+
+    async def reset_all_runtime_config(self) -> None:
+        """Atomically remove every runtime override."""
+        await self.conn.execute("DELETE FROM runtime_config")
         await self.conn.commit()
 
     async def is_logger(self) -> bool:

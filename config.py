@@ -245,7 +245,9 @@ class Config:
             if len(value) > 64:
                 raise ValueError("Playback button text must be 64 characters or less")
             stored = value
-        elif key in {"play_button_url", "play_image"}:
+        elif key in {
+            "play_button_url", "play_image", "start_img",
+        }:
             normalized = raw_value.strip()
             value = "" if normalized == "-" else self._url(normalized, telegram=True)
             stored = value
@@ -280,7 +282,8 @@ class Config:
         if key == "duration_limit":
             return str(value // 60)
         if key in {
-            "play_button_text", "play_button_url", "play_image"
+            "play_button_text", "play_button_url", "play_image",
+            "start_img",
         } and not value:
             return "disabled"
         if key == "play_controls_layout" and value == "-":
