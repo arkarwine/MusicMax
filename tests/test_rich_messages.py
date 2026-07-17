@@ -508,6 +508,25 @@ class SerializationTests(unittest.TestCase):
             html.index("<p>"),
         )
 
+    def test_media_can_follow_a_configured_secondary_heading(self):
+        service = rich_messages.RichMessageService(
+            AsyncMock(), "token", logging.getLogger(__name__)
+        )
+        with ExitStack() as stack:
+            message, _ = service._rich_message(
+                "<h2>Custom playback</h2><p>Body</p>",
+                rich_messages.RichMedia(
+                    "https://example.com/art.jpg",
+                    "photo",
+                    "after_first_block",
+                ),
+                stack,
+            )
+
+        html = message["html"]
+        self.assertLess(html.index("</h2>"), html.index("<img "))
+        self.assertLess(html.index("<img "), html.index("<p>"))
+
     def test_slideshow_binds_override_then_local_track_artwork(self):
         service = rich_messages.RichMessageService(
             AsyncMock(), "token", logging.getLogger(__name__)
@@ -759,6 +778,15 @@ class LocaleHeadingTests(unittest.TestCase):
             f"<b>{rich_messages.unicode_heading('Now playing')}</b>"
         ))
         self.assertIn("ခေါင်းစဉ်", languages["my"]["play_media"])
+        self.assertTrue(
+            languages["en"]["play_message_template"].startswith("# 🎵 ")
+        )
+        self.assertIn(
+            "{title_link}", languages["en"]["play_message_template"]
+        )
+        self.assertIn(
+            "ခေါင်းစဉ်", languages["my"]["play_message_template"]
+        )
         self.assertTrue(languages["my"]["help_menu"].startswith(
             f"<b>{rich_messages.unicode_heading('What would you like to do?')}</b>"
         ))

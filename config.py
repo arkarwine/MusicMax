@@ -1,13 +1,21 @@
+import logging
+import re
 from os import getenv
+from string import Formatter
 from urllib.parse import urlparse
 
 from dotenv import load_dotenv
 
 load_dotenv()
+logger = logging.getLogger(__name__)
 
 class Config:
     PLAY_CONTROL_NAMES = ("loop", "stop", "pause", "skip", "replay")
     DEFAULT_PLAY_CONTROLS_LAYOUT = ",".join(PLAY_CONTROL_NAMES)
+    PLAY_TEMPLATE_FIELDS = frozenset({
+        "title", "title_link", "duration", "requester", "source_url",
+    })
+    MAX_PLAY_TEMPLATE_LENGTH = 900
 
     RUNTIME_FIELDS = {
         "duration_limit": "DURATION_LIMIT",
@@ -23,6 +31,8 @@ class Config:
         "play_button_url": "PLAY_BUTTON_URL",
         "play_image": "PLAY_IMAGE",
         "play_controls_layout": "PLAY_CONTROLS_LAYOUT",
+        "play_message_template_en": "PLAY_MESSAGE_TEMPLATE_EN",
+        "play_message_template_my": "PLAY_MESSAGE_TEMPLATE_MY",
         "lang_code": "LANG_CODE",
         "default_thumb": "DEFAULT_THUMB",
         "ping_img": "PING_IMG",
@@ -68,6 +78,12 @@ class Config:
             )
         except ValueError:
             self.PLAY_CONTROLS_LAYOUT = self.DEFAULT_PLAY_CONTROLS_LAYOUT
+        self.PLAY_MESSAGE_TEMPLATE_EN = self._environment_play_template(
+            "PLAY_MESSAGE_TEMPLATE_EN"
+        )
+        self.PLAY_MESSAGE_TEMPLATE_MY = self._environment_play_template(
+            "PLAY_MESSAGE_TEMPLATE_MY"
+        )
 
         language = getenv("LANG_CODE", "en").lower()
         self.LANG_CODE = language if language in {"en", "my"} else "en"
@@ -134,6 +150,70 @@ class Config:
             rows.append(",".join(tokens))
         return "|".join(rows)
 
+    @classmethod
+    def _validate_play_message_template(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            return ""
+        if len(value) > cls.MAX_PLAY_TEMPLATE_LENGTH:
+            raise ValueError(
+                f"Play template must be {cls.MAX_PLAY_TEMPLATE_LENGTH} "
+                "characters or less"
+            )
+        try:
+            fields = list(Formatter().parse(value))
+        except ValueError as exc:
+            raise ValueError("Play template contains malformed braces") from exc
+        for _, field, format_spec, conversion in fields:
+            if field is None:
+                continue
+            if field not in cls.PLAY_TEMPLATE_FIELDS:
+                valid = ", ".join(sorted(cls.PLAY_TEMPLATE_FIELDS))
+                raise ValueError(
+                    f"Unknown play placeholder {field}; use: {valid}"
+                )
+            if format_spec or conversion:
+                raise ValueError(
+                    "Play placeholders do not support formats or conversions"
+                )
+        fence = chr(96) * 3
+        if value.count(fence) % 2:
+            raise ValueError("Play template has an unmatched code fence")
+        inline_text = "".join(value.split(fence)[::2])
+        for delimiter in ("**", "__", "~~", chr(96)):
+            count = 0
+            index = 0
+            while index < len(inline_text):
+                if inline_text[index] == "\\":
+                    index += 2
+                    continue
+                if inline_text.startswith(delimiter, index):
+                    count += 1
+                    index += len(delimiter)
+                else:
+                    index += 1
+            if count % 2:
+                raise ValueError(
+                    f"Play template has an unmatched {delimiter} delimiter"
+                )
+        link_markers = value.count("](")
+        valid_links = re.findall(
+            r"\[(?:\\.|[^\]])+\]\((?:\\.|[^)])+\)",
+            value,
+        )
+        if link_markers != len(valid_links):
+            raise ValueError("Play template contains a malformed link")
+        return value
+
+    @classmethod
+    def _environment_play_template(cls, name: str) -> str:
+        value = getenv(name, "")
+        try:
+            return cls._validate_play_message_template(value)
+        except ValueError as exc:
+            logger.warning("Ignored invalid %s: %s", name, exc)
+            return ""
+
     def set_runtime(self, key: str, raw_value: str) -> str:
         """Validate, normalize, and immediately apply a safe runtime value."""
         key = key.strip().lower()
@@ -172,6 +252,11 @@ class Config:
         elif key == "play_controls_layout":
             value = self._normalize_play_controls_layout(raw_value)
             stored = value
+        elif key in {
+            "play_message_template_en", "play_message_template_my"
+        }:
+            value = self._validate_play_message_template(raw_value)
+            stored = value
         elif key in {"support_channel", "support_chat"}:
             value = self._url(raw_value, telegram=True)
             stored = value
@@ -200,6 +285,10 @@ class Config:
             return "disabled"
         if key == "play_controls_layout" and value == "-":
             return "disabled"
+        if key in {
+            "play_message_template_en", "play_message_template_my"
+        }:
+            return "default" if not value else f"custom · {len(value)} chars"
         if isinstance(value, bool):
             return "on" if value else "off"
         return str(value)
@@ -230,6 +319,14 @@ class Config:
         return tuple(
             tuple(row.split(",")) for row in value.split("|")
         )
+
+    def play_message_template(self, lang_code: str) -> str | None:
+        attr = (
+            "PLAY_MESSAGE_TEMPLATE_MY"
+            if str(lang_code).lower() == "my"
+            else "PLAY_MESSAGE_TEMPLATE_EN"
+        )
+        return getattr(self, attr).strip() or None
 
     def check(self):
         missing = [

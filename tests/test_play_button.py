@@ -24,6 +24,8 @@ class PlaybackButtonConfigTests(unittest.TestCase):
         self.config.PLAY_CONTROLS_LAYOUT = (
             self.config.DEFAULT_PLAY_CONTROLS_LAYOUT
         )
+        self.config.PLAY_MESSAGE_TEMPLATE_EN = ""
+        self.config.PLAY_MESSAGE_TEMPLATE_MY = ""
 
     def test_button_requires_valid_text_and_url(self):
         self.assertIsNone(self.config.playback_button())
@@ -134,6 +136,60 @@ class PlaybackButtonConfigTests(unittest.TestCase):
         for value in invalid:
             with self.subTest(value=value), self.assertRaises(ValueError):
                 self.config.set_runtime("play_controls_layout", value)
+
+    def test_play_message_templates_are_per_language_and_optional(self):
+        template = (
+            "# Custom\n\n- **Track:** {title_link}\n"
+            "- Again: {title_link}\n{{literal}}"
+        )
+        stored = self.config.set_runtime(
+            "play_message_template_en", template
+        )
+
+        self.assertEqual(stored, template)
+        self.assertEqual(
+            self.config.play_message_template("en"), template
+        )
+        self.assertIsNone(self.config.play_message_template("my"))
+        self.assertEqual(
+            self.config.runtime_display("play_message_template_en"),
+            f"custom · {len(template)} chars",
+        )
+
+        self.config.set_runtime("play_message_template_en", "")
+        self.assertIsNone(self.config.play_message_template("en"))
+        self.assertEqual(
+            self.config.runtime_display("play_message_template_en"),
+            "default",
+        )
+
+    def test_play_message_template_accepts_markdown_code_fences(self):
+        fence = chr(96) * 3
+        template = f"{fence}\n**literal markdown**\n{fence}"
+
+        self.assertEqual(
+            self.config.set_runtime(
+                "play_message_template_en", template
+            ),
+            template,
+        )
+
+    def test_play_message_template_rejects_invalid_input(self):
+        invalid = (
+            "{unknown}",
+            "{title!r}",
+            "{title:>10}",
+            "{title",
+            "**unclosed",
+            (chr(96) * 3) + "unclosed",
+            "[broken](",
+            "x" * (self.config.MAX_PLAY_TEMPLATE_LENGTH + 1),
+        )
+        for value in invalid:
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                self.config.set_runtime(
+                    "play_message_template_en", value
+                )
 
     def test_controls_append_the_configured_url_button(self):
         tree = ast.parse(

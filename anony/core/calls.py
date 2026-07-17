@@ -4,12 +4,12 @@
 
 
 import asyncio
-from html import escape
 
 from ntgcalls import (ConnectionNotFound, TelegramServerError,
                       RTMPStreamingUnsupported, ConnectionError)
-from pyrogram.errors import (ChatSendMediaForbidden, ChatSendPhotosForbidden,
-                             MessageIdInvalid)
+from pyrogram import enums
+from pyrogram.errors import (BadRequest, ChatSendMediaForbidden,
+                             ChatSendPhotosForbidden, MessageIdInvalid)
 from pyrogram.types import InputMediaPhoto, Message
 from pytgcalls import PyTgCalls, exceptions, types
 from pytgcalls.pytgcalls_session import PyTgCallsSession
@@ -17,7 +17,11 @@ from pytgcalls.pytgcalls_session import PyTgCallsSession
 from anony import (app, config, db, lang, logger,
                    queue, thumb, userbot, yt)
 from anony.helpers import Media, Track, buttons
-from anony.core.rich_messages import truncate_play_title
+from anony.core.play_message import (
+    render_play_message,
+    select_play_media,
+)
+from anony.core.rich_messages import RichMedia
 
 
 class TgCall(PyTgCalls):
@@ -87,66 +91,150 @@ class TgCall(PyTgCalls):
             await self._leave_assistant_call(chat_id)
         logger.info("Assistant voice calls stopped.")
 
+    @staticmethod
+    def _play_rich_media(override, artwork) -> RichMedia | None:
+        sources = select_play_media(override, artwork)
+        if len(sources) == 2:
+            return RichMedia(
+                list(sources),
+                "photo",
+                "after_first_block",
+                "slideshow",
+            )
+        return (
+            RichMedia(sources[0], "photo", "after_first_block")
+            if sources else None
+        )
+
+    async def _legacy_play_card(
+        self,
+        chat_id: int,
+        message: Message,
+        media: Media | Track,
+        text: str,
+        keyboard,
+        override,
+        artwork,
+    ) -> None:
+        candidates = []
+        for candidate in (override, artwork, None):
+            if candidate not in candidates:
+                candidates.append(candidate)
+
+        async def deliver(*, edit: bool):
+            last_error = None
+            for candidate in candidates:
+                try:
+                    if edit and candidate:
+                        return await app._legacy_edit_message_media(
+                            chat_id,
+                            message.id,
+                            InputMediaPhoto(
+                                media=candidate,
+                                caption=text,
+                                parse_mode=enums.ParseMode.HTML,
+                            ),
+                            reply_markup=keyboard,
+                        )
+                    if edit:
+                        return await app._legacy_edit_message_text(
+                            chat_id,
+                            message.id,
+                            text,
+                            parse_mode=enums.ParseMode.HTML,
+                            reply_markup=keyboard,
+                        )
+                    if candidate:
+                        return await app._legacy_send_photo(
+                            chat_id=chat_id,
+                            photo=candidate,
+                            caption=text,
+                            parse_mode=enums.ParseMode.HTML,
+                            reply_markup=keyboard,
+                        )
+                    return await app._legacy_send_message(
+                        chat_id=chat_id,
+                        text=text,
+                        parse_mode=enums.ParseMode.HTML,
+                        reply_markup=keyboard,
+                    )
+                except MessageIdInvalid:
+                    raise
+                except (
+                    BadRequest,
+                    ChatSendMediaForbidden,
+                    ChatSendPhotosForbidden,
+                ) as exc:
+                    last_error = exc
+            raise RuntimeError("Could not deliver the play card") from last_error
+
+        try:
+            sent = await deliver(edit=True)
+        except MessageIdInvalid:
+            sent = await deliver(edit=False)
+        media.message_id = sent.id
+
     async def _show_play_card(
         self,
         chat_id: int,
         message: Message,
         media: Media | Track,
         _lang: dict,
+        lang_code: str,
         _thumb,
     ) -> None:
-        text = _lang["play_media"].format(
-            escape(media.url or "", quote=True),
-            escape(truncate_play_title(
-                media.title or _lang["unknown_track"]
-            )),
-            escape(media.duration or "--:--"),
-            media.user or _lang["someone"],
+        default_template = _lang["play_message_template"]
+        template = (
+            config.play_message_template(lang_code) or default_template
         )
+        rendered = render_play_message(
+            template,
+            default_template,
+            title=media.title or _lang["unknown_track"],
+            url=media.url,
+            duration=media.duration or "--:--",
+            requester=media.user or _lang["someone"],
+        )
+        if rendered.used_default:
+            logger.warning(
+                "Custom %s /play template failed at render time; "
+                "using the localized default.",
+                lang_code,
+            )
+
         keyboard = buttons.controls(chat_id, playing=True)
-        card_thumb = _thumb
-        if config.play_image_url() and not card_thumb:
-            card_thumb = (
-                getattr(media, "thumbnail", None) or config.DEFAULT_THUMB
-            )
-        try:
-            if card_thumb:
-                await message.edit_media(
-                    media=InputMediaPhoto(media=card_thumb, caption=text),
-                    reply_markup=keyboard,
+        artwork = _thumb if config.THUMB_GEN else None
+        override_url = config.play_image_url()
+        override = None
+        if override_url:
+            override = await thumb.play_image(override_url)
+            if override is None:
+                logger.warning(
+                    "Could not cache PLAY_IMAGE; using its remote URL."
                 )
-            else:
-                await message.edit_text(text, reply_markup=keyboard)
-        except (ChatSendMediaForbidden, ChatSendPhotosForbidden):
-            sent = await app.send_message(
-                chat_id=chat_id,
-                text=text,
-                reply_markup=keyboard,
-            )
+                override = override_url
+        rich_media = self._play_rich_media(override, artwork)
+        sent = await app.rich_messages.edit(
+            chat_id,
+            message.id,
+            {"html": rendered.rich_html},
+            media=rich_media,
+            fallback_text=rendered.fallback_html,
+            reply_markup=keyboard,
+        )
+        if sent is not None:
             media.message_id = sent.id
-        except MessageIdInvalid:
-            try:
-                sent = (
-                    await app.send_photo(
-                        chat_id=chat_id,
-                        photo=card_thumb,
-                        caption=text,
-                        reply_markup=keyboard,
-                    )
-                    if card_thumb
-                    else await app.send_message(
-                        chat_id=chat_id,
-                        text=text,
-                        reply_markup=keyboard,
-                    )
-                )
-            except (ChatSendMediaForbidden, ChatSendPhotosForbidden):
-                sent = await app.send_message(
-                    chat_id=chat_id,
-                    text=text,
-                    reply_markup=keyboard,
-                )
-            media.message_id = sent.id
+            return
+
+        await self._legacy_play_card(
+            chat_id,
+            message,
+            media,
+            rendered.fallback_html,
+            keyboard,
+            override,
+            artwork,
+        )
 
 
     async def play_media(
@@ -159,7 +247,8 @@ class TgCall(PyTgCalls):
         artwork_task: asyncio.Task | None = None,
     ) -> bool:
         client = await db.get_assistant(chat_id)
-        _lang = await lang.get_lang(chat_id)
+        lang_code = await db.get_lang(chat_id)
+        _lang = lang.languages.get(lang_code, lang.languages["en"])
         show_card = not seek_time or new_session
         _thumb = None
         if show_card and config.THUMB_GEN:
@@ -203,7 +292,12 @@ class TgCall(PyTgCalls):
                     _thumb = await artwork_task
                 try:
                     await self._show_play_card(
-                        chat_id, message, media, _lang, _thumb
+                        chat_id,
+                        message,
+                        media,
+                        _lang,
+                        lang_code,
+                        _thumb,
                     )
                 except Exception:
                     # Playback success must not be rolled back solely because a

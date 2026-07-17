@@ -846,7 +846,7 @@ class RichMessageService:
             return f"{media_tag}\n{html}"
         closing_blocks = [
             (html.find(tag), tag)
-            for tag in ("</table>", "</h1>")
+            for tag in ("</table>", "</h1>", "</h2>", "</h3>")
             if html.find(tag) >= 0
         ]
         if not closing_blocks:
@@ -992,7 +992,9 @@ class RichMessageService:
                 if media.placement == "after_first_block":
                     closing_blocks = [
                         (result["html"].find(tag), tag)
-                        for tag in ("</table>", "</h1>")
+                        for tag in (
+                            "</table>", "</h1>", "</h2>", "</h3>"
+                        )
                         if result["html"].find(tag) >= 0
                     ]
                     if closing_blocks:

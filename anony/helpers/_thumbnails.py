@@ -3,6 +3,8 @@
 # This file is part of AnonXMusic
 
 
+import asyncio
+import hashlib
 import os
 import aiohttp
 from PIL import (Image, ImageDraw, ImageEnhance,
@@ -20,6 +22,7 @@ class Thumbnail:
         self.font1 = ImageFont.truetype("anony/helpers/Raleway-Bold.ttf", 30)
         self.font2 = ImageFont.truetype("anony/helpers/Inter-Light.ttf", 30)
         self.session: aiohttp.ClientSession | None = None
+        self._play_image_lock = asyncio.Lock()
 
     async def start(self) -> None:
         self.session = aiohttp.ClientSession()
@@ -37,6 +40,50 @@ class Thumbnail:
             with open(output_path, "wb") as file:
                 file.write(await resp.read())
         return output_path
+
+    async def play_image(self, url: str) -> str | None:
+        """Cache a configured PLAY_IMAGE as a reusable Telegram photo.
+
+        Rich-message URL media is fetched by Telegram. Reusing the same URL in
+        later slideshow edits is not reliable, so normalize it once and upload
+        the local JPEG as a fresh attachment for every play card.
+        """
+        if not url:
+            return None
+
+        digest = hashlib.sha256(url.encode("utf-8")).hexdigest()[:20]
+        output = f"cache/play_image_{digest}.jpg"
+        source = f"cache/play_image_{digest}.source"
+        os.makedirs("cache", exist_ok=True)
+
+        if os.path.exists(output) and os.path.getsize(output) > 0:
+            return output
+
+        async with self._play_image_lock:
+            if os.path.exists(output) and os.path.getsize(output) > 0:
+                return output
+            try:
+                await self.save_thumb(source, url)
+                with Image.open(source) as image:
+                    normalized = image.convert("RGB")
+                    normalized.thumbnail(
+                        (1920, 1920), Image.Resampling.LANCZOS
+                    )
+                    normalized.save(
+                        output, "JPEG", quality=90, optimize=True
+                    )
+                return output
+            except Exception:
+                try:
+                    os.remove(output)
+                except OSError:
+                    pass
+                return None
+            finally:
+                try:
+                    os.remove(source)
+                except OSError:
+                    pass
 
     async def audio_cover(self, song: Track) -> str | None:
         """Create a Telegram-compatible square JPEG cover for an audio file."""

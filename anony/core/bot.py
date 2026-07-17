@@ -211,9 +211,7 @@ class Bot(pyrogram.Client):
             chat_id,
             rich_text,
             fallback_text=caption,
-            media=self._rich_media_spec(
-                rich_text, media, kind, placement
-            ),
+            media=RichMedia(media, kind, placement),
             reply_markup=rendered_kwargs.get("reply_markup"),
             reply_parameters=self._reply_parameters(rendered_kwargs),
             message_thread_id=rendered_kwargs.get("message_thread_id"),
@@ -240,14 +238,25 @@ class Bot(pyrogram.Client):
             message_id,
             rich_text,
             fallback_text=caption,
-            media=self._rich_media_spec(
-                rich_text,
+            media=RichMedia(
                 media.media,
                 kind,
                 "after_first_block" if rich_text.startswith("<h1>") else "before",
             ),
             reply_markup=kwargs.get("reply_markup"),
         )
+
+    async def _legacy_send_message(self, *args, **kwargs):
+        return await super().send_message(*args, **kwargs)
+
+    async def _legacy_edit_message_text(self, *args, **kwargs):
+        return await super().edit_message_text(*args, **kwargs)
+
+    async def _legacy_send_photo(self, *args, **kwargs):
+        return await super().send_photo(*args, **kwargs)
+
+    async def _legacy_edit_message_media(self, *args, **kwargs):
+        return await super().edit_message_media(*args, **kwargs)
 
     async def send_message(self, *args, **kwargs):
         rich = await self._rich_text_call(args, kwargs)
