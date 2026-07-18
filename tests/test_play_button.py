@@ -1,6 +1,7 @@
 import ast
 import importlib.util
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 
@@ -26,6 +27,50 @@ class PlaybackButtonConfigTests(unittest.TestCase):
         )
         self.config.PLAY_MESSAGE_TEMPLATE_EN = ""
         self.config.PLAY_MESSAGE_TEMPLATE_MY = ""
+
+    def test_environment_values_are_normalized_and_safe(self):
+        with patch.dict("os.environ", {
+            "API_ID": "not-a-number",
+            "OWNER_ID": "-5",
+            "QUEUE_LIMIT": "5001",
+            "AUTO_END": "yes",
+            "THUMB_GEN": "off",
+            "SESSION": "   ",
+            "COOKIES_URL": (
+                "https://example.com/cookies.txt,"
+                "http://insecure.example/cookies.txt"
+            ),
+            "SUPPORT_CHANNEL": "not-a-link",
+            "PLAY_BUTTON_URL": "broken",
+            "PLAY_IMAGE": "broken image value",
+            "START_IMG": "broken image value",
+        }, clear=False):
+            configured = config_module.Config()
+
+        self.assertEqual(configured.API_ID, 0)
+        self.assertEqual(configured.OWNER_ID, 0)
+        self.assertEqual(configured.QUEUE_LIMIT, 20)
+        self.assertTrue(configured.AUTO_END)
+        self.assertFalse(configured.THUMB_GEN)
+        self.assertEqual(configured.SESSIONS, ())
+        self.assertEqual(
+            configured.COOKIES_URL,
+            ["https://example.com/cookies.txt"],
+        )
+        self.assertEqual(
+            configured.SUPPORT_CHANNEL, "https://t.me/fallenx"
+        )
+        self.assertEqual(configured.PLAY_BUTTON_URL, "")
+        self.assertEqual(configured.PLAY_IMAGE, "")
+        self.assertEqual(configured.START_IMG, "")
+
+    def test_layout_normalizer_is_a_real_classmethod(self):
+        self.assertEqual(
+            config_module.Config._normalize_play_controls_layout(
+                "pause, skip | stop"
+            ),
+            "pause,skip|stop",
+        )
 
     def test_button_requires_valid_text_and_url(self):
         self.assertIsNone(self.config.playback_button())

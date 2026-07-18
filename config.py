@@ -40,36 +40,116 @@ class Config:
         "start_img": "START_IMG",
     }
 
+    @staticmethod
+    def _environment_int(
+        name: str,
+        default: int,
+        *,
+        minimum: int | None = None,
+        maximum: int | None = None,
+    ) -> int:
+        raw = getenv(name)
+        if raw is None or not raw.strip():
+            return default
+        try:
+            value = int(raw.strip())
+        except ValueError:
+            logger.warning("Ignored invalid %s; using %s", name, default)
+            return default
+        if minimum is not None and value < minimum:
+            logger.warning("Ignored out-of-range %s; using %s", name, default)
+            return default
+        if maximum is not None and value > maximum:
+            logger.warning("Ignored out-of-range %s; using %s", name, default)
+            return default
+        return value
+
+    @classmethod
+    def _environment_bool(cls, name: str, default: bool) -> bool:
+        raw = getenv(name)
+        if raw is None or not raw.strip():
+            return default
+        try:
+            return cls._boolean(raw)
+        except ValueError:
+            logger.warning("Ignored invalid %s; using %s", name, default)
+            return default
+
+    @classmethod
+    def _environment_url(
+        cls, name: str, default: str = "", *, telegram: bool = False
+    ) -> str:
+        raw = getenv(name, default).strip()
+        if not raw:
+            return ""
+        try:
+            return cls._url(raw, telegram=telegram)
+        except ValueError as exc:
+            logger.warning("Ignored invalid %s: %s", name, exc)
+            return cls._url(default, telegram=telegram) if default else ""
+
+    @classmethod
+    def _environment_media(
+        cls, name: str, default: str = "", *, telegram: bool = False
+    ) -> str:
+        raw = getenv(name, default).strip()
+        if not raw:
+            return ""
+        try:
+            return cls._media(raw, telegram=telegram)
+        except ValueError as exc:
+            logger.warning("Ignored invalid %s: %s", name, exc)
+            return cls._media(default, telegram=telegram) if default else ""
+
     def __init__(self):
-        self.API_ID = int(getenv("API_ID", 0))
-        self.API_HASH = getenv("API_HASH")
+        self.API_ID = self._environment_int("API_ID", 0, minimum=1)
+        self.API_HASH = (getenv("API_HASH") or "").strip()
 
-        self.BOT_TOKEN = getenv("BOT_TOKEN")
-        self.DATABASE_PATH = getenv("DATABASE_PATH", "data/anonxmusic.db")
+        self.BOT_TOKEN = (getenv("BOT_TOKEN") or "").strip()
+        self.DATABASE_PATH = (
+            getenv("DATABASE_PATH", "data/anonxmusic.db").strip()
+            or "data/anonxmusic.db"
+        )
 
-        self.OWNER_ID = int(getenv("OWNER_ID", 0))
+        self.OWNER_ID = self._environment_int("OWNER_ID", 0, minimum=1)
 
-        self.DURATION_LIMIT = int(getenv("DURATION_LIMIT", 60)) * 60
-        self.QUEUE_LIMIT = int(getenv("QUEUE_LIMIT", 20))
-        self.PLAYLIST_LIMIT = int(getenv("PLAYLIST_LIMIT", 20))
+        self.DURATION_LIMIT = self._environment_int(
+            "DURATION_LIMIT", 60, minimum=1, maximum=1440
+        ) * 60
+        self.QUEUE_LIMIT = self._environment_int(
+            "QUEUE_LIMIT", 20, minimum=1, maximum=1000
+        )
+        self.PLAYLIST_LIMIT = self._environment_int(
+            "PLAYLIST_LIMIT", 20, minimum=1, maximum=1000
+        )
 
-        first_session = getenv("SESSION")
+        first_session = (getenv("SESSION") or "").strip()
         self.SESSIONS = (first_session,) if first_session else ()
 
-        self.SUPPORT_CHANNEL = getenv("SUPPORT_CHANNEL", "https://t.me/fallenx")
-        self.SUPPORT_CHAT = getenv("SUPPORT_CHAT", "https://t.me/DevilsHeavenMF")
-
-        self.AUTO_LEAVE: bool = getenv("AUTO_LEAVE", "False").lower() == "true"
-        self.AUTO_END: bool = getenv("AUTO_END", "False").lower() == "true"
-    
-        self.THUMB_GEN: bool = getenv("THUMB_GEN", "True").lower() == "true"
-        self.VIDEO_PLAY: bool = getenv("VIDEO_PLAY", "True").lower() == "true"
-        self.RICH_MESSAGES: bool = (
-            getenv("RICH_MESSAGES", "True").lower() == "true"
+        self.SUPPORT_CHANNEL = self._environment_url(
+            "SUPPORT_CHANNEL", "https://t.me/fallenx", telegram=True
         )
+        self.SUPPORT_CHAT = self._environment_url(
+            "SUPPORT_CHAT", "https://t.me/DevilsHeavenMF", telegram=True
+        )
+
+        self.AUTO_LEAVE = self._environment_bool("AUTO_LEAVE", False)
+        self.AUTO_END = self._environment_bool("AUTO_END", False)
+        self.THUMB_GEN = self._environment_bool("THUMB_GEN", True)
+        self.VIDEO_PLAY = self._environment_bool("VIDEO_PLAY", True)
+        self.RICH_MESSAGES = self._environment_bool("RICH_MESSAGES", True)
         self.PLAY_BUTTON_TEXT = getenv("PLAY_BUTTON_TEXT", "").strip()
-        self.PLAY_BUTTON_URL = getenv("PLAY_BUTTON_URL", "").strip()
-        self.PLAY_IMAGE = getenv("PLAY_IMAGE", "").strip()
+        if len(self.PLAY_BUTTON_TEXT) > 64:
+            logger.warning(
+                "Ignored PLAY_BUTTON_TEXT longer than 64 characters"
+            )
+            self.PLAY_BUTTON_TEXT = ""
+        self.PLAY_BUTTON_URL = self._environment_url(
+            "PLAY_BUTTON_URL", telegram=True
+        )
+        self.PLAY_IMAGE = self._environment_media(
+            "PLAY_IMAGE", telegram=True
+        )
         try:
             self.PLAY_CONTROLS_LAYOUT = self._normalize_play_controls_layout(
                 getenv(
@@ -77,7 +157,10 @@ class Config:
                     self.DEFAULT_PLAY_CONTROLS_LAYOUT,
                 )
             )
-        except ValueError:
+        except ValueError as exc:
+            logger.warning(
+                "Ignored invalid PLAY_CONTROLS_LAYOUT: %s", exc
+            )
             self.PLAY_CONTROLS_LAYOUT = self.DEFAULT_PLAY_CONTROLS_LAYOUT
         self.PLAY_MESSAGE_TEMPLATE_EN = self._environment_play_template(
             "PLAY_MESSAGE_TEMPLATE_EN"
@@ -86,16 +169,26 @@ class Config:
             "PLAY_MESSAGE_TEMPLATE_MY"
         )
 
-        language = getenv("LANG_CODE", "en").lower()
+        language = getenv("LANG_CODE", "en").strip().lower()
         self.LANG_CODE = language if language in {"en", "my"} else "en"
 
+        cookie_urls = re.split(r"[\s,]+", getenv("COOKIES_URL", "").strip())
         self.COOKIES_URL = [
-            url for url in getenv("COOKIES_URL", "").split(" ")
-            if url and "batbin.me" in url
+            url for url in cookie_urls
+            if urlparse(url).scheme == "https" and urlparse(url).netloc
         ]
-        self.DEFAULT_THUMB = getenv("DEFAULT_THUMB", "https://te.legra.ph/file/3e40a408286d4eda24191.jpg")
-        self.PING_IMG = getenv("PING_IMG", "https://files.catbox.moe/haagg2.png")
-        self.START_IMG = getenv("START_IMG", "").strip()
+        if any(url for url in cookie_urls if url) and not self.COOKIES_URL:
+            logger.warning("COOKIES_URL contains no valid HTTPS URL")
+        self.DEFAULT_THUMB = self._environment_media(
+            "DEFAULT_THUMB",
+            "https://te.legra.ph/file/3e40a408286d4eda24191.jpg",
+        )
+        self.PING_IMG = self._environment_media(
+            "PING_IMG", "https://files.catbox.moe/haagg2.png"
+        )
+        self.START_IMG = self._environment_media(
+            "START_IMG", telegram=True
+        )
         self._runtime_defaults = {
             key: getattr(self, attr)
             for key, attr in self.RUNTIME_FIELDS.items()
@@ -123,7 +216,6 @@ class Config:
         return normalized
 
     @classmethod
-    @classmethod
     def _media(cls, value: str, *, telegram: bool = False) -> str:
         normalized = value.strip()
         if normalized.startswith(("http://", "https://")) or (
@@ -139,6 +231,7 @@ class Config:
             "Use a complete http(s) URL or Telegram media file ID"
         )
 
+    @classmethod
     def _normalize_play_controls_layout(cls, value: str) -> str:
         normalized = value.strip().lower()
         if normalized == "-":
@@ -322,6 +415,10 @@ class Config:
             "start_img",
         } and not value:
             return "disabled"
+        if key in {
+            "play_image", "start_img", "default_thumb", "ping_img",
+        } and not str(value).startswith(("http://", "https://")):
+            return "Telegram image"
         if key == "play_controls_layout" and value == "-":
             return "disabled"
         if key in {

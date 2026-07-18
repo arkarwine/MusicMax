@@ -1004,6 +1004,28 @@ class SQLiteDB:
         await self.conn.execute("DELETE FROM runtime_config")
         await self.conn.commit()
 
+    async def migrate_theme_config_to_runtime(
+        self, _theme_id: str, values: dict[str, str]
+    ) -> None:
+        """Move legacy per-theme config edits to bot-wide overrides once."""
+        async with self.write_lock:
+            if values:
+                await self.conn.executemany(
+                    "INSERT INTO runtime_config (key, value, updated_at) "
+                    "VALUES (?, ?, unixepoch()) "
+                    "ON CONFLICT(key) DO UPDATE SET value = excluded.value, "
+                    "updated_at = unixepoch()",
+                    tuple(values.items()),
+                )
+            await self.conn.execute(
+                "DELETE FROM theme_overrides WHERE path LIKE 'config.%'"
+            )
+            await self.conn.execute(
+                "INSERT INTO settings (key, value) VALUES "
+                "('runtime_config_v2', '1') ON CONFLICT(key) DO NOTHING"
+            )
+            await self.conn.commit()
+
     async def get_setting_value(self, key: str) -> str | None:
         cursor = await self.conn.execute(
             "SELECT value FROM settings WHERE key = ?", (key,)

@@ -89,6 +89,23 @@ class FakeDB:
     async def get_runtime_config(self):
         return dict(self.legacy)
 
+    async def set_runtime_config(self, key, value):
+        self.legacy[key] = value
+
+    async def reset_runtime_config(self, key):
+        self.legacy.pop(key, None)
+
+    async def reset_all_runtime_config(self):
+        self.legacy.clear()
+
+    async def migrate_theme_config_to_runtime(self, theme_id, values):
+        self.legacy.update(values)
+        for overrides in self.overrides.values():
+            for path in list(overrides):
+                if path.startswith("config."):
+                    overrides.pop(path)
+        self.settings["runtime_config_v2"] = "1"
+
     async def complete_theme_migration(self, active_theme, manifest=None):
         if manifest:
             self.manifests[manifest["id"]] = copy.deepcopy(manifest)
@@ -162,30 +179,34 @@ class ThemeManagerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(manager.active.config["queue_limit"], 77)
         self.assertFalse(db.legacy)
 
-    async def test_custom_theme_overrides_are_isolated_and_resettable(self):
-        manager, config, _, _ = self.manager()
+    async def test_runtime_overrides_survive_theme_changes_and_reset(self):
+        manager, config, _, db = self.manager()
         await manager.boot()
-        custom = await manager.create("Night", clone_id="premium")
-        await manager.activate(custom.id)
 
         await manager.set_config("queue_limit", "77")
         self.assertEqual(config.QUEUE_LIMIT, 77)
-        await manager.activate("premium")
-        self.assertEqual(config.QUEUE_LIMIT, config._runtime_defaults["queue_limit"])
+        self.assertEqual(db.legacy["queue_limit"], "77")
+
+        custom = await manager.create("Night", clone_id="premium")
         await manager.activate(custom.id)
+        self.assertEqual(config.QUEUE_LIMIT, 77)
+        await manager.activate("default")
         self.assertEqual(config.QUEUE_LIMIT, 77)
 
         await manager.reset_config("queue_limit")
+        self.assertNotIn("queue_limit", db.legacy)
         self.assertEqual(
             config.QUEUE_LIMIT,
-            custom.config["queue_limit"],
+            config._runtime_defaults["queue_limit"],
         )
 
-    async def test_builtins_are_read_only_and_active_theme_cannot_be_deleted(self):
-        manager, _, _, _ = self.manager()
+    async def test_builtin_settings_are_editable_but_themes_remain_read_only(self):
+        manager, config, _, _ = self.manager()
         await manager.boot()
-        with self.assertRaisesRegex(theme_module.ThemeError, "Clone"):
-            await manager.set_config("queue_limit", "50")
+        await manager.set_config("queue_limit", "50")
+        self.assertEqual(config.QUEUE_LIMIT, 50)
+        with self.assertRaisesRegex(theme_module.ThemeError, "built-in"):
+            await manager.set_emojis(manager.ui()["emojis"])
 
         custom = await manager.create("Editable", clone_id="premium")
         await manager.activate(custom.id)
@@ -200,10 +221,11 @@ class ThemeManagerTests(unittest.IsolatedAsyncioTestCase):
         await manager.set_config("auto_end", "on")
         exported = await manager.export(custom.id)
 
-        self.assertEqual(set(exported["config"]), set(config.RUNTIME_FIELDS))
+        self.assertEqual(exported["config"], {})
+        self.assertTrue(config.AUTO_END)
         exported["id"] = "portable-copy"
         installed = await manager.install(exported)
-        self.assertEqual(installed.config["auto_end"], True)
+        self.assertNotIn("auto_end", installed.config)
 
     async def test_validation_rejects_schema_keys_placeholders_and_actions(self):
         manager, _, _, _ = self.manager()
@@ -300,10 +322,35 @@ class ThemeManagerTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaisesRegex(RuntimeError, "locale refresh failed"):
             await manager.set_config("queue_limit", "88")
 
-        self.assertNotIn(
-            "config.queue_limit", db.overrides.get(custom.id, {})
-        )
+        self.assertNotIn("queue_limit", db.legacy)
         self.assertEqual(config.QUEUE_LIMIT, previous_queue)
+
+    async def test_legacy_theme_config_edits_migrate_to_runtime(self):
+        manager, config, _, db = self.manager()
+        db.settings.update({
+            "theme_migration_v1": "1",
+            "active_theme": "legacy-theme",
+        })
+        manifest = json.loads(
+            (ROOT / "anony/themes/default.json").read_text(encoding="utf-8")
+        )
+        manifest.update({"id": "legacy-theme", "name": "Legacy"})
+        db.manifests["legacy-theme"] = manifest
+        db.overrides["legacy-theme"] = {
+            "config.queue_limit": 73,
+            "ui.heading_alignment": "center",
+        }
+
+        await manager.boot()
+
+        self.assertEqual(config.QUEUE_LIMIT, 73)
+        self.assertEqual(db.legacy["queue_limit"], "73")
+        self.assertNotIn(
+            "config.queue_limit", db.overrides["legacy-theme"]
+        )
+        self.assertIn(
+            "ui.heading_alignment", db.overrides["legacy-theme"]
+        )
 
     async def test_runtime_import_cannot_shadow_a_builtin(self):
         manager, _, _, _ = self.manager()
@@ -344,6 +391,7 @@ class ThemeUiSourceTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("CREATE TABLE IF NOT EXISTS theme_overrides", source)
         self.assertIn("REFERENCES themes(theme_id)", source)
         self.assertIn("theme_migration_v1", source)
+        self.assertIn("runtime_config_v2", source)
 
 
     async def test_schema_v1_normalizes_and_emoji_schema_is_strict(self):

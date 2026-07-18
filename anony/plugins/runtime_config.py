@@ -44,10 +44,10 @@ class PendingEdit:
 
 
 CATEGORIES = {
-    "playback": ("🎧", "Playback", "Playback limits, media and controls"),
-    "messages": ("💬", "Messages", "Play-card copy and external action"),
-    "automation": ("⚡", "Automation", "Hands-free behavior and defaults"),
-    "appearance": ("🖼️", "Appearance", "Artwork used across bot surfaces"),
+    "playback": ("🎧", "Playback", "Music limits, video and player controls"),
+    "messages": ("💬", "Play card", "Now-playing text and optional link button"),
+    "automation": ("⚡", "Behavior", "Automatic actions, language and community links"),
+    "appearance": ("🖼️", "Images", "Pictures shown across the bot"),
 }
 
 SETTINGS = {
@@ -197,7 +197,9 @@ def _short_value(key: str, limit: int = 34) -> str:
 
 
 def _source(key: str, overrides: dict[str, str]) -> str:
-    return "Override" if key in overrides else "Theme"
+    if key in overrides:
+        return "Custom"
+    return "Theme" if key in themes.active.config else "Environment"
 
 
 def _header(icon: str, title: str) -> str:
@@ -208,7 +210,7 @@ def _header(icon: str, title: str) -> str:
     )
 
 
-def _overview_markup() -> types.InlineKeyboardMarkup:
+def _overview_markup(has_overrides: bool) -> types.InlineKeyboardMarkup:
     rows = []
     category_items = list(CATEGORIES.items())
     for index in range(0, len(category_items), 2):
@@ -223,15 +225,10 @@ def _overview_markup() -> types.InlineKeyboardMarkup:
         text="🔄 Refresh",
         callback_data=callbacks.runtime_config("home", "root"),
     )]
-    if themes.editable:
+    if has_overrides:
         actions.append(buttons.ikb(
             text="↩️ Reset all",
             callback_data=callbacks.runtime_config("confirm_all", "all"),
-        ))
-    else:
-        actions.append(buttons.ikb(
-            text="🧬 Clone theme",
-            callback_data=callbacks.theme("clone", themes.active_id),
         ))
     rows.append(actions)
     rows.append([buttons.ikb(
@@ -261,19 +258,19 @@ async def _overview_view() -> ConfigView:
             f"{icon} <b>{label}</b> · {custom}/{len(keys)} custom"
         )
     rich = (
-        _header("⚙️", "Runtime configuration")
+        _header("⚙️", "Bot settings")
         + f"<blockquote>Active theme · {escape(themes.active.name)}</blockquote>"
         + '<table bordered striped>' + "".join(rows) + "</table>"
-        + "<blockquote>Changes apply immediately · Saved inside this theme</blockquote>"
+        + "<blockquote>Changes apply immediately · Saved across restarts</blockquote>"
     )
     fallback = (
-        f"⚙️ <b>{_small_caps_title('Runtime configuration')}</b>\n\n"
+        f"⚙️ <b>{_small_caps_title('Bot settings')}</b>\n\n"
         f"<blockquote>Active theme · {escape(themes.active.name)}</blockquote>\n\n"
         + "\n".join(fallback_rows)
         + "\n\n<blockquote>Changes apply immediately · "
-        "Saved inside this theme</blockquote>"
+        "Saved across restarts</blockquote>"
     )
-    return ConfigView(rich, fallback, _overview_markup())
+    return ConfigView(rich, fallback, _overview_markup(bool(overrides)))
 
 
 def _emoji_names() -> list[str]:
@@ -519,12 +516,7 @@ def _setting_markup(
 ) -> types.InlineKeyboardMarkup:
     spec = SETTINGS[key]
     rows = []
-    if not themes.editable:
-        rows.append([buttons.ikb(
-            text="🧬 Clone to customize",
-            callback_data=callbacks.theme("clone", themes.active_id),
-        )])
-    elif spec.boolean:
+    if spec.boolean:
         enabled = config.runtime_display(key) == "on"
         rows.append([buttons.ikb(
             text="⏸ Turn off" if enabled else "▶️ Turn on",
@@ -540,9 +532,9 @@ def _setting_markup(
             text="📄 View template",
             callback_data=callbacks.runtime_config("template", key),
         )])
-    if themes.editable and key in overrides:
+    if key in overrides:
         rows.append([buttons.ikb(
-            text="↩️ Restore theme value",
+            text="↩️ Use default",
             callback_data=callbacks.runtime_config("reset", key),
         )])
     rows.append([
@@ -646,12 +638,12 @@ def _reset_all_view() -> ConfigView:
     rich = (
         _header("↩️", "Reset all settings?")
         + "<blockquote>This removes every runtime override and restores "
-        "environment defaults immediately.</blockquote>"
+        "theme or environment defaults immediately.</blockquote>"
     )
     fallback = (
         "↩️ <b>Reset all settings?</b>\n\n"
         "<blockquote>This removes every runtime override and restores "
-        "environment defaults immediately.</blockquote>"
+        "theme or environment defaults immediately.</blockquote>"
     )
     markup = buttons.ikm([[
         buttons.ikb(
@@ -768,7 +760,7 @@ async def _expire_edit(user_id: int, chat_id: int, prompt_id: int) -> None:
             "⌛ This configuration request expired.",
             reply_markup=buttons.ikm([[
                 buttons.ikb(
-                    text="⚙️ Open configuration",
+                    text="⚙️ Open settings",
                     callback_data=callbacks.runtime_config("home", "root"),
                 )
             ]]),
@@ -894,14 +886,14 @@ async def _handle_emoji_reply(
 
 async def open_runtime_config(message: types.Message) -> None:
     if not message.from_user or message.from_user.id not in app.sudoers:
-        await message.reply_text("🔒 Runtime configuration is sudo-only.")
+        await message.reply_text("🔒 Bot settings are sudo-only.")
         return
     if message.chat.type != enums.ChatType.PRIVATE:
         await message.reply_text(
-            "🔐 Open runtime configuration privately.",
+            "🔐 Open bot settings privately.",
             reply_markup=buttons.ikm([[
                 buttons.ikb(
-                    text="⚙️ Open configuration",
+                    text="⚙️ Open settings",
                     url=f"https://t.me/{app.username}?start=runtime_config",
                 )
             ]]),
@@ -927,7 +919,7 @@ async def _set_config(_, message: types.Message):
     key = parts[1].lower()
     if key not in SETTINGS:
         return await message.reply_text(
-            "🔎 That setting doesn't exist. Open /config to browse available settings."
+            "🔎 That setting doesn't exist. Open /config to choose a setting."
         )
     raw_value = _setting_input_text(message, key).split(maxsplit=2)[2]
     try:
@@ -955,7 +947,7 @@ async def _reset_config(_, message: types.Message):
             return await _send_view(message, _reset_all_view())
         if key not in SETTINGS:
             return await message.reply_text(
-                "🔎 That setting doesn't exist. Open /config to browse available settings."
+                "🔎 That setting doesn't exist. Open /config to choose a setting."
             )
         await _restore_setting(key)
     except Exception:
@@ -1096,7 +1088,7 @@ async def _runtime_config_callback(_, query: types.CallbackQuery):
             await feedback.toast(query, "Theme emoji restored")
             return await _edit_view(query, await _emoji_view())
     except Exception:
-        logger.exception("Runtime configuration action failed: %s", action)
+        logger.exception("Bot settings action failed: %s", action)
         return await query.answer(
             "The change could not be saved. Nothing was changed.",
             show_alert=True,

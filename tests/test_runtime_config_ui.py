@@ -101,6 +101,13 @@ class RuntimeConfigUiTests(unittest.TestCase):
             self.source,
         )
 
+    def test_bot_settings_are_independent_from_theme_editability(self):
+        self.assertNotIn("if not themes.editable", self.source)
+        self.assertIn('return "Custom"', self.source)
+        self.assertIn('return "Theme" if key in themes.active.config else "Environment"', self.source)
+        self.assertIn("Saved across restarts", self.source)
+        self.assertIn("_overview_markup(bool(overrides))", self.source)
+
     def test_database_exposes_atomic_reset_all(self):
         database_tree = ast.parse(
             (ROOT / "anony/core/database.py").read_text(encoding="utf-8")

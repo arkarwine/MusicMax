@@ -174,6 +174,7 @@ class ThemeManager:
         self.themes: dict[str, Theme] = {}
         self.active_id = "premium"
         self._builtins: set[str] = set()
+        self._runtime_overrides: dict[str, str] = {}
         self._theme_dir = Path(__file__).resolve().parents[1] / "themes"
 
     @property
@@ -529,6 +530,8 @@ class ThemeManager:
             self.config.set_runtime(
                 key, self.config.runtime_import_value(key, value)
             )
+        for key, value in self._runtime_overrides.items():
+            self.config.set_runtime(key, value)
         ui = _merge(APP_UI_DEFAULTS, theme.ui)
         set_theme_ui(ui)
         self.language.apply_theme(theme.locales)
@@ -572,6 +575,24 @@ class ThemeManager:
                 active = "premium" if "premium" in self.themes else "default"
                 await self.db.set_setting_value("active_theme", active)
             self.active_id = active
+            if not await self.db.get_setting_value("runtime_config_v2"):
+                legacy_overrides = (
+                    {} if self.active.builtin
+                    else await self.db.get_theme_overrides(active)
+                )
+                migrated = {}
+                for path, value in legacy_overrides.items():
+                    if not path.startswith("config."):
+                        continue
+                    key = path.removeprefix("config.")
+                    if key not in self.config.RUNTIME_FIELDS:
+                        continue
+                    raw = self.config.runtime_import_value(key, value)
+                    migrated[key] = self.config.set_runtime(key, raw)
+                await self.db.migrate_theme_config_to_runtime(
+                    active, migrated
+                )
+            self._runtime_overrides = await self.db.get_runtime_config()
             self._apply(await self.resolved(active))
 
     async def activate(self, theme_id: str) -> Theme:
@@ -659,75 +680,60 @@ class ThemeManager:
                 raise
 
 
-    async def config_overrides(self) -> dict[str, object]:
-        if self.active.builtin:
-            return {}
-        values = await self.db.get_theme_overrides(self.active_id)
-        return {
-            path.removeprefix("config."): value
-            for path, value in values.items() if path.startswith("config.")
-        }
+    async def config_overrides(self) -> dict[str, str]:
+        return copy.deepcopy(self._runtime_overrides)
 
     async def set_config(self, key: str, raw_value: str) -> object:
         async with self.lock:
-            if not self.editable:
-                raise ThemeError("Clone this built-in theme before editing it")
-            theme_id = self.active_id
-            path = f"config.{key}"
-            normalized = self._normalize_config({key: raw_value})[key]
-            previous = await self.resolved(theme_id)
-            overrides = await self.db.get_theme_overrides(theme_id)
-            await self.db.set_theme_override(theme_id, path, normalized)
+            if key not in self.config.RUNTIME_FIELDS:
+                raise ThemeError("Setting not found")
+            previous = copy.deepcopy(self._runtime_overrides)
+            current_theme = await self.resolved(self.active_id)
             try:
-                self._apply(await self.resolved(theme_id))
+                stored = self.config.set_runtime(key, raw_value)
+                await self.db.set_runtime_config(key, stored)
+                self._runtime_overrides[key] = stored
+                self._apply(current_theme)
             except Exception:
-                if path in overrides:
-                    await self.db.set_theme_override(
-                        theme_id, path, overrides[path]
-                    )
+                self._runtime_overrides = previous
+                if key in previous:
+                    await self.db.set_runtime_config(key, previous[key])
                 else:
-                    await self.db.reset_theme_override(theme_id, path)
-                self._apply(previous)
+                    await self.db.reset_runtime_config(key)
+                self._apply(current_theme)
                 raise
-            return normalized
+            return self.config.runtime_export(key)
 
     async def reset_config(self, key: str) -> None:
         async with self.lock:
-            if not self.editable:
-                raise ThemeError("Built-in themes cannot be edited")
-            theme_id = self.active_id
-            path = f"config.{key}"
-            previous = await self.resolved(theme_id)
-            overrides = await self.db.get_theme_overrides(theme_id)
-            await self.db.reset_theme_override(theme_id, path)
+            if key not in self.config.RUNTIME_FIELDS:
+                raise ThemeError("Setting not found")
+            previous = copy.deepcopy(self._runtime_overrides)
+            current_theme = await self.resolved(self.active_id)
             try:
-                self._apply(await self.resolved(theme_id))
+                await self.db.reset_runtime_config(key)
+                self._runtime_overrides.pop(key, None)
+                self._apply(current_theme)
             except Exception:
-                if path in overrides:
-                    await self.db.set_theme_override(
-                        theme_id, path, overrides[path]
-                    )
-                self._apply(previous)
+                self._runtime_overrides = previous
+                if key in previous:
+                    await self.db.set_runtime_config(key, previous[key])
+                self._apply(current_theme)
                 raise
 
     async def reset_all_config(self) -> None:
         async with self.lock:
-            if not self.editable:
-                raise ThemeError("Built-in themes cannot be edited")
-            theme_id = self.active_id
-            previous = await self.resolved(theme_id)
-            overrides = await self.db.get_theme_overrides(theme_id)
-            saved = {
-                path: value for path, value in overrides.items()
-                if path.startswith("config.")
-            }
-            await self.db.reset_theme_overrides(theme_id, "config.")
+            previous = copy.deepcopy(self._runtime_overrides)
+            current_theme = await self.resolved(self.active_id)
             try:
-                self._apply(await self.resolved(theme_id))
+                await self.db.reset_all_runtime_config()
+                self._runtime_overrides.clear()
+                self._apply(current_theme)
             except Exception:
-                for path, value in saved.items():
-                    await self.db.set_theme_override(theme_id, path, value)
-                self._apply(previous)
+                self._runtime_overrides = previous
+                for key, value in previous.items():
+                    await self.db.set_runtime_config(key, value)
+                self._apply(current_theme)
                 raise
 
     def unique_id(self, name: str) -> str:
@@ -751,23 +757,13 @@ class ThemeManager:
         if clone_id:
             source = await self.resolved(clone_id)
             document = source.document()
-            document["config"] = {
-                key: (
-                    source.config[key]
-                    if key in source.config
-                    else self.config.runtime_export(key, default=True)
-                )
-                for key in self.config.RUNTIME_FIELDS
-            }
+            document["config"] = copy.deepcopy(source.config)
             document["ui"] = _merge(APP_UI_DEFAULTS, source.ui)
             document["locales"] = copy.deepcopy(source.locales)
         else:
             document = {
                 "schema_version": SCHEMA_VERSION,
-                "config": {
-                    key: self.config.runtime_export(key, default=True)
-                    for key in self.config.RUNTIME_FIELDS
-                },
+                "config": {},
                 "ui": copy.deepcopy(APP_UI_DEFAULTS),
                 "locales": {},
             }
@@ -836,14 +832,7 @@ class ThemeManager:
     async def export(self, theme_id: str) -> dict:
         theme = await self.resolved(theme_id)
         document = theme.document()
-        document["config"] = {
-            key: (
-                theme.config[key]
-                if key in theme.config
-                else self.config.runtime_export(key, default=True)
-            )
-            for key in self.config.RUNTIME_FIELDS
-        }
+        document["config"] = copy.deepcopy(theme.config)
         document["ui"] = _merge(APP_UI_DEFAULTS, theme.ui)
         return document
 
