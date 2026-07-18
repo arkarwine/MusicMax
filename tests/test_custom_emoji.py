@@ -1,6 +1,9 @@
 import importlib.util
+import sys
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
 from pyrogram import enums
 
@@ -35,6 +38,15 @@ class CustomEmojiTextTests(unittest.TestCase):
         )
         custom_emoji.set_custom_emoji_supported(True)
         self.assertEqual(custom_emoji.render_custom_emoji_text(text), text)
+
+    def test_themed_custom_ids_are_hidden_on_transport_fallback(self):
+        custom_emoji.set_themed_custom_emoji_ids({"123"})
+        text = '<tg-emoji emoji-id="123">🎵</tg-emoji> Music'
+        self.assertEqual(custom_emoji.strip_custom_emoji_tags(text), " Music")
+        custom_emoji.set_themed_custom_emoji_ids(set())
+        self.assertEqual(
+            custom_emoji.strip_custom_emoji_tags(text), "🎵 Music"
+        )
 
     def test_localized_marker_survives_template_operations(self):
         text = custom_emoji.localized_text("<b>{0}</b>")
@@ -103,6 +115,31 @@ class CustomEmojiButtonTests(unittest.TestCase):
         )
         self.assertEqual(button.text, "▶️")
         self.assertIsNone(button.icon_custom_emoji_id)
+    def test_themed_button_hides_icon_when_custom_delivery_is_rejected(self):
+        fake_rich = SimpleNamespace(
+            has_themed_emoji_placement=lambda group, action: True,
+            themed_button_emoji=lambda action: (
+                '<tg-emoji emoji-id="123">▶️</tg-emoji>'
+            ),
+        )
+        custom_emoji.set_custom_emoji_supported(True)
+        with patch.dict(
+            sys.modules,
+            {"anony.core.rich_messages": fake_rich},
+        ):
+            button = custom_emoji.custom_emoji_button(
+                "Play",
+                theme_action="control.resume",
+                callback_data="play",
+            )
+        markup = custom_emoji.types.InlineKeyboardMarkup([[button]])
+        fallback = custom_emoji.keyboard_without_custom_icons(markup)
+
+        self.assertEqual(
+            str(button.icon_custom_emoji_id), "123"
+        )
+        self.assertEqual(fallback.inline_keyboard[0][0].text, " Play")
+
 
 
 if __name__ == "__main__":

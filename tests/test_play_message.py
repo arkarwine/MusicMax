@@ -62,6 +62,19 @@ class PlayMessageRendererTests(unittest.TestCase):
         self.assertEqual(rendered.fallback_html.count("• "), 3)
         self.assertFalse(rendered.used_default)
 
+    def test_image_placeholder_controls_media_position(self):
+        rendered = self.render(
+            "# Heading\n\n{image}\n\nTrack details"
+        )
+
+        self.assertEqual(rendered.media_index, 1)
+        self.assertEqual(
+            [block["type"] for block in rendered.rich_blocks],
+            ["heading", "paragraph"],
+        )
+        self.assertNotIn("play-image", rendered.rich_html)
+        self.assertNotIn("play-image", rendered.fallback_html)
+
     def test_arbitrary_text_order_omissions_repetitions_and_braces(self):
         template = (
             "## Duration {duration}\n\n"

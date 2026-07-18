@@ -211,9 +211,15 @@ class ThemeManagerTests(unittest.IsolatedAsyncioTestCase):
             (ROOT / "anony/themes/premium.json").read_text(encoding="utf-8")
         )
         invalid = copy.deepcopy(base)
-        invalid["schema_version"] = 2
+        invalid["schema_version"] = 3
         with self.assertRaisesRegex(theme_module.ThemeError, "schema"):
             manager.validate(invalid)
+
+        invalid = copy.deepcopy(base)
+        invalid["$schema"] = "https://example.com/untrusted.schema.json"
+        with self.assertRaisesRegex(theme_module.ThemeError, "schema reference"):
+            manager.validate(invalid)
+
 
         invalid = copy.deepcopy(base)
         invalid["config"]["bot_token"] = "secret"
@@ -309,7 +315,17 @@ class ThemeManagerTests(unittest.IsolatedAsyncioTestCase):
             await manager.install(document, replace_existing=True)
 
 
-class ThemeUiSourceTests(unittest.TestCase):
+class ThemeUiSourceTests(unittest.IsolatedAsyncioTestCase):
+    manager = ThemeManagerTests.manager
+
+    @classmethod
+    def setUpClass(cls):
+        ThemeManagerTests.setUpClass.__func__(cls)
+
+    @classmethod
+    def tearDownClass(cls):
+        ThemeManagerTests.tearDownClass.__func__(cls)
+
     def test_management_plugin_exposes_complete_lifecycle(self):
         source = (ROOT / "anony/plugins/themes.py").read_text(encoding="utf-8")
         for command in ("themes", "importtheme", "exporttheme"):
@@ -329,6 +345,55 @@ class ThemeUiSourceTests(unittest.TestCase):
         self.assertIn("REFERENCES themes(theme_id)", source)
         self.assertIn("theme_migration_v1", source)
 
+
+    async def test_schema_v1_normalizes_and_emoji_schema_is_strict(self):
+        manager, _, _, _ = self.manager()
+        base = json.loads(
+            (ROOT / "anony/themes/premium.json").read_text(encoding="utf-8")
+        )
+        legacy = copy.deepcopy(base)
+        legacy["schema_version"] = 1
+        legacy["ui"].pop("emojis")
+        normalized = manager.validate(legacy)
+        self.assertEqual(normalized.schema_version, 2)
+
+        invalid = copy.deepcopy(base)
+        invalid["ui"]["emojis"]["registry"]["music"]["native"] = "🎵🎵"
+        with self.assertRaisesRegex(theme_module.ThemeError, "one native"):
+            manager.validate(invalid)
+
+        invalid = copy.deepcopy(base)
+        invalid["ui"]["emojis"]["placements"]["headings"]["unknown"] = "music"
+        with self.assertRaisesRegex(theme_module.ThemeError, "placement"):
+            manager.validate(invalid)
+
+    async def test_emoji_overrides_are_atomic_resettable_and_exported(self):
+        manager, _, _, db = self.manager()
+        await manager.boot()
+        custom = await manager.create("Emoji Lab", clone_id="premium")
+        await manager.activate(custom.id)
+
+        emojis = manager.ui()["emojis"]
+        emojis["mode"] = "native"
+        await manager.set_emojis(emojis)
+        await manager.update_emoji_token(
+            "music", native="🎶", custom_emoji_id="123456"
+        )
+
+        self.assertTrue(await manager.emoji_overridden())
+        self.assertEqual(manager.ui()["emojis"]["mode"], "native")
+        self.assertEqual(
+            manager.ui()["emojis"]["registry"]["music"]["native"], "🎶"
+        )
+        exported = await manager.export(custom.id)
+        self.assertEqual(exported["$schema"], "./theme.schema.json")
+        self.assertEqual(exported["schema_version"], 2)
+        self.assertEqual(exported["ui"]["emojis"]["mode"], "native")
+        self.assertIn("ui.emojis", await db.get_theme_overrides(custom.id))
+
+        await manager.reset_emojis()
+        self.assertFalse(await manager.emoji_overridden())
+        self.assertEqual(manager.ui()["emojis"]["mode"], "custom")
 
 if __name__ == "__main__":
     unittest.main()

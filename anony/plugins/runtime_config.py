@@ -13,6 +13,7 @@ from pyrogram.errors import BadRequest
 from anony import app, config, lang, logger, themes
 from anony.helpers import buttons, feedback
 from anony.ui import callbacks
+from anony.core.rich_messages import themed_emoji_token
 from anony.ui.keyboards import home_row
 
 
@@ -96,13 +97,13 @@ SETTINGS = {
     "play_message_template_en": SettingSpec(
         "English template", "messages",
         "Markdown template for English play cards.",
-        "Markdown with title, link, duration, requester and source placeholders",
+        "Markdown with image, title, link, duration, requester and source placeholders",
         "# Now playing",
     ),
     "play_message_template_my": SettingSpec(
         "Burmese template", "messages",
         "Markdown template for Burmese play cards.",
-        "Markdown with title, link, duration, requester and source placeholders",
+        "Markdown with image, title, link, duration, requester and source placeholders",
         "# Now playing",
     ),
     "auto_leave": SettingSpec(
@@ -234,6 +235,10 @@ def _overview_markup() -> types.InlineKeyboardMarkup:
         ))
     rows.append(actions)
     rows.append([buttons.ikb(
+        text="😀 Emoji style",
+        callback_data=callbacks.runtime_config("emoji", "root"),
+    )])
+    rows.append([buttons.ikb(
         text="🎨 Themes", callback_data=callbacks.theme("home", "root")
     )])
     rows.append(home_row("⬅️ Home", callbacks.HELP_HOME))
@@ -270,6 +275,180 @@ async def _overview_view() -> ConfigView:
     )
     return ConfigView(rich, fallback, _overview_markup())
 
+
+def _emoji_names() -> list[str]:
+    return sorted(themes.ui().get("emojis", {}).get("registry", {}))
+
+
+def _emoji_target(token: str) -> str:
+    return f"e{_emoji_names().index(token)}"
+
+
+def _emoji_from_target(target: str) -> str | None:
+    if not target.startswith("e") or not target[1:].isdigit():
+        return None
+    names = _emoji_names()
+    index = int(target[1:])
+    return names[index] if index < len(names) else None
+
+
+def _emoji_usage(token: str) -> list[str]:
+    placements = themes.ui().get("emojis", {}).get("placements", {})
+    return [
+        f"{group}.{name}"
+        for group, mappings in placements.items()
+        for name, assigned in mappings.items()
+        if assigned == token
+    ]
+
+
+async def _emoji_view(page: int = 0) -> ConfigView:
+    emojis = themes.ui().get("emojis", {})
+    registry = emojis.get("registry", {})
+    names = _emoji_names()
+    page_size = 18
+    page_count = max(1, (len(names) + page_size - 1) // page_size)
+    page = max(0, min(page, page_count - 1))
+    visible = names[page * page_size:(page + 1) * page_size]
+    custom = sum(bool(token.get("custom_emoji_id")) for token in registry.values())
+    assigned = sum(
+        len(mappings) for mappings in emojis.get("placements", {}).values()
+    )
+    source = "Override" if await themes.emoji_overridden() else "Theme"
+    rich = (
+        _header("😀", "Emoji style")
+        + "<table bordered striped>"
+        + "<tr><th>Property</th><th>Value</th></tr>"
+        + f'<tr><td>Mode</td><td align="center">{escape(emojis.get("mode", "custom").title())}</td></tr>'
+        + f'<tr><td>Tokens</td><td align="center">{len(registry)}</td></tr>'
+        + f'<tr><td>Custom</td><td align="center">{custom}</td></tr>'
+        + f'<tr><td>Placements</td><td align="center">{assigned}</td></tr>'
+        + f'<tr><td>Source</td><td align="center">{source}</td></tr>'
+        + f'<tr><td>Page</td><td align="center">{page + 1} / {page_count}</td></tr>'
+        + "</table>"
+        + "<blockquote>Custom emoji are hidden if Telegram rejects them.</blockquote>"
+    )
+    fallback = (
+        f"😀 <b>{_small_caps_title('Emoji style')}</b>\n\n"
+        f"Mode · {emojis.get('mode', 'custom').title()}\n"
+        f"Tokens · {len(registry)}\nCustom · {custom}\n"
+        f"Placements · {assigned}\nSource · {source}\n\n"
+        "<blockquote>Custom emoji are hidden if Telegram rejects them.</blockquote>"
+    )
+    rows = []
+    if themes.editable:
+        rows.append([
+            buttons.ikb(
+                text="Native", callback_data=callbacks.runtime_config("emode", "native")
+            ),
+            buttons.ikb(
+                text="Custom", callback_data=callbacks.runtime_config("emode", "custom")
+            ),
+            buttons.ikb(
+                text="None", callback_data=callbacks.runtime_config("emode", "none")
+            ),
+        ])
+    else:
+        rows.append([buttons.ikb(
+            text="🧬 Clone to customize",
+            callback_data=callbacks.theme("clone", themes.active_id),
+        )])
+    for index in range(0, len(visible), 3):
+        rows.append([
+            buttons.ikb(
+                text=f"{registry[name]['native']} {name}",
+                callback_data=callbacks.runtime_config("etoken", f"e{position}"),
+            )
+            for position, name in enumerate(visible[index:index + 3], start=page * page_size + index)
+        ])
+    if page_count > 1:
+        rows.append([
+            buttons.ikb(
+                text="‹",
+                callback_data=callbacks.runtime_config(
+                    "emoji", f"p{max(0, page - 1)}"
+                ),
+            ),
+            buttons.ikb(
+                text=f"{page + 1} / {page_count}",
+                callback_data=callbacks.runtime_config("emoji", f"p{page}"),
+            ),
+            buttons.ikb(
+                text="›",
+                callback_data=callbacks.runtime_config(
+                    "emoji", f"p{min(page_count - 1, page + 1)}"
+                ),
+            ),
+        ])
+    if themes.editable and await themes.emoji_overridden():
+        rows.append([buttons.ikb(
+            text="↩️ Restore theme emoji",
+            callback_data=callbacks.runtime_config("ereset", "all"),
+        )])
+    rows.append([buttons.ikb(
+        text="⬅️ Overview", callback_data=callbacks.runtime_config("home", "root")
+    )])
+    return ConfigView(rich, fallback, buttons.ikm(rows))
+
+
+async def _emoji_token_view(token_name: str) -> ConfigView:
+    token = themes.ui()["emojis"]["registry"][token_name]
+    custom_id = token.get("custom_emoji_id") or "not set"
+    usage = _emoji_usage(token_name)
+    preview = themed_emoji_token(token_name) or "Hidden"
+    usage_text = ", ".join(usage[:6]) or "Unused"
+    if len(usage) > 6:
+        usage_text += f" · +{len(usage) - 6} more"
+    rich = (
+        _header(token["native"], token_name.replace("_", " ").replace("-", " "))
+        + "<table bordered striped>"
+        + "<tr><th>Property</th><th>Value</th></tr>"
+        + f'<tr><td>Preview</td><td align="center">{preview}</td></tr>'
+        + f'<tr><td>Native</td><td align="center">{escape(token["native"])}</td></tr>'
+        + f'<tr><td>Custom ID</td><td align="center"><code>{escape(custom_id)}</code></td></tr>'
+        + f'<tr><td>Hidden</td><td align="center">{"Yes" if token.get("hidden") else "No"}</td></tr>'
+        + "</table>"
+        + f"<blockquote>{escape(usage_text)}</blockquote>"
+    )
+    fallback = (
+        f"{token['native']} <b>{escape(token_name)}</b>\n\n"
+        f"Preview · {preview}\nNative · {escape(token['native'])}\n"
+        f"Custom ID · <code>{escape(custom_id)}</code>\n"
+        f"Hidden · {'Yes' if token.get('hidden') else 'No'}\n\n"
+        f"<blockquote>{escape(usage_text)}</blockquote>"
+    )
+    target = _emoji_target(token_name)
+    rows = []
+    if themes.editable:
+        rows.extend([
+            [
+                buttons.ikb(
+                    text="Change native",
+                    callback_data=callbacks.runtime_config("enative", target),
+                ),
+                buttons.ikb(
+                    text="Set custom",
+                    callback_data=callbacks.runtime_config("ecustom", target),
+                ),
+            ],
+            [
+                buttons.ikb(
+                    text="Show" if token.get("hidden") else "Hide",
+                    callback_data=callbacks.runtime_config("ehide", target),
+                ),
+                buttons.ikb(
+                    text="Clear custom",
+                    callback_data=callbacks.runtime_config("eclear", target),
+                ),
+            ],
+        ])
+    rows.append([buttons.ikb(
+        text="⬅️ Emoji style",
+        callback_data=callbacks.runtime_config(
+            "emoji", f"p{_emoji_names().index(token_name) // 18}"
+        ),
+    )])
+    return ConfigView(rich, fallback, buttons.ikm(rows))
 
 def _category_markup(
     category: str,
@@ -629,6 +808,90 @@ async def _prompt_edit(
     )
 
 
+async def _prompt_emoji_edit(
+    chat_id: int,
+    user_id: int,
+    token_name: str,
+    kind: str,
+    *,
+    error: str | None = None,
+) -> None:
+    await _clear_pending(user_id)
+    token = themes.ui()["emojis"]["registry"][token_name]
+    custom = kind == "custom"
+    accepted = (
+        "Send one Telegram custom emoji."
+        if custom
+        else "Send one native Unicode emoji."
+    )
+    prefix = f"⚠️ {escape(error)}\n\n" if error else ""
+    prompt = await app.send_message(
+        chat_id,
+        prefix
+        + f"😀 <b>Change {escape(token_name)}</b>\n\n"
+        + f"Current native · {escape(token['native'])}\n"
+        + accepted
+        + "\n\nReply within 5 minutes. Reply with cancel to stop.",
+        reply_markup=types.ForceReply(
+            placeholder="Send a custom emoji" if custom else "Send one emoji"
+        ),
+    )
+    pending = PendingEdit(
+        prompt.id,
+        f"emoji:{kind}:{token_name}",
+        "emoji",
+        monotonic(),
+    )
+    _PENDING_EDITS[user_id] = pending
+    pending.timeout_task = asyncio.create_task(
+        _expire_edit(user_id, chat_id, prompt.id)
+    )
+
+
+def _message_custom_emoji_id(message: types.Message) -> str | None:
+    for entity in message.entities or []:
+        if entity.type == enums.MessageEntityType.CUSTOM_EMOJI:
+            value = getattr(entity, "custom_emoji_id", None)
+            if value:
+                return str(value)
+    return None
+
+
+async def _handle_emoji_reply(
+    message: types.Message,
+    pending: PendingEdit,
+) -> None:
+    _, kind, token_name = pending.key.split(":", 2)
+    try:
+        async with _CONFIG_LOCK:
+            if kind == "native":
+                value = str(message.text or "").strip()
+                if not value:
+                    raise ValueError("Send one native Unicode emoji.")
+                await themes.update_emoji_token(token_name, native=value)
+            else:
+                custom_id = _message_custom_emoji_id(message)
+                if not custom_id:
+                    raise ValueError("Send a Telegram custom emoji, not plain text.")
+                await themes.update_emoji_token(
+                    token_name, custom_emoji_id=custom_id
+                )
+    except (TypeError, ValueError) as exc:
+        return await _prompt_emoji_edit(
+            message.chat.id,
+            message.from_user.id,
+            token_name,
+            kind,
+            error=str(exc),
+        )
+    except Exception:
+        logger.exception("Could not update emoji token %s", token_name)
+        return await message.reply_text(
+            "⚠️ The emoji could not be saved. No change was applied."
+        )
+    await _send_view(message, await _emoji_token_view(token_name))
+
+
 async def open_runtime_config(message: types.Message) -> None:
     if not message.from_user or message.from_user.id not in app.sudoers:
         await message.reply_text("🔒 Runtime configuration is sudo-only.")
@@ -714,6 +977,8 @@ async def _runtime_config_reply(_, message: types.Message):
         return await message.reply_text(
             "Cancelled.", disable_notification=True
         )
+    if pending.category == "emoji":
+        return await _handle_emoji_reply(message, pending)
     raw_value = _setting_input_text(message, pending.key)
     if not raw_value:
         raw_value = _setting_media_value(message, pending.key) or ""
@@ -768,6 +1033,24 @@ async def _runtime_config_callback(_, query: types.CallbackQuery):
             query.from_user.id,
             target,
         )
+    if action == "emoji" and (
+        target == "root" or target.startswith("p") and target[1:].isdigit()
+    ):
+        await query.answer()
+        page = int(target[1:]) if target.startswith("p") else 0
+        return await _edit_view(query, await _emoji_view(page))
+    token_name = _emoji_from_target(target)
+    if action == "etoken" and token_name:
+        await query.answer()
+        return await _edit_view(query, await _emoji_token_view(token_name))
+    if action in {"enative", "ecustom"} and token_name:
+        await query.answer("Reply with the new emoji")
+        return await _prompt_emoji_edit(
+            query.message.chat.id,
+            query.from_user.id,
+            token_name,
+            "native" if action == "enative" else "custom",
+        )
     if action == "confirm_all":
         await query.answer()
         return await _edit_view(query, _reset_all_view())
@@ -785,6 +1068,33 @@ async def _runtime_config_callback(_, query: types.CallbackQuery):
             await _restore_all()
             await feedback.toast(query, "All defaults restored")
             return await _edit_view(query, await _overview_view())
+        if action == "emode" and target in {"native", "custom", "none"}:
+            emojis = themes.ui()["emojis"]
+            emojis["mode"] = target
+            async with _CONFIG_LOCK:
+                await themes.set_emojis(emojis)
+            await feedback.toast(query, "Emoji mode updated")
+            return await _edit_view(query, await _emoji_view())
+        if action == "ehide" and token_name:
+            token = themes.ui()["emojis"]["registry"][token_name]
+            async with _CONFIG_LOCK:
+                await themes.update_emoji_token(
+                    token_name, hidden=not token.get("hidden", False)
+                )
+            await feedback.toast(query, "Emoji visibility updated")
+            return await _edit_view(query, await _emoji_token_view(token_name))
+        if action == "eclear" and token_name:
+            async with _CONFIG_LOCK:
+                await themes.update_emoji_token(
+                    token_name, custom_emoji_id=None
+                )
+            await feedback.toast(query, "Custom emoji cleared")
+            return await _edit_view(query, await _emoji_token_view(token_name))
+        if action == "ereset" and target == "all":
+            async with _CONFIG_LOCK:
+                await themes.reset_emojis()
+            await feedback.toast(query, "Theme emoji restored")
+            return await _edit_view(query, await _emoji_view())
     except Exception:
         logger.exception("Runtime configuration action failed: %s", action)
         return await query.answer(

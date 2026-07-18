@@ -6,16 +6,19 @@ import asyncio
 import copy
 import json
 import re
+import unicodedata
 from dataclasses import dataclass, replace
 from pathlib import Path
 from string import Formatter
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
+SUPPORTED_SCHEMA_VERSIONS = frozenset({1, SCHEMA_VERSION})
+THEME_SCHEMA_REF = "./theme.schema.json"
 MAX_THEME_BYTES = 256 * 1024
 THEME_ID_RE = re.compile(r"^[a-z][a-z0-9-]{0,31}$")
 THEME_ROOT_KEYS = frozenset({
-    "schema_version", "id", "name", "description", "author", "version",
+    "$schema", "schema_version", "id", "name", "description", "author", "version",
     "config", "ui", "locales",
 })
 SURFACES = frozenset({
@@ -34,6 +37,25 @@ KEYBOARD_ACTIONS = {
         "stats", "sudo",
     }),
 }
+EMOJI_PLACEMENTS = {
+    "headings": SURFACES,
+    "messages": frozenset({
+        "loop_count", "loop_forever", "play_paused", "play_resumed",
+        "play_skipped", "play_stopped",
+    }),
+    "buttons": frozenset({
+        "start.add", "start.support", "start.channel", "start.owner",
+        "help.admins", "help.auth", "help.blist", "help.lang",
+        "help.ping", "help.play", "help.queue", "help.stats", "help.sudo",
+        "control.loop", "control.stop", "control.pause", "control.resume",
+        "control.skip", "control.replay", "stats.refresh",
+        "settings.play_mode", "settings.playback", "settings.audio_mode",
+        "settings.command_delete",
+        "settings.cleanup", "settings.language", "settings.open",
+    }),
+    "ranks": frozenset(str(index) for index in range(1, 10)),
+}
+
 APP_UI_DEFAULTS = {
     "heading_font": "small_caps",
     "icons": True,
@@ -48,6 +70,7 @@ APP_UI_DEFAULTS = {
     },
     "surfaces": {"play": {"heading_alignment": "left"}},
     "keyboards": {},
+    "emojis": {"mode": "custom", "registry": {}, "placements": {}},
 }
 
 
@@ -70,6 +93,7 @@ class Theme:
 
     def document(self) -> dict:
         return {
+            "$schema": THEME_SCHEMA_REF,
             "schema_version": self.schema_version,
             "id": self.id,
             "name": self.name,
@@ -107,6 +131,37 @@ def _format_fields(value: str) -> set[str]:
         }
     except ValueError as exc:
         raise ThemeError("Locale text contains malformed placeholders") from exc
+
+
+def _single_emoji(value: str) -> bool:
+    """Accept one Unicode emoji grapheme without adding a heavy dependency."""
+    if not value or len(value) > 16 or any(char.isspace() for char in value):
+        return False
+    emoji_like = any(
+        unicodedata.category(char) in {"So", "Sk", "Sm"}
+        or ord(char) == 0x20E3
+        or 0x1F000 <= ord(char) <= 0x1FAFF
+        for char in value
+    )
+    if not emoji_like:
+        return False
+    if "\u200d" in value:
+        return any(
+            unicodedata.category(char) in {"So", "Sk"} for char in value
+        )
+    ignored = {"\ufe0e", "\ufe0f", "\u20e3"}
+    bases = [
+        char for char in value
+        if char not in ignored
+        and not unicodedata.combining(char)
+        and not 0x1F3FB <= ord(char) <= 0x1F3FF
+    ]
+    if len(bases) == 1:
+        return True
+    return len(bases) == 2 and all(
+        0x1F1E6 <= ord(char) <= 0x1F1FF for char in bases
+    )
+
 
 
 class ThemeManager:
@@ -179,12 +234,84 @@ class ThemeManager:
                 result[key] = value[key]
         return result
 
+    @staticmethod
+    def _validate_emojis(value: object) -> dict:
+        if not isinstance(value, dict):
+            raise ThemeError("emojis must be an object")
+        unknown = set(value) - {"mode", "registry", "placements"}
+        if unknown:
+            raise ThemeError("Unknown emojis key: " + sorted(unknown)[0])
+        mode = value.get("mode", "custom")
+        if mode not in {"native", "custom", "none"}:
+            raise ThemeError("Emoji mode must be native, custom, or none")
+        registry = value.get("registry", {})
+        if not isinstance(registry, dict) or len(registry) > 128:
+            raise ThemeError("Emoji registry must contain at most 128 tokens")
+        clean_registry = {}
+        for name, token in registry.items():
+            if not isinstance(name, str) or not re.fullmatch(
+                r"[a-z][a-z0-9_.-]{0,47}", name
+            ):
+                raise ThemeError("Emoji token names must be lowercase identifiers")
+            if not isinstance(token, dict) or set(token) - {
+                "native", "custom_emoji_id", "hidden",
+            }:
+                raise ThemeError(f"Emoji token {name} is invalid")
+            native = token.get("native")
+            if not isinstance(native, str) or not _single_emoji(native):
+                raise ThemeError(f"Emoji token {name} needs one native emoji")
+            custom_id = token.get("custom_emoji_id")
+            if custom_id is not None and (
+                not isinstance(custom_id, str)
+                or not custom_id.isdecimal()
+                or len(custom_id) > 32
+            ):
+                raise ThemeError(f"Emoji token {name} has an invalid custom id")
+            hidden = token.get("hidden", False)
+            if not isinstance(hidden, bool):
+                raise ThemeError(f"Emoji token {name}.hidden must be boolean")
+            clean_registry[name] = {
+                "native": native,
+                "custom_emoji_id": custom_id,
+                "hidden": hidden,
+            }
+        placements = value.get("placements", {})
+        if not isinstance(placements, dict):
+            raise ThemeError("Emoji placements must be an object")
+        unknown = set(placements) - set(EMOJI_PLACEMENTS)
+        if unknown:
+            raise ThemeError("Unknown emoji placement group: " + sorted(unknown)[0])
+        clean_placements = {}
+        for group, mappings in placements.items():
+            if not isinstance(mappings, dict):
+                raise ThemeError(f"Emoji placements.{group} must be an object")
+            invalid = set(mappings) - EMOJI_PLACEMENTS[group]
+            if invalid:
+                raise ThemeError("Unknown emoji placement: " + sorted(invalid)[0])
+            if any(
+                token is not None and not isinstance(token, str)
+                for token in mappings.values()
+            ):
+                raise ThemeError("Emoji placement values must be token names or null")
+            missing = {
+                token for token in mappings.values()
+                if token is not None and token not in clean_registry
+            }
+            if missing:
+                raise ThemeError("Unknown emoji token: " + sorted(missing)[0])
+            clean_placements[group] = copy.deepcopy(mappings)
+        return {
+            "mode": mode,
+            "registry": clean_registry,
+            "placements": clean_placements,
+        }
+
     def _validate_ui(self, value: dict) -> dict:
         if not isinstance(value, dict):
             raise ThemeError("ui must be an object")
         allowed = {
             "heading_font", "icons", "heading_alignment", "separators",
-            "media_placement", "tables", "surfaces", "keyboards",
+            "media_placement", "tables", "surfaces", "keyboards", "emojis",
         }
         unknown = set(value) - allowed
         if unknown:
@@ -279,6 +406,8 @@ class ThemeManager:
             if invalid:
                 raise ThemeError("Unknown keyboard action: " + sorted(invalid)[0])
             result["keyboards"][name] = copy.deepcopy(rows)
+        if "emojis" in value:
+            result["emojis"] = self._validate_emojis(value["emojis"])
         return result
 
     def _validate_locales(self, value: dict) -> dict:
@@ -310,8 +439,18 @@ class ThemeManager:
         unknown = set(document) - THEME_ROOT_KEYS
         if unknown:
             raise ThemeError("Unknown theme key: " + sorted(unknown)[0])
-        if document.get("schema_version") != SCHEMA_VERSION:
-            raise ThemeError(f"Unsupported theme schema version; use {SCHEMA_VERSION}")
+        schema_ref = document.get("$schema")
+        if schema_ref is not None and schema_ref != THEME_SCHEMA_REF:
+            raise ThemeError(
+                f"Unsupported theme schema reference; use {THEME_SCHEMA_REF}"
+            )
+        source_version = document.get("schema_version")
+        if source_version not in SUPPORTED_SCHEMA_VERSIONS:
+            raise ThemeError(
+                f"Unsupported theme schema version; use {SCHEMA_VERSION}"
+            )
+        document = copy.deepcopy(document)
+        document["schema_version"] = SCHEMA_VERSION
         theme_id = document.get("id")
         if not isinstance(theme_id, str) or not THEME_ID_RE.fullmatch(theme_id):
             raise ThemeError("Theme id must be a lowercase slug up to 32 characters")
@@ -340,6 +479,8 @@ class ThemeManager:
         loaded = {}
         builtins = set()
         for path in sorted(self._theme_dir.glob("*.json")):
+            if path.name == "theme.schema.json":
+                continue
             document = json.loads(path.read_text(encoding="utf-8"))
             theme = self.validate(document, builtin=True)
             loaded[theme.id] = theme
@@ -367,6 +508,8 @@ class ThemeManager:
                 continue
             if section == "config":
                 document[section][key] = value
+            elif section == "ui":
+                document[section][key] = copy.deepcopy(value)
         return document
 
     async def resolved(self, theme_id: str | None = None) -> Theme:
@@ -447,6 +590,74 @@ class ThemeManager:
                 raise
             self.active_id = theme_id
             return target
+
+    async def emoji_overridden(self) -> bool:
+        if self.active.builtin:
+            return False
+        overrides = await self.db.get_theme_overrides(self.active_id)
+        return "ui.emojis" in overrides
+
+    async def set_emojis(self, value: dict) -> dict:
+        async with self.lock:
+            if not self.editable:
+                raise ThemeError("Clone this built-in theme before editing it")
+            normalized = self._validate_emojis(value)
+            theme_id = self.active_id
+            path = "ui.emojis"
+            previous = await self.resolved(theme_id)
+            overrides = await self.db.get_theme_overrides(theme_id)
+            await self.db.set_theme_override(theme_id, path, normalized)
+            try:
+                self._apply(await self.resolved(theme_id))
+            except Exception:
+                if path in overrides:
+                    await self.db.set_theme_override(
+                        theme_id, path, overrides[path]
+                    )
+                else:
+                    await self.db.reset_theme_override(theme_id, path)
+                self._apply(previous)
+                raise
+            return copy.deepcopy(normalized)
+
+    async def update_emoji_token(
+        self,
+        token: str,
+        *,
+        native: str | None = None,
+        custom_emoji_id: str | None | object = ...,
+        hidden: bool | None = None,
+    ) -> dict:
+        emojis = copy.deepcopy(self.ui().get("emojis", {}))
+        registry = emojis.setdefault("registry", {})
+        if token not in registry:
+            raise ThemeError("Emoji token not found")
+        if native is not None:
+            registry[token]["native"] = native
+        if custom_emoji_id is not ...:
+            registry[token]["custom_emoji_id"] = custom_emoji_id
+        if hidden is not None:
+            registry[token]["hidden"] = hidden
+        return await self.set_emojis(emojis)
+
+    async def reset_emojis(self) -> None:
+        async with self.lock:
+            if not self.editable:
+                raise ThemeError("Built-in themes cannot be edited")
+            theme_id = self.active_id
+            previous = await self.resolved(theme_id)
+            overrides = await self.db.get_theme_overrides(theme_id)
+            await self.db.reset_theme_override(theme_id, "ui.emojis")
+            try:
+                self._apply(await self.resolved(theme_id))
+            except Exception:
+                if "ui.emojis" in overrides:
+                    await self.db.set_theme_override(
+                        theme_id, "ui.emojis", overrides["ui.emojis"]
+                    )
+                self._apply(previous)
+                raise
+
 
     async def config_overrides(self) -> dict[str, object]:
         if self.active.builtin:

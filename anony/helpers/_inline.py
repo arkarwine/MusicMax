@@ -222,6 +222,7 @@ class Inline:
         cmd_delete: bool,
         feedback_cleanup: bool,
         default_video: bool,
+        audio_mode: str,
         language: str,
         chat_id: int,
     ) -> types.InlineKeyboardMarkup:
@@ -229,7 +230,8 @@ class Inline:
             [
                 [
                     self.ikb(
-                        text="👥 " + lang["play_mode"],
+                        text=lang["play_mode"],
+                        theme_action="settings.play_mode",
                         callback_data=callbacks.settings(chat_id),
                     ),
                     self.ikb(
@@ -244,7 +246,8 @@ class Inline:
                 ],
                 [
                     self.ikb(
-                        text="🎧 " + lang["default_playback"],
+                        text=lang["default_playback"],
+                        theme_action="settings.playback",
                         callback_data=callbacks.settings(chat_id),
                     ),
                     self.ikb(
@@ -259,7 +262,20 @@ class Inline:
                 ],
                 [
                     self.ikb(
-                        text="⌨️ " + lang["cmd_delete"],
+                        text=lang["audio_mode"],
+                        theme_action="settings.audio_mode",
+                        callback_data=callbacks.settings(chat_id),
+                    ),
+                    self.ikb(
+                        text=lang[f"setting_{audio_mode}"],
+                        callback_data=callbacks.settings(chat_id, "audio"),
+                        style=enums.ButtonStyle.DEFAULT,
+                    ),
+                ],
+                [
+                    self.ikb(
+                        text=lang["cmd_delete"],
+                        theme_action="settings.command_delete",
                         callback_data=callbacks.settings(chat_id),
                     ),
                     self.ikb(
@@ -270,7 +286,8 @@ class Inline:
                 ],
                 [
                     self.ikb(
-                        text="✨ " + lang["clean_feedback"],
+                        text=lang["clean_feedback"],
+                        theme_action="settings.cleanup",
                         callback_data=callbacks.settings(chat_id),
                     ),
                     self.ikb(
@@ -285,7 +302,8 @@ class Inline:
                 ],
                 [
                     self.ikb(
-                        text="🌐 " + lang["language"],
+                        text=lang["language"],
+                        theme_action="settings.language",
                         callback_data=callbacks.settings(chat_id),
                     ),
                     self.ikb(
@@ -301,6 +319,7 @@ class Inline:
         return self.ikm([[
             self.ikb(
                 text=lang["open_settings"],
+                theme_action="settings.open",
                 url=f"https://t.me/{app.username}?start=settings_{chat_id}",
                 style=enums.ButtonStyle.DEFAULT,
             )

@@ -51,6 +51,7 @@ async def open_group_settings(message: types.Message, chat_id: int) -> None:
             await db.get_cmd_delete(chat_id),
             await db.get_feedback_cleanup(chat_id),
             await db.get_default_video(chat_id),
+            await db.get_audio_mode(chat_id),
             await db.get_lang(chat_id),
             chat_id,
         ),

@@ -61,7 +61,7 @@ class RuntimeConfigUiTests(unittest.TestCase):
             and isinstance(node.func, ast.Attribute)
             and node.func.attr == "ForceReply"
         ]
-        self.assertEqual(len(force_replies), 1)
+        self.assertEqual(len(force_replies), 2)
 
     def test_play_templates_can_be_viewed_without_rendering_markdown(self):
         self.assertIn('text="📄 View template"', self.source)

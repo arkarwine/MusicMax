@@ -1,5 +1,6 @@
 {
-  "schema_version": 1,
+  "$schema": "./theme.schema.json",
+  "schema_version": 2,
   "id": "premium",
   "name": "Premium",
   "description": "Compact rich-message presentation with small-cap headings.",
@@ -19,6 +20,81 @@
       "value_alignment": null
     },
     "surfaces": {"play": {"heading_alignment": "left"}},
+    "emojis": {
+      "mode": "custom",
+      "registry": {
+        "add": {"native": "➕", "custom_emoji_id": "5904409344174203680"},
+        "support": {"native": "💬", "custom_emoji_id": "5904611014363585873"},
+        "channel": {"native": "📣", "custom_emoji_id": "5904686983745117231"},
+        "user": {"native": "👤", "custom_emoji_id": "5904504297311182611"},
+        "tools": {"native": "🛠️", "custom_emoji_id": "5408894951440279259"},
+        "access": {"native": "👤", "custom_emoji_id": "5411585799990830248"},
+        "safety": {"native": "🛡️", "custom_emoji_id": "5409189019261103031"},
+        "language": {"native": "🌐", "custom_emoji_id": "5411500398861118321"},
+        "sparkles": {"native": "✨", "custom_emoji_id": "5409338071806146386"},
+        "music": {"native": "🎵", "custom_emoji_id": "5409194048667807708"},
+        "queue": {"native": "📋", "custom_emoji_id": "5411284026998681990"},
+        "stats": {"native": "📊", "custom_emoji_id": "5411120178291311191"},
+        "config": {"native": "⚙️", "custom_emoji_id": "5411457934519461707"},
+        "repeat": {"native": "🔄", "custom_emoji_id": "5465203866771397583"},
+        "infinite": {"native": "♾️", "custom_emoji_id": "5465680951738637726"},
+        "pause": {"native": "⏸️", "custom_emoji_id": "5467383519724446667"},
+        "play": {"native": "▶️", "custom_emoji_id": "5465443221003836735"},
+        "skip": {"native": "⏭️", "custom_emoji_id": "5467699723806711404"},
+        "stop": {"native": "⏹️", "custom_emoji_id": "5467611526653287547"},
+        "success": {"native": "✅", "custom_emoji_id": null},
+        "warning": {"native": "⚠️", "custom_emoji_id": null},
+        "welcome": {"native": "👋", "custom_emoji_id": null},
+        "assistant": {"native": "🤖", "custom_emoji_id": null},
+        "streams": {"native": "🎧", "custom_emoji_id": null},
+        "rank1": {"native": "1️⃣", "custom_emoji_id": "5408894951440279259"},
+        "rank2": {"native": "2️⃣", "custom_emoji_id": "5411585799990830248"},
+        "rank3": {"native": "3️⃣", "custom_emoji_id": "5409189019261103031"},
+        "rank4": {"native": "4️⃣", "custom_emoji_id": "5411500398861118321"},
+        "rank5": {"native": "5️⃣", "custom_emoji_id": "5409338071806146386"},
+        "rank6": {"native": "6️⃣", "custom_emoji_id": "5409194048667807708"},
+        "rank7": {"native": "7️⃣", "custom_emoji_id": "5411284026998681990"},
+        "rank8": {"native": "8️⃣", "custom_emoji_id": "5411120178291311191"},
+        "rank9": {"native": "9️⃣", "custom_emoji_id": "5411457934519461707"}
+      },
+      "placements": {
+        "headings": {
+          "start": "welcome", "help": "tools", "language": "language",
+          "play": "music", "queue": "queue", "setup": "warning",
+          "settings": "config", "stats": "stats", "status": "config",
+          "trending": "sparkles", "sessions": "assistant",
+          "session": "assistant", "broadcast": "channel",
+          "active_streams": "streams", "access": "access", "logs": "queue",
+          "result": "success", "error": "warning", "runtime_config": "config"
+        },
+        "messages": {
+          "loop_count": "repeat", "loop_forever": "infinite",
+          "play_paused": "pause", "play_resumed": "play",
+          "play_skipped": "skip", "play_stopped": "stop"
+        },
+        "buttons": {
+          "start.add": "add", "start.support": "support",
+          "start.channel": "channel", "start.owner": "user",
+          "help.admins": "tools", "help.auth": "access",
+          "help.blist": "safety", "help.lang": "language",
+          "help.ping": "sparkles", "help.play": "music",
+          "help.queue": "queue", "help.stats": "stats", "help.sudo": "config",
+          "control.loop": "infinite", "control.stop": "stop",
+          "control.pause": "pause", "control.resume": "play",
+          "control.skip": "skip", "control.replay": "repeat",
+          "stats.refresh": "repeat",
+          "settings.play_mode": "user", "settings.playback": "streams",
+          "settings.audio_mode": "music",
+          "settings.command_delete": "tools", "settings.cleanup": "sparkles",
+          "settings.language": "language", "settings.open": "config"
+        },
+        "ranks": {
+          "1": "rank1", "2": "rank2", "3": "rank3",
+          "4": "rank4", "5": "rank5", "6": "rank6",
+          "7": "rank7", "8": "rank8", "9": "rank9"
+        }
+      }
+    },
     "keyboards": {}
   },
   "locales": {}

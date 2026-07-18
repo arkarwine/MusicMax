@@ -28,6 +28,7 @@ _HORIZONTAL_RE = re.compile(r"^\s*(?:---+|___+|\*\*\*+)\s*$")
 _ALLOWED_URL_SCHEMES = {"http", "https", "tg"}
 _CAPTION_LIMIT = 1024
 _TITLE_LIMIT = 27
+_IMAGE_MARKER = "\ue000play-image\ue001"
 
 
 @dataclass(frozen=True, slots=True)
@@ -36,6 +37,7 @@ class RenderedPlayMessage:
     rich_blocks: list[dict]
     fallback_html: str
     used_default: bool = False
+    media_index: int | None = None
 
 
 def select_play_media(override, artwork) -> tuple[object, ...]:
@@ -539,6 +541,7 @@ def _template_with_fragments(
         )
 
     html_values = {
+        "image": _IMAGE_MARKER,
         "title": title_fragment,
         "title_link": title_link,
         "duration": escape(str(duration or "--:--")),
@@ -553,6 +556,7 @@ def _template_with_fragments(
             "url": source_url,
         }
     rich_values: dict[str, object] = {
+        "image": _IMAGE_MARKER,
         "title": display_title,
         "title_link": rich_title_link,
         "duration": str(duration or "--:--"),
@@ -594,14 +598,30 @@ def _render_once(
         duration=duration,
         requester=requester,
     )
-    rich_html = _markdown_html(markdown, html_fragments, rich=True)
+    clean_markdown = markdown
+    for token, fragment in html_fragments.items():
+        if fragment == _IMAGE_MARKER:
+            clean_markdown = clean_markdown.replace(token, "")
+    rich_html = _markdown_html(clean_markdown, html_fragments, rich=True)
     rich_blocks = _markdown_blocks(markdown, rich_fragments)
-    fallback_html = _markdown_html(markdown, html_fragments, rich=False)
+    media_index = next((
+        index for index, block in enumerate(rich_blocks)
+        if block.get("type") == "paragraph"
+        and block.get("text") == _IMAGE_MARKER
+    ), None)
+    if media_index is not None:
+        rich_blocks.pop(media_index)
+    fallback_html = _markdown_html(
+        clean_markdown, html_fragments, rich=False
+    )
     if not fallback_html.strip():
         raise ValueError("Play template rendered an empty caption")
     if _caption_length(fallback_html) > _CAPTION_LIMIT:
         raise ValueError("Play template exceeds Telegram's caption limit")
-    return RenderedPlayMessage(rich_html, rich_blocks, fallback_html)
+    return RenderedPlayMessage(
+        rich_html, rich_blocks, fallback_html,
+        media_index=media_index,
+    )
 
 
 def render_play_message(
@@ -636,4 +656,5 @@ def render_play_message(
             rendered.rich_blocks,
             rendered.fallback_html,
             used_default=True,
+            media_index=rendered.media_index,
         )

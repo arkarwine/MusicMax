@@ -190,6 +190,8 @@ class PlaybackButtonConfigTests(unittest.TestCase):
     def test_play_message_template_rejects_invalid_input(self):
         invalid = (
             "{unknown}",
+            "Before {image}",
+            "{image}\n{image}",
             "{title!r}",
             "{title:>10}",
             "{title",

@@ -117,6 +117,8 @@ async def _detail(theme_id: str) -> tuple[str, types.InlineKeyboardMarkup]:
         + f"<tr><td>Version</td><td>{escape(theme.version)}</td></tr>"
         + f"<tr><td>Config</td><td>{len(resolved.config)} values</td></tr>"
         + f"<tr><td>Locale overrides</td><td>{sum(map(len, resolved.locales.values()))}</td></tr>"
+        + f"<tr><td>Emoji mode</td><td>{escape(resolved.ui.get('emojis', {}).get('mode', 'custom').title())}</td></tr>"
+        + f"<tr><td>Emoji tokens</td><td>{len(resolved.ui.get('emojis', {}).get('registry', {}))}</td></tr>"
         + "</table>"
         + f"<blockquote>{escape(theme.description)}</blockquote>"
         + f"<code>{escape(theme.id)}</code> · {escape(theme.author)}"
@@ -166,6 +168,26 @@ async def _activation_preview(
         for key in themes.config.RUNTIME_FIELDS
     )
     ui_changes = int(current["ui"] != target["ui"])
+    current_emojis = current["ui"].get("emojis", {})
+    target_emojis = target["ui"].get("emojis", {})
+    token_names = set(current_emojis.get("registry", {})) | set(
+        target_emojis.get("registry", {})
+    )
+    emoji_changes = int(
+        current_emojis.get("mode") != target_emojis.get("mode")
+    ) + sum(
+        current_emojis.get("registry", {}).get(name)
+        != target_emojis.get("registry", {}).get(name)
+        for name in token_names
+    )
+    placement_groups = set(current_emojis.get("placements", {})) | set(
+        target_emojis.get("placements", {})
+    )
+    emoji_changes += sum(
+        current_emojis.get("placements", {}).get(group)
+        != target_emojis.get("placements", {}).get(group)
+        for group in placement_groups
+    )
     locale_changes = sum(
         current["locales"].get(code, {}) != target["locales"].get(code, {})
         for code in set(current["locales"]) | set(target["locales"])
@@ -178,6 +200,7 @@ async def _activation_preview(
         + "<tr><th>Section</th><th>Changes</th></tr>"
         + f"<tr><td>Configuration</td><td>{config_changes}</td></tr>"
         + f"<tr><td>Presentation</td><td>{ui_changes}</td></tr>"
+        + f"<tr><td>Emoji</td><td>{emoji_changes}</td></tr>"
         + f"<tr><td>Locales</td><td>{locale_changes}</td></tr>"
         + "</table>"
     )

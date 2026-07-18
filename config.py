@@ -13,7 +13,8 @@ class Config:
     PLAY_CONTROL_NAMES = ("loop", "stop", "pause", "skip", "replay")
     DEFAULT_PLAY_CONTROLS_LAYOUT = ",".join(PLAY_CONTROL_NAMES)
     PLAY_TEMPLATE_FIELDS = frozenset({
-        "title", "title_link", "duration", "requester", "source_url",
+        "image", "title", "title_link", "duration", "requester",
+        "source_url",
     })
     MAX_PLAY_TEMPLATE_LENGTH = 900
 
@@ -192,6 +193,18 @@ class Config:
                 raise ValueError(
                     "Play placeholders do not support formats or conversions"
                 )
+        image_count = sum(
+            field == "image" for _, field, _, _ in fields
+            if field is not None
+        )
+        if image_count > 1:
+            raise ValueError("Play template can contain {image} only once")
+        if image_count and not re.search(
+            r"(?m)^\s*\{image\}\s*$", value
+        ):
+            raise ValueError(
+                "The {image} placeholder must be on its own line"
+            )
         fence = chr(96) * 3
         if value.count(fence) % 2:
             raise ValueError("Play template has an unmatched code fence")

@@ -203,6 +203,7 @@ _THEME_UI = {
     },
     "surfaces": {"play": {"heading_alignment": "left"}},
     "keyboards": {},
+    "emojis": {"mode": "custom", "registry": {}, "placements": {}},
 }
 
 _LOCALE_SURFACES = {
@@ -232,6 +233,69 @@ _LOCALE_SURFACES = {
 def set_theme_ui(value: dict) -> None:
     global _THEME_UI
     _THEME_UI = copy.deepcopy(value)
+    try:
+        from anony.core.custom_emoji import set_themed_custom_emoji_ids
+
+        registry = _THEME_UI.get("emojis", {}).get("registry", {})
+        set_themed_custom_emoji_ids({
+            str(token.get("custom_emoji_id"))
+            for token in registry.values()
+            if token.get("custom_emoji_id")
+        })
+    except (ImportError, SystemExit):
+        pass
+
+
+def has_themed_emoji_placement(group: str, placement: str) -> bool:
+    return placement in (
+        _THEME_UI.get("emojis", {}).get("placements", {}).get(group, {})
+    )
+
+
+def themed_emoji_token(token_name: str) -> str:
+    emojis = _THEME_UI.get("emojis", {})
+    mode = emojis.get("mode", "custom")
+    if mode == "none":
+        return ""
+    token = emojis.get("registry", {}).get(token_name, {})
+    if not token or token.get("hidden"):
+        return ""
+    native = str(token.get("native", ""))
+    if mode == "native":
+        return native
+    custom_id = token.get("custom_emoji_id")
+    if not custom_id:
+        return native
+    try:
+        from anony.core.custom_emoji import custom_emoji_supported
+
+        if not custom_emoji_supported():
+            return ""
+    except (ImportError, SystemExit):
+        return ""
+    return f'<tg-emoji emoji-id="{custom_id}">{native}</tg-emoji>'
+
+
+def themed_emoji(group: str, placement: str) -> str:
+    """Resolve one safe semantic emoji placement for the active theme."""
+    emojis = _THEME_UI.get("emojis", {})
+    token_name = emojis.get("placements", {}).get(group, {}).get(placement)
+    if not token_name:
+        return ""
+    return themed_emoji_token(token_name)
+
+
+def themed_localized_emoji(locale_key: str | None) -> str:
+    return themed_emoji("messages", locale_key or "")
+
+
+def themed_button_emoji(action: str | None) -> str:
+    return themed_emoji("buttons", action or "")
+
+
+def themed_rank(index: int) -> str:
+    return themed_emoji("ranks", str(index)) or str(index)
+
 
 
 def get_theme_ui() -> dict:
@@ -298,6 +362,13 @@ def unicode_heading(value: str) -> str:
 
 
 def heading_icon(title: str, surface: str | None = None) -> str:
+    heading_placements = (
+        _THEME_UI.get("emojis", {}).get("placements", {}).get("headings", {})
+    )
+    themed = themed_emoji("headings", surface or "")
+    if themed or surface in heading_placements:
+        return themed
+
     options = _surface_options(surface)
     if "icon" in options:
         return options["icon"]
@@ -967,7 +1038,7 @@ def bot_api_dict(value):
 class RichMedia:
     media: object
     kind: str = "photo"
-    placement: str = "before"
+    placement: str | int = "before"
     layout: str | None = None
 
 
@@ -991,6 +1062,12 @@ class RichMessageService:
                 timeout=aiohttp.ClientTimeout(total=30)
             )
         return self.session
+
+    @staticmethod
+    def _media_block_index(placement: str | int, length: int) -> int:
+        if isinstance(placement, int):
+            return max(0, min(placement, length))
+        return 1 if placement == "after_first_block" else 0
 
     @staticmethod
     def _source(media: object) -> object:
@@ -1074,7 +1151,9 @@ class RichMessageService:
                 )
 
         if "blocks" in result:
-            index = 1 if media.placement == "after_first_block" else 0
+            index = self._media_block_index(
+                media.placement, len(result["blocks"])
+            )
             result["blocks"].insert(index, {
                 "type": "slideshow",
                 "blocks": blocks,
@@ -1132,7 +1211,9 @@ class RichMessageService:
         input_media = {"type": media.kind, "media": attachment}
         if "blocks" in result:
             field = media.kind
-            index = 1 if media.placement == "after_first_block" else 0
+            index = self._media_block_index(
+                media.placement, len(result["blocks"])
+            )
             result["blocks"].insert(index, {
                 "type": media.kind,
                 field: input_media,

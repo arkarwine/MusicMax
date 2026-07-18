@@ -16,6 +16,7 @@ from pytgcalls.pytgcalls_session import PyTgCallsSession
 
 from anony import (app, config, db, lang, logger,
                    queue, thumb, userbot, yt)
+from anony.core.audio import build_ffmpeg_parameters
 from anony.helpers import Media, Track, buttons
 from anony.core.play_message import (
     render_play_message,
@@ -92,17 +93,19 @@ class TgCall(PyTgCalls):
         logger.info("Assistant voice calls stopped.")
 
     @staticmethod
-    def _play_rich_media(override, artwork) -> RichMedia | None:
+    def _play_rich_media(
+        override, artwork, placement: str | int = "before"
+    ) -> RichMedia | None:
         sources = select_play_media(override, artwork)
         if len(sources) == 2:
             return RichMedia(
                 list(sources),
                 "photo",
-                "after_first_block",
+                placement,
                 "slideshow",
             )
         return (
-            RichMedia(sources[0], "photo", "after_first_block")
+            RichMedia(sources[0], "photo", placement)
             if sources else None
         )
 
@@ -213,7 +216,12 @@ class TgCall(PyTgCalls):
                     "Could not cache PLAY_IMAGE; using its remote URL."
                 )
                 override = override_url
-        rich_media = self._play_rich_media(override, artwork)
+        rich_media = self._play_rich_media(
+            override,
+            artwork,
+            rendered.media_index
+            if rendered.media_index is not None else "before",
+        )
         sent = await app.rich_messages.edit(
             chat_id,
             message.id,
@@ -265,6 +273,7 @@ class TgCall(PyTgCalls):
             await self.play_next(chat_id)
             return False
 
+        audio_mode = await db.get_audio_mode(chat_id)
         stream = types.MediaStream(
             media_path=media.file_path,
             audio_parameters=types.AudioQuality.HIGH,
@@ -275,7 +284,7 @@ class TgCall(PyTgCalls):
                 if media.video
                 else types.MediaStream.Flags.IGNORE
             ),
-            ffmpeg_parameters=f"-ss {seek_time}" if seek_time > 1 else None,
+            ffmpeg_parameters=build_ffmpeg_parameters(seek_time, audio_mode),
         )
         try:
             if not await db.get_call(chat_id):

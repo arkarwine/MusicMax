@@ -1,0 +1,524 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "theme.schema.json",
+  "title": "AnonXMusic theme",
+  "description": "Portable, data-only AnonXMusic theme manifest schema version 2.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema",
+    "schema_version",
+    "id",
+    "name",
+    "description",
+    "author",
+    "version",
+    "config",
+    "ui",
+    "locales"
+  ],
+  "properties": {
+    "$schema": {
+      "const": "./theme.schema.json"
+    },
+    "schema_version": {
+      "const": 2
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{0,31}$"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 300
+    },
+    "author": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "version": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 32
+    },
+    "config": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "duration_limit": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "queue_limit": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "playlist_limit": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "support_channel": {
+          "type": "string"
+        },
+        "support_chat": {
+          "type": "string"
+        },
+        "auto_leave": {
+          "type": "boolean"
+        },
+        "auto_end": {
+          "type": "boolean"
+        },
+        "thumb_gen": {
+          "type": "boolean"
+        },
+        "video_play": {
+          "type": "boolean"
+        },
+        "play_button_text": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "play_button_url": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "play_image": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "play_controls_layout": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "enum": [
+                "loop",
+                "stop",
+                "pause",
+                "skip",
+                "replay"
+              ]
+            }
+          }
+        },
+        "play_message_template_en": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "play_message_template_my": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "lang_code": {
+          "enum": [
+            "en",
+            "my"
+          ]
+        },
+        "default_thumb": {
+          "type": "string"
+        },
+        "ping_img": {
+          "type": "string"
+        },
+        "start_img": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "ui": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "heading_font": {
+          "enum": [
+            "plain",
+            "small_caps"
+          ]
+        },
+        "icons": {
+          "type": "boolean"
+        },
+        "heading_alignment": {
+          "enum": [
+            "left",
+            "center"
+          ]
+        },
+        "separators": {
+          "type": "boolean"
+        },
+        "media_placement": {
+          "enum": [
+            "automatic",
+            "before",
+            "after_heading"
+          ]
+        },
+        "tables": {
+          "$ref": "#/$defs/table"
+        },
+        "surfaces": {
+          "type": "object",
+          "propertyNames": {
+            "enum": [
+              "start",
+              "help",
+              "language",
+              "play",
+              "queue",
+              "setup",
+              "settings",
+              "stats",
+              "status",
+              "trending",
+              "sessions",
+              "session",
+              "broadcast",
+              "active_streams",
+              "access",
+              "logs",
+              "result",
+              "error",
+              "runtime_config"
+            ]
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/surface"
+          }
+        },
+        "keyboards": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "start_private": {
+              "$ref": "#/$defs/keyboard"
+            },
+            "help": {
+              "$ref": "#/$defs/keyboard"
+            }
+          }
+        },
+        "emojis": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "mode": {
+              "enum": [
+                "native",
+                "custom",
+                "none"
+              ]
+            },
+            "registry": {
+              "type": "object",
+              "maxProperties": 128,
+              "propertyNames": {
+                "pattern": "^[a-z][a-z0-9_.-]{0,47}$"
+              },
+              "additionalProperties": {
+                "$ref": "#/$defs/emojiToken"
+              }
+            },
+            "placements": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "headings": {
+                  "type": "object",
+                  "propertyNames": {
+                    "enum": [
+                      "start",
+                      "help",
+                      "language",
+                      "play",
+                      "queue",
+                      "setup",
+                      "settings",
+                      "stats",
+                      "status",
+                      "trending",
+                      "sessions",
+                      "session",
+                      "broadcast",
+                      "active_streams",
+                      "access",
+                      "logs",
+                      "result",
+                      "error",
+                      "runtime_config"
+                    ]
+                  },
+                  "additionalProperties": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^[a-z][a-z0-9_.-]{0,47}$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "messages": {
+                  "type": "object",
+                  "propertyNames": {
+                    "enum": [
+                      "loop_count",
+                      "loop_forever",
+                      "play_paused",
+                      "play_resumed",
+                      "play_skipped",
+                      "play_stopped"
+                    ]
+                  },
+                  "additionalProperties": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^[a-z][a-z0-9_.-]{0,47}$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "buttons": {
+                  "type": "object",
+                  "propertyNames": {
+                    "enum": [
+                      "start.add",
+                      "start.support",
+                      "start.channel",
+                      "start.owner",
+                      "help.admins",
+                      "help.auth",
+                      "help.blist",
+                      "help.lang",
+                      "help.ping",
+                      "help.play",
+                      "help.queue",
+                      "help.stats",
+                      "help.sudo",
+                      "control.loop",
+                      "control.stop",
+                      "control.pause",
+                      "control.resume",
+                      "control.skip",
+                      "control.replay",
+                      "stats.refresh",
+                      "settings.play_mode",
+                      "settings.playback",
+                      "settings.audio_mode",
+                      "settings.command_delete",
+                      "settings.cleanup",
+                      "settings.language",
+                      "settings.open"
+                    ]
+                  },
+                  "additionalProperties": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^[a-z][a-z0-9_.-]{0,47}$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "ranks": {
+                  "type": "object",
+                  "propertyNames": {
+                    "enum": [
+                      "1",
+                      "2",
+                      "3",
+                      "4",
+                      "5",
+                      "6",
+                      "7",
+                      "8",
+                      "9"
+                    ]
+                  },
+                  "additionalProperties": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^[a-z][a-z0-9_.-]{0,47}$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "locales": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "en": {
+          "$ref": "#/$defs/locale"
+        },
+        "my": {
+          "$ref": "#/$defs/locale"
+        }
+      }
+    }
+  },
+  "$defs": {
+    "table": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "bordered": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "striped": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "expandable": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "header_alignment": {
+          "enum": [
+            "left",
+            "center",
+            "right",
+            null
+          ]
+        },
+        "value_alignment": {
+          "enum": [
+            "left",
+            "center",
+            "right",
+            null
+          ]
+        }
+      }
+    },
+    "surface": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "heading_level": {
+          "enum": [
+            1,
+            2,
+            3
+          ]
+        },
+        "heading_alignment": {
+          "enum": [
+            "left",
+            "center"
+          ]
+        },
+        "icon": {
+          "type": "string",
+          "maxLength": 8
+        },
+        "tables": {
+          "$ref": "#/$defs/table"
+        },
+        "separators": {
+          "type": "boolean"
+        },
+        "media_placement": {
+          "enum": [
+            "automatic",
+            "before",
+            "after_heading"
+          ]
+        }
+      }
+    },
+    "keyboard": {
+      "type": "array",
+      "items": {
+        "type": "array",
+        "minItems": 1,
+        "items": {
+          "type": "string"
+        }
+      }
+    },
+    "emojiToken": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "native"
+      ],
+      "properties": {
+        "native": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 16
+        },
+        "custom_emoji_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[0-9]{1,32}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "hidden": {
+          "type": "boolean"
+        }
+      }
+    },
+    "locale": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string",
+        "maxLength": 4096
+      }
+    }
+  }
+}

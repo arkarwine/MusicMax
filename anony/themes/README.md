@@ -10,7 +10,8 @@ import, export, rename, or delete themes. Built-in themes are read-only.
 
 ```json
 {
-  "schema_version": 1,
+  "$schema": "./theme.schema.json",
+  "schema_version": 2,
   "id": "midnight",
   "name": "Midnight",
   "description": "A compact dark presentation.",
@@ -24,6 +25,13 @@ import, export, rename, or delete themes. Built-in themes are read-only.
 
 Missing values inherit application/environment defaults. They never inherit
 from the previously active theme.
+
+`$schema` enables validation and completion in JSON-aware editors. It is a
+portable reference relative to the theme document; `schema_version` remains
+the runtime migration and compatibility version. New schema-2 themes should
+include both fields. Legacy schema-1 themes remain importable without the
+reference.
+
 
 ## Configuration
 
@@ -80,6 +88,42 @@ Table values set to `null` preserve the surface formatter's native choice.
 Keyboard layouts can reorder registered actions but cannot invent callbacks or
 remove required actions.
 
+
+## Emoji registry
+
+Schema 2 themes can reuse semantic emoji tokens across registered UI slots:
+
+```json
+{
+  "ui": {
+    "emojis": {
+      "mode": "custom",
+      "registry": {
+        "music": {
+          "native": "🎵",
+          "custom_emoji_id": "5409194048667807708",
+          "hidden": false
+        }
+      },
+      "placements": {
+        "headings": {"play": "music"},
+        "buttons": {"help.play": "music"}
+      }
+    }
+  }
+}
+```
+
+`mode` is `native`, `custom`, or `none`. Every token requires one Unicode
+emoji; the decimal Telegram custom-emoji ID is optional. Placements may only
+use registered heading surfaces, localized status keys, keyboard action IDs,
+or rank positions. Use `null` to explicitly suppress an inherited or legacy
+icon at one placement.
+
+Custom emoji rejected by Telegram are removed on retry rather than replaced
+with their Unicode token. Telegram may still show the mandatory alternative
+emoji on clients that cannot display a successfully delivered custom emoji.
+Schema 1 themes remain importable and are normalized to schema 2 on export.
 ## Locale overrides
 
 `locales` may override registered English or Burmese keys:

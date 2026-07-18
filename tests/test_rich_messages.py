@@ -779,7 +779,9 @@ class LocaleHeadingTests(unittest.TestCase):
         ))
         self.assertIn("ခေါင်းစဉ်", languages["my"]["play_media"])
         self.assertTrue(
-            languages["en"]["play_message_template"].startswith("# 🎵 ")
+            languages["en"]["play_message_template"].startswith(
+                "{image}\n\n# 🎵 "
+            )
         )
         self.assertIn(
             "{title_link}", languages["en"]["play_message_template"]
@@ -938,6 +940,53 @@ class ThemeTokenTests(unittest.TestCase):
 
         self.assertEqual(rows, [["play"], ["stats"], ["queue"]])
 
+
+    def test_emoji_registry_modes_and_stable_heading_placement(self):
+        custom_module = SimpleNamespace(
+            custom_emoji_supported=lambda: True,
+            set_themed_custom_emoji_ids=lambda values: None,
+        )
+        previous_module = sys.modules.get("anony.core.custom_emoji")
+        sys.modules["anony.core.custom_emoji"] = custom_module
+        try:
+            ui = rich_messages.get_theme_ui()
+            ui["icons"] = True
+            ui["emojis"] = {
+                "mode": "custom",
+                "registry": {
+                    "music": {
+                        "native": "🎵",
+                        "custom_emoji_id": "123456",
+                        "hidden": False,
+                    }
+                },
+                "placements": {"headings": {"play": "music"}},
+            }
+            rich_messages.set_theme_ui(ui)
+            self.assertEqual(
+                rich_messages.themed_emoji("headings", "play"),
+                '<tg-emoji emoji-id="123456">🎵</tg-emoji>',
+            )
+            result = rich_messages.promote_heading(
+                "<b>Now playing</b>\n\nTrack", surface="play"
+            )
+            self.assertIn('emoji-id="123456"', result)
+
+            ui["emojis"]["mode"] = "native"
+            rich_messages.set_theme_ui(ui)
+            self.assertEqual(
+                rich_messages.themed_emoji("headings", "play"), "🎵"
+            )
+            ui["emojis"]["mode"] = "none"
+            rich_messages.set_theme_ui(ui)
+            self.assertEqual(
+                rich_messages.themed_emoji("headings", "play"), ""
+            )
+        finally:
+            if previous_module is None:
+                sys.modules.pop("anony.core.custom_emoji", None)
+            else:
+                sys.modules["anony.core.custom_emoji"] = previous_module
 
 if __name__ == "__main__":
     unittest.main()

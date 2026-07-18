@@ -25,6 +25,23 @@ _supported = False
 _detected = False
 _button_icons_supported: bool | None = None
 _button_fallbacks: dict[int, str] = {}
+_themed_custom_ids: set[str] = set()
+_BUTTON_LOCALE_ACTIONS = {
+    "start_add_button": "start.add",
+    "start_support_button": "start.support",
+    "start_channel_button": "start.channel",
+    "start_owner_button": "start.owner",
+    "control_loop": "control.loop",
+    "control_stop": "control.stop",
+    "control_pause": "control.pause",
+    "control_resume": "control.resume",
+    "control_skip": "control.skip",
+    "control_replay": "control.replay",
+    "stats_refresh": "stats.refresh",
+    **{f"help_{index}": f"help.{action}" for index, action in enumerate((
+        "admins", "auth", "blist", "lang", "ping", "play", "queue", "stats", "sudo",
+    ))},
+}
 
 
 class LocalizedText(str):
@@ -95,17 +112,45 @@ def set_custom_emoji_button_icons_supported(supported: bool) -> bool:
     return changed
 
 
+def set_themed_custom_emoji_ids(values: set[str]) -> None:
+    global _themed_custom_ids
+    _themed_custom_ids = {
+        str(value) for value in values if str(value).isdecimal()
+    }
+
+
+def _strip_replacement(match: re.Match) -> str:
+    return "" if unescape(match.group(2)).strip() in _themed_custom_ids else match.group(3)
+
+
 def strip_custom_emoji_tags(text: str) -> str:
     """Replace trusted Telegram custom-emoji HTML with its fallback content."""
     if not isinstance(text, str) or "tg-emoji" not in text.lower():
         return text
-    return _TAG_RE.sub(lambda match: match.group(3), text)
+    return _TAG_RE.sub(_strip_replacement, text)
 
 
 def render_custom_emoji_text(text: str) -> str:
-    if not isinstance(text, str) or custom_emoji_supported():
+    if not isinstance(text, str):
         return text
-    rendered = strip_custom_emoji_tags(text)
+    rendered = text if custom_emoji_supported() else strip_custom_emoji_tags(text)
+    locale_key = getattr(text, "locale_key", None)
+    if locale_key:
+        try:
+            from anony.core.rich_messages import (
+                has_themed_emoji_placement,
+                themed_localized_emoji,
+            )
+
+            prefix = themed_localized_emoji(locale_key)
+            if has_themed_emoji_placement("messages", locale_key):
+                match = _LEADING_TAG_RE.match(str(rendered))
+                if match:
+                    rendered = str(rendered)[match.end():].lstrip()
+        except ImportError:
+            prefix = ""
+        if prefix:
+            rendered = prefix + " " + str(rendered).lstrip()
     if isinstance(text, LocalizedText):
         return localized_text(rendered, text.locale_key)
     return rendered
@@ -120,15 +165,38 @@ def _button_supports_custom_icons() -> bool:
         return False
 
 
-def custom_emoji_button(text: str, **kwargs) -> types.InlineKeyboardButton:
-    """Build a button from a localized label with an optional leading tag."""
+def custom_emoji_button(
+    text: str,
+    *,
+    theme_action: str | None = None,
+    **kwargs,
+) -> types.InlineKeyboardButton:
+    """Build a button from a localized label with an optional themed icon."""
+    action = theme_action or _BUTTON_LOCALE_ACTIONS.get(
+        getattr(text, "locale_key", None)
+    )
+    themed_placement = False
+    if action:
+        from anony.core.rich_messages import (
+            has_themed_emoji_placement,
+            themed_button_emoji,
+        )
+
+        themed_placement = has_themed_emoji_placement("buttons", action)
+        if themed_placement:
+            legacy = _LEADING_TAG_RE.match(str(text))
+            if legacy:
+                text = str(text)[legacy.end():].lstrip()
+
+        themed = themed_button_emoji(action)
+        text = themed + ((" " + str(text).lstrip()) if themed else str(text))
     match = _LEADING_TAG_RE.match(text) if isinstance(text, str) else None
     if not match:
         return types.InlineKeyboardButton(
             text=render_custom_emoji_text(text), **kwargs
         )
 
-    fallback = match.group(3)
+    fallback = "" if themed_placement else match.group(3)
     remainder = text[match.end():]
     emoji_id = unescape(match.group(2)).strip()
     can_use_icon = (

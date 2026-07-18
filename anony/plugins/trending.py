@@ -8,19 +8,9 @@ from html import escape
 from pyrogram import errors, filters, types
 
 from anony import app, db, lang, logger
-from anony.core.custom_emoji import localized_text, render_custom_emoji_text
+from anony.core.custom_emoji import localized_text
+from anony.core.rich_messages import themed_rank
 
-_RANKS = (
-    '<tg-emoji emoji-id="5408894951440279259">1️⃣</tg-emoji>',
-    '<tg-emoji emoji-id="5411585799990830248">2️⃣</tg-emoji>',
-    '<tg-emoji emoji-id="5409189019261103031">3️⃣</tg-emoji>',
-    '<tg-emoji emoji-id="5411500398861118321">4️⃣</tg-emoji>',
-    '<tg-emoji emoji-id="5409338071806146386">5️⃣</tg-emoji>',
-    '<tg-emoji emoji-id="5409194048667807708">6️⃣</tg-emoji>',
-    '<tg-emoji emoji-id="5411284026998681990">7️⃣</tg-emoji>',
-    '<tg-emoji emoji-id="5411120178291311191">8️⃣</tg-emoji>',
-    '<tg-emoji emoji-id="5411457934519461707">9️⃣</tg-emoji>',
-)
 
 
 async def _trending_text(_lang: dict) -> str:
@@ -36,7 +26,7 @@ async def _trending_text(_lang: dict) -> str:
             title = f'<a href="{escape(url, quote=True)}">{title}</a>'
         rows.append(
             _lang["trending_item"].format(
-                render_custom_emoji_text(_RANKS[index - 1]),
+                themed_rank(index),
                 title,
                 track["plays"],
             )

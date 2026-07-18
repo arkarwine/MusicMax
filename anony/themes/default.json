@@ -1,5 +1,6 @@
 {
-  "schema_version": 1,
+  "$schema": "./theme.schema.json",
+  "schema_version": 2,
   "id": "default",
   "name": "Default",
   "description": "Clean Telegram-native presentation.",
@@ -19,6 +20,42 @@
       "value_alignment": "left"
     },
     "surfaces": {},
+    "emojis": {
+      "mode": "native",
+      "registry": {
+        "repeat": {"native": "🔄", "custom_emoji_id": null},
+        "infinite": {"native": "♾️", "custom_emoji_id": null},
+        "pause": {"native": "⏸️", "custom_emoji_id": null},
+        "play": {"native": "▶️", "custom_emoji_id": null},
+        "skip": {"native": "⏭️", "custom_emoji_id": null},
+        "stop": {"native": "⏹️", "custom_emoji_id": null}
+      },
+      "placements": {
+        "messages": {
+          "loop_count": "repeat",
+          "loop_forever": "infinite",
+          "play_paused": "pause",
+          "play_resumed": "play",
+          "play_skipped": "skip",
+          "play_stopped": "stop"
+        },
+        "buttons": {
+          "start.add": null, "start.support": null,
+          "start.channel": null, "start.owner": null,
+          "help.admins": null, "help.auth": null, "help.blist": null,
+          "help.lang": null, "help.ping": null, "help.play": null,
+          "help.queue": null, "help.stats": null, "help.sudo": null,
+          "control.loop": null, "control.stop": null,
+          "control.pause": null, "control.resume": null,
+          "control.skip": null, "control.replay": null,
+          "stats.refresh": null,
+          "settings.play_mode": null, "settings.playback": null,
+          "settings.command_delete": null, "settings.cleanup": null,
+          "settings.audio_mode": null,
+          "settings.language": null, "settings.open": null
+        }
+      }
+    },
     "keyboards": {}
   },
   "locales": {}
