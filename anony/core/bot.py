@@ -303,7 +303,11 @@ class Bot(pyrogram.Client):
             args[1] = strip_custom_emoji_tags(args[1])
         elif is_localized_text(kwargs.get("text")):
             kwargs["text"] = strip_custom_emoji_tags(kwargs["text"])
-        return await super().answer_callback_query(*args, **kwargs)
+        try:
+            return await super().answer_callback_query(*args, **kwargs)
+        except pyrogram.errors.QueryIdInvalid:
+            logger.debug("Ignored expired callback query answer.")
+            return False
 
     async def _send_media_with_caption(self, method, args, kwargs):
         return await self._custom_emoji_call(
