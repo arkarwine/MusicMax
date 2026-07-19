@@ -8,53 +8,77 @@ import signal
 import importlib
 from contextlib import suppress
 
-from anony import (anon, app, config, db, logger, stop, tasks,
-                   themes, thumb, userbot, yt)
+from anony import (anon, app, config, db, health, logger, stop,
+                   supervisor, themes, thumb, userbot, yt)
 from anony.core.recovery import recovery
 from anony.plugins import all_modules
 
 
-async def idle():
+async def idle() -> str:
     loop = asyncio.get_running_loop()
     stop_event = asyncio.Event()
+    reason = {"value": "requested"}
 
-    for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGABRT):
+    def request_stop(sig) -> None:
+        reason["value"] = f"signal:{sig.name}"
+        logger.warning("Shutdown requested by %s", sig.name)
+        stop_event.set()
+
+    for sig in (signal.SIGINT, signal.SIGTERM):
         with suppress(NotImplementedError):
-            loop.add_signal_handler(sig, stop_event.set)
+            loop.add_signal_handler(sig, request_stop, sig)
     await stop_event.wait()
+    return reason["value"]
 
 
 async def main():
-    await db.connect()
-    await themes.boot()
-    app.logger = await db.get_log_chat()
-    await app.boot()
-    await userbot.boot()
-    await anon.boot()
-    await thumb.start()
+    from anony.core.supervisor import install_exception_handlers
 
-    for module in all_modules:
-        importlib.import_module(f"anony.plugins.{module}")
-    logger.info(f"Loaded {len(all_modules)} modules.")
+    install_exception_handlers(asyncio.get_running_loop(), logger)
+    try:
+        await db.connect()
+        await health.begin_run()
+        await themes.boot()
+        app.logger = await db.get_log_chat()
+        await app.boot()
+        await userbot.boot()
+        await anon.boot()
+        await thumb.start()
 
-    if config.COOKIES_URL:
-        await yt.save_cookies(config.COOKIES_URL)
+        for module in all_modules:
+            importlib.import_module(f"anony.plugins.{module}")
+        logger.info(f"Loaded {len(all_modules)} modules.")
 
-    sudoers = await db.get_sudoers()
-    app.sudoers.update(sudoers)
-    app.bl_users.update(await db.get_blacklisted())
-    logger.info(f"Loaded {len(app.sudoers)} sudo users.")
-    await app.register_sudo_commands(app.sudoers)
+        if config.COOKIES_URL:
+            await yt.save_cookies(config.COOKIES_URL)
 
-    await recovery.restore_queues()
-    tasks.append(asyncio.create_task(recovery.run_startup()))
+        sudoers = await db.get_sudoers()
+        app.sudoers.update(sudoers)
+        app.bl_users.update(await db.get_blacklisted())
+        logger.info(f"Loaded {len(app.sudoers)} sudo users.")
+        await app.register_sudo_commands(app.sudoers)
 
-    await idle()
-    await stop()
+        await recovery.restore_queues()
+        supervisor.spawn_once("playback-recovery", recovery.run_startup())
+        health.start()
+
+        reason = await idle()
+    except asyncio.CancelledError:
+        await stop("main task cancelled")
+        raise
+    except BaseException:
+        logger.exception("Bot startup or main runtime failed")
+        await stop("startup/runtime failure")
+        raise
+    else:
+        await stop(reason)
 
 
 if __name__ == "__main__":
     try:
-        asyncio.get_event_loop().run_until_complete(main())
+        asyncio.run(main())
     except KeyboardInterrupt:
         pass
+    except BaseException:
+        logger.critical("Bot process terminated by an unhandled failure", exc_info=True)
+        raise

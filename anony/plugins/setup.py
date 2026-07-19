@@ -14,7 +14,7 @@ from pathlib import Path
 import psutil
 from pyrogram import enums, filters, types
 
-from anony import anon, app, boot, db, lang, userbot, yt
+from anony import anon, app, boot, db, health, lang, userbot, yt
 from anony.helpers import admin_check, buttons, feedback
 
 
@@ -118,6 +118,15 @@ async def _status(_, m: types.Message):
     except Exception:
         logging_enabled = False
 
+    snapshot = health.snapshot()
+    alert_enabled = await db.health_alerts_enabled(m.from_user.id)
+    heartbeat_age = max(int(time.time()) - snapshot["last_heartbeat"], 0)
+    failed_workers = snapshot["workers"]["failed"]
+    reliability = "Healthy" if snapshot["healthy"] else "Needs attention"
+    worker_summary = (
+        f'{snapshot["workers"]["running"]} running'
+    )
+
     database_ready = db.connection is not None
     assistants = len(userbot.clients)
     bot_ready = bool(getattr(app, "is_connected", False))
@@ -156,6 +165,14 @@ async def _status(_, m: types.Message):
         state_icon=state_icon,
         state=m.lang[state_key],
         updated=datetime.now(timezone.utc).strftime("%d %b · %H:%M"),
+        supervisor=reliability,
+        workers=worker_summary,
+        failed_workers=", ".join(failed_workers) if failed_workers else "none",
+        heartbeat=f"{heartbeat_age}s ago",
+        previous_exit=snapshot["previous_result"],
+        health_alerts=m.lang[
+            "health_alerts_on" if alert_enabled else "health_alerts_off"
+        ],
     )
     await m.reply_text(text, disable_notification=True)
 

@@ -6,7 +6,6 @@
 import os
 import sys
 import shutil
-import asyncio
 from html import escape
 
 from pyrogram import enums, filters, types
@@ -115,8 +114,7 @@ async def _restart(_, m: types.Message):
         shutil.rmtree(directory, ignore_errors=True)
 
     await sent.edit_text(m.lang["restarted"])
-    task = asyncio.create_task(stop())
-    await task
+    await stop("sudo restart")
 
     try:
         os.remove("log.txt")

@@ -3,13 +3,12 @@
 # This file is part of AnonXMusic
 
 
-import asyncio
 from pathlib import Path
 from html import escape
 
 from pyrogram import filters, types
 
-from anony import anon, app, config, db, lang, queue, tg, thumb, yt
+from anony import anon, app, config, db, lang, queue, supervisor, tg, thumb, yt
 from anony.helpers import Track, buttons, feedback, utils
 from anony.helpers._play import checkUB
 
@@ -140,7 +139,7 @@ async def play_hndlr(
             return
 
     artwork_task = (
-        asyncio.create_task(thumb.generate(file))
+        supervisor.spawn_once(f"artwork:{m.chat.id}", thumb.generate(file))
         if config.THUMB_GEN and isinstance(file, Track)
         else None
     )

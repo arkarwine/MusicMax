@@ -14,8 +14,8 @@ from pyrogram.types import InputMediaPhoto, Message
 from pytgcalls import PyTgCalls, exceptions, types
 from pytgcalls.pytgcalls_session import PyTgCallsSession
 
-from anony import (app, config, db, lang, logger,
-                   queue, thumb, userbot, yt)
+from anony import (app, config, db, lang, logger, queue, supervisor,
+                   thumb, userbot, yt)
 from anony.core.audio import build_ffmpeg_parameters
 from anony.helpers import Media, Track, buttons
 from anony.core.play_message import (
@@ -262,7 +262,9 @@ class TgCall(PyTgCalls):
         if show_card and config.THUMB_GEN:
             if isinstance(media, Track):
                 if artwork_task is None:
-                    artwork_task = asyncio.create_task(thumb.generate(media))
+                    artwork_task = supervisor.spawn_once(
+                        f"artwork:{chat_id}", thumb.generate(media)
+                    )
             else:
                 _thumb = config.DEFAULT_THUMB
 

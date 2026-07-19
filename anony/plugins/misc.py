@@ -8,7 +8,7 @@ import asyncio
 
 from pyrogram import enums, errors, filters, types
 
-from anony import anon, app, config, db, lang, logger, queue, tasks, userbot, yt
+from anony import anon, app, config, db, lang, logger, queue, supervisor, userbot, yt
 from anony.helpers import buttons
 
 
@@ -36,7 +36,9 @@ async def auto_leave():
             except asyncio.CancelledError:
                 raise
             except Exception:
-                continue
+                supervisor.report_exception(
+                    "auto-leave-scan", "Auto-leave scan failed", interval=3600
+                )
 
 
 async def track_time():
@@ -99,7 +101,11 @@ async def update_timer(length=10, sleep=12):
             except asyncio.CancelledError:
                 raise
             except Exception:
-                pass
+                supervisor.report_exception(
+                    f"playback-timer:{chat_id}",
+                    "Playback timer update failed for chat %s",
+                    chat_id,
+                )
 
 
 async def vc_watcher(sleep=15):
@@ -128,7 +134,11 @@ async def vc_watcher(sleep=15):
             except errors.MessageIdInvalid:
                 await anon.stop(chat_id)
             except Exception:
-                logger.exception("Auto-end check failed for chat %s", chat_id)
+                supervisor.report_exception(
+                    f"auto-end:{chat_id}",
+                    "Auto-end check failed for chat %s",
+                    chat_id,
+                )
 
 
 async def backup_database():
@@ -145,9 +155,9 @@ async def backup_database():
 
 
 if config.AUTO_END:
-    tasks.append(asyncio.create_task(vc_watcher()))
+    supervisor.spawn("voice-chat-watcher", vc_watcher, restart=True)
 if config.AUTO_LEAVE:
-    tasks.append(asyncio.create_task(auto_leave()))
-tasks.append(asyncio.create_task(track_time()))
-tasks.append(asyncio.create_task(update_timer()))
-tasks.append(asyncio.create_task(backup_database()))
+    supervisor.spawn("auto-leave", auto_leave, restart=True)
+supervisor.spawn("playback-clock", track_time, restart=True)
+supervisor.spawn("playback-card-timer", update_timer, restart=True)
+supervisor.spawn("database-backup", backup_database, restart=True)

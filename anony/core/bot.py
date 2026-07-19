@@ -527,6 +527,7 @@ class Bot(pyrogram.Client):
             ("restartsession", "🔄 Reconnect an assistant"),
             ("removesession", "🗑 Remove an assistant"),
             ("status", "📊 Show advanced status"),
+            ("healthalerts", "🔔 Manage private health alerts"),
             ("logs", "📄 Get the application log"),
             ("config", "⚙️ Open runtime configuration"),
             ("setconfig", "✏️ Change a safe runtime setting"),

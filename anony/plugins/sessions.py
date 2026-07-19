@@ -10,7 +10,7 @@ import re
 
 from pyrogram import Client, enums, errors, filters, types
 
-from anony import app, config, db, lang, logger, userbot
+from anony import app, config, db, lang, logger, supervisor, userbot
 from anony.helpers import buttons, feedback, navigate
 from anony.ui import callbacks
 from anony.ui.keyboards import (
@@ -281,8 +281,8 @@ async def _send_add_prompt(
     )
     flow = AddFlow(prompt.id, page, stage)
     _add_flows[user_id] = flow
-    flow.timeout_task = asyncio.create_task(
-        _expire_add_flow(user_id, chat_id)
+    flow.timeout_task = supervisor.spawn_once(
+        f"session-prompt:{user_id}", _expire_add_flow(user_id, chat_id)
     )
 
 

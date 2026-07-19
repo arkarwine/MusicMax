@@ -5,6 +5,7 @@
 
 import time
 import asyncio
+import faulthandler
 import logging
 import os
 from logging.handlers import RotatingFileHandler
@@ -19,7 +20,9 @@ logging.basicConfig(
     format="[%(asctime)s - %(levelname)s] - %(name)s: %(message)s",
     datefmt="%d-%b-%y %H:%M:%S",
     handlers=[
-        RotatingFileHandler("log.txt", maxBytes=10485760, backupCount=5),
+        RotatingFileHandler(
+            "log.txt", maxBytes=10485760, backupCount=5, encoding="utf-8"
+        ),
         logging.StreamHandler(),
     ],
     level=logging.INFO,
@@ -30,6 +33,10 @@ logging.getLogger("aiosqlite").setLevel(logging.ERROR)
 logging.getLogger("pyrogram").setLevel(logging.ERROR)
 logging.getLogger("pytgcalls").setLevel(logging.ERROR)
 logger = logging.getLogger(__name__)
+try:
+    faulthandler.enable(all_threads=True)
+except Exception:
+    logger.warning("Could not enable fatal-error diagnostics", exc_info=True)
 
 
 __version__ = "3.0.3"
@@ -38,7 +45,9 @@ from config import Config  # noqa: E402
 
 config = Config()
 config.check()
-tasks = []
+tasks = []  # Kept for compatibility with third-party plugins.
+from anony.core.supervisor import RuntimeSupervisor  # noqa: E402
+supervisor = RuntimeSupervisor(logger)
 boot = time.time()
 
 from anony.core.bot import Bot  # noqa: E402
@@ -71,22 +80,40 @@ thumb = Thumbnail()
 from anony.core.calls import TgCall  # noqa: E402
 anon = TgCall()
 
+from anony.core.health import HealthMonitor  # noqa: E402
+health = HealthMonitor(
+    app=app,
+    db=db,
+    userbot=userbot,
+    calls=anon,
+    language=lang,
+    supervisor=supervisor,
+    logger=logger,
+)
+_stopping = False
 
-async def stop() -> None:
-    logger.info("Stopping...")
-    for task in tasks:
+
+async def stop(reason: str = "requested") -> None:
+    global _stopping
+    if _stopping:
+        return
+    _stopping = True
+    logger.info("Stopping... reason=%s", reason)
+
+    await supervisor.close()
+    for task in list(tasks):
         task.cancel()
-        try:
-            await task
-        except asyncio.exceptions.CancelledError:
-            pass
+    if tasks:
+        await asyncio.gather(*tasks, return_exceptions=True)
+        tasks.clear()
 
-    for chat_id in list(db.active_calls):
-        media = queue.get_current(chat_id)
-        if media:
-            await db.save_queue(chat_id, queue.get_queue(chat_id))
-            state = "playing" if await db.playing(chat_id) else "paused"
-            await db.save_playback(chat_id, state, media.time)
+    if db.connection is not None:
+        for chat_id in list(db.active_calls):
+            media = queue.get_current(chat_id)
+            if media:
+                await db.save_queue(chat_id, queue.get_queue(chat_id))
+                state = "playing" if await db.playing(chat_id) else "paused"
+                await db.save_playback(chat_id, state, media.time)
 
     async def close_component(name: str, operation, timeout: int = 10) -> None:
         try:
@@ -100,7 +127,9 @@ async def stop() -> None:
     await close_component("feedback cleanup", feedback.close())
     await close_component("bot", app.exit())
     await close_component("assistants", userbot.exit(), timeout=20)
-    await close_component("database", db.close())
+    if db.connection is not None:
+        await close_component("process history", health.finish(reason))
+        await close_component("database", db.close())
     await close_component("thumbnail downloader", thumb.close())
 
-    logger.info("Stopped.\n")
+    logger.info("Stopped. reason=%s\n", reason)

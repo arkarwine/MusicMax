@@ -10,7 +10,7 @@ from time import monotonic
 from pyrogram import enums, filters, types
 from pyrogram.errors import BadRequest
 
-from anony import app, config, lang, logger, themes
+from anony import app, config, lang, logger, supervisor, themes
 from anony.helpers import buttons, feedback
 from anony.ui import callbacks
 from anony.core.rich_messages import themed_emoji_token
@@ -795,8 +795,8 @@ async def _prompt_edit(
     )
     pending = PendingEdit(prompt.id, key, spec.category, monotonic())
     _PENDING_EDITS[user_id] = pending
-    pending.timeout_task = asyncio.create_task(
-        _expire_edit(user_id, chat_id, prompt.id)
+    pending.timeout_task = supervisor.spawn_once(
+        f"config-prompt:{user_id}", _expire_edit(user_id, chat_id, prompt.id)
     )
 
 
@@ -835,8 +835,8 @@ async def _prompt_emoji_edit(
         monotonic(),
     )
     _PENDING_EDITS[user_id] = pending
-    pending.timeout_task = asyncio.create_task(
-        _expire_edit(user_id, chat_id, prompt.id)
+    pending.timeout_task = supervisor.spawn_once(
+        f"config-prompt:{user_id}", _expire_edit(user_id, chat_id, prompt.id)
     )
 
 

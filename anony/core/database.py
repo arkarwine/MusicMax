@@ -125,6 +125,20 @@ class SQLiteDB:
                 CREATE TABLE IF NOT EXISTS sudoers (
                     user_id INTEGER PRIMARY KEY
                 );
+                CREATE TABLE IF NOT EXISTS health_alert_subscriptions (
+                    user_id INTEGER PRIMARY KEY,
+                    enabled INTEGER NOT NULL DEFAULT 1
+                        CHECK (enabled IN (0, 1))
+                );
+                CREATE TABLE IF NOT EXISTS process_runs (
+                    run_id TEXT PRIMARY KEY,
+                    started_at INTEGER NOT NULL DEFAULT (unixepoch()),
+                    heartbeat_at INTEGER NOT NULL DEFAULT (unixepoch()),
+                    stopped_at INTEGER,
+                    stop_reason TEXT
+                );
+                CREATE INDEX IF NOT EXISTS process_runs_started
+                    ON process_runs (started_at DESC);
                 CREATE TABLE IF NOT EXISTS users (
                     user_id INTEGER PRIMARY KEY
                 );
@@ -1204,11 +1218,84 @@ class SQLiteDB:
 
     async def del_sudo(self, user_id: int) -> None:
         await self.conn.execute("DELETE FROM sudoers WHERE user_id = ?", (user_id,))
+        await self.conn.execute(
+            "DELETE FROM health_alert_subscriptions WHERE user_id = ?",
+            (user_id,),
+        )
         await self.conn.commit()
 
     async def get_sudoers(self) -> list[int]:
         cursor = await self.conn.execute("SELECT user_id FROM sudoers")
         return [row[0] for row in await cursor.fetchall()]
+
+    async def set_health_alerts(self, user_id: int, enabled: bool) -> None:
+        if enabled:
+            await self.conn.execute(
+                "INSERT INTO health_alert_subscriptions (user_id, enabled) "
+                "VALUES (?, 1) ON CONFLICT(user_id) DO UPDATE SET enabled = 1",
+                (user_id,),
+            )
+        else:
+            await self.conn.execute(
+                "DELETE FROM health_alert_subscriptions WHERE user_id = ?",
+                (user_id,),
+            )
+        await self.conn.commit()
+
+    async def health_alerts_enabled(self, user_id: int) -> bool:
+        cursor = await self.conn.execute(
+            "SELECT enabled FROM health_alert_subscriptions WHERE user_id = ?",
+            (user_id,),
+        )
+        row = await cursor.fetchone()
+        return bool(row and row[0])
+
+    async def get_health_alert_subscribers(self) -> list[int]:
+        cursor = await self.conn.execute(
+            "SELECT user_id FROM health_alert_subscriptions WHERE enabled = 1"
+        )
+        return [int(row[0]) for row in await cursor.fetchall()]
+
+    async def start_process_run(self, run_id: str) -> dict | None:
+        cursor = await self.conn.execute(
+            "SELECT run_id, started_at, heartbeat_at, stopped_at, stop_reason "
+            "FROM process_runs ORDER BY started_at DESC LIMIT 1"
+        )
+        row = await cursor.fetchone()
+        previous = None
+        if row:
+            previous = {
+                "run_id": row[0],
+                "started_at": int(row[1]),
+                "heartbeat_at": int(row[2]),
+                "stopped_at": int(row[3]) if row[3] is not None else None,
+                "stop_reason": row[4],
+            }
+        await self.conn.execute(
+            "INSERT INTO process_runs (run_id) VALUES (?)", (run_id,)
+        )
+        await self.conn.commit()
+        return previous
+
+    async def heartbeat_process_run(self, run_id: str) -> None:
+        await self.conn.execute(
+            "UPDATE process_runs SET heartbeat_at = unixepoch() WHERE run_id = ?",
+            (run_id,),
+        )
+        await self.conn.commit()
+
+    async def finish_process_run(self, run_id: str, reason: str) -> None:
+        await self.conn.execute(
+            "UPDATE process_runs SET heartbeat_at = unixepoch(), "
+            "stopped_at = unixepoch(), stop_reason = ? WHERE run_id = ?",
+            (reason[:200], run_id),
+        )
+        await self.conn.commit()
+
+    async def ping(self) -> bool:
+        cursor = await self.conn.execute("SELECT 1")
+        row = await cursor.fetchone()
+        return bool(row and row[0] == 1)
 
     async def is_user(self, user_id: int) -> bool:
         return user_id in self.users

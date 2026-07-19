@@ -29,9 +29,13 @@ class Feedback:
             except (errors.MessageDeleteForbidden, errors.MessageIdInvalid):
                 pass
             except Exception:
-                pass
+                from anony import logger
 
-        task = asyncio.create_task(delete_later())
+                logger.debug("Feedback cleanup failed", exc_info=True)
+
+        from anony import supervisor
+
+        task = supervisor.spawn_once("feedback-delete", delete_later())
         self.tasks.add(task)
         task.add_done_callback(self.tasks.discard)
 
