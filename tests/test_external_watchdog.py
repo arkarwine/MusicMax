@@ -149,5 +149,65 @@ class ExternalWatchdogTests(unittest.TestCase):
         self.assertEqual(calls, [["pm2", "restart", "GPH", "--update-env"]])
 
 
+    def test_check_logging_is_periodic_by_default(self):
+        watchdog._last_check_log_at = 0
+        watchdog._last_check_state = ""
+        messages = []
+        health = {
+            "heartbeat_at": 990,
+            "last_update_at": 900,
+            "last_update_kind": "Message",
+        }
+        watchdog.write_runtime_health(self.db_path, health)
+        env = self.env()
+        env["WATCHDOG_LOG_INTERVAL_SECONDS"] = "300"
+
+        with patch.dict(watchdog.os.environ, env, clear=False), \
+             patch.object(watchdog, "log", side_effect=messages.append):
+            with patch.object(watchdog.time, "time", return_value=1_000):
+                watchdog.check_once()
+            watchdog.write_runtime_health(self.db_path, {
+                "heartbeat_at": 1090,
+                "last_update_at": 1000,
+                "last_update_kind": "Message",
+            })
+            with patch.object(watchdog.time, "time", return_value=1_100):
+                watchdog.check_once()
+            watchdog.write_runtime_health(self.db_path, {
+                "heartbeat_at": 1291,
+                "last_update_at": 1201,
+                "last_update_kind": "Message",
+            })
+            with patch.object(watchdog.time, "time", return_value=1_301):
+                watchdog.check_once()
+
+        self.assertEqual(len(messages), 2)
+        self.assertIn("state=healthy", messages[0])
+        self.assertIn("state=healthy", messages[1])
+
+    def test_check_logging_can_log_every_check(self):
+        watchdog._last_check_log_at = 0
+        watchdog._last_check_state = ""
+        messages = []
+        health = {
+            "heartbeat_at": 990,
+            "last_update_at": 900,
+            "last_update_kind": "Message",
+        }
+        watchdog.write_runtime_health(self.db_path, health)
+        env = self.env()
+        env["WATCHDOG_LOG_CHECKS"] = "true"
+
+        with patch.dict(watchdog.os.environ, env, clear=False), \
+             patch.object(watchdog, "log", side_effect=messages.append):
+            with patch.object(watchdog.time, "time", return_value=1_000):
+                watchdog.check_once()
+            with patch.object(watchdog.time, "time", return_value=1_010):
+                watchdog.check_once()
+
+        self.assertEqual(len(messages), 2)
+        self.assertTrue(all("state=healthy" in message for message in messages))
+
+
 if __name__ == "__main__":
     unittest.main()

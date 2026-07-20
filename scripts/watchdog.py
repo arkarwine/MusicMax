@@ -18,6 +18,8 @@ from pathlib import Path
 
 
 DEFAULT_DB = "data/anonxmusic.db"
+_last_check_log_at = 0
+_last_check_state = ""
 
 
 def log(message: str) -> None:
@@ -105,6 +107,30 @@ def int_value(values: dict[str, str], key: str) -> int | None:
         return int(values[key])
     except (KeyError, TypeError, ValueError):
         return None
+
+
+def should_log_check(now: int, state: str) -> bool:
+    global _last_check_log_at, _last_check_state
+    if env_bool("WATCHDOG_LOG_CHECKS", False):
+        _last_check_log_at = now
+        _last_check_state = state
+        return True
+    interval = env_int("WATCHDOG_LOG_INTERVAL_SECONDS", 300, minimum=30)
+    if state != _last_check_state or now - _last_check_log_at >= interval:
+        _last_check_log_at = now
+        _last_check_state = state
+        return True
+    return False
+
+
+def log_check(now: int, state: str, **details: object) -> None:
+    if not should_log_check(now, state):
+        return
+    parts = [f"state={state}"]
+    for key, value in details.items():
+        if value is not None:
+            parts.append(f"{key}={value}")
+    log("check " + " ".join(parts))
 
 
 def proc_cmdline(pid: int) -> str:
@@ -229,22 +255,40 @@ def check_once() -> None:
 
     values = read_runtime_health(path)
     if not values:
-        log("runtime health is unavailable; waiting for bot heartbeat")
+        log_check(now, "waiting", reason="no-runtime-health", db=path)
         return
 
     started_at = int_value(values, "started_at")
-    if started_at is not None and now - started_at < min_uptime:
+    uptime = now - started_at if started_at is not None else None
+    if started_at is not None and uptime < min_uptime:
+        log_check(
+            now,
+            "warming-up",
+            uptime=f"{uptime}s",
+            min_uptime=f"{min_uptime}s",
+        )
         return
 
     last_restart = int_value(values, "watchdog_last_restart_at")
-    if last_restart is not None and now - last_restart < cooldown:
+    cooldown_left = None
+    if last_restart is not None:
+        cooldown_left = cooldown - (now - last_restart)
+    if cooldown_left is not None and cooldown_left > 0:
+        log_check(now, "cooldown", remaining=f"{cooldown_left}s")
         return
 
     heartbeat = int_value(values, "heartbeat_at")
-    if heartbeat is not None and now - heartbeat > heartbeat_stale:
+    heartbeat_age = now - heartbeat if heartbeat is not None else None
+    if heartbeat_age is not None and heartbeat_age > heartbeat_stale:
+        log_check(
+            now,
+            "stale-heartbeat",
+            heartbeat_age=f"{heartbeat_age}s",
+            limit=f"{heartbeat_stale}s",
+        )
         restart(
             app_name,
-            f"heartbeat stale for {now - heartbeat}s",
+            f"heartbeat stale for {heartbeat_age}s",
             path,
             now,
         )
@@ -252,17 +296,35 @@ def check_once() -> None:
 
     kind = values.get("last_update_kind", "unknown")
     last_update = int_value(values, "last_update_at")
+    update_age = now - last_update if last_update is not None else None
     if (
-        last_update is not None
+        update_age is not None
         and kind != "startup"
-        and now - last_update > update_stale
+        and update_age > update_stale
     ):
+        log_check(
+            now,
+            "stale-updates",
+            update_age=f"{update_age}s",
+            limit=f"{update_stale}s",
+            last=kind,
+        )
         restart(
             app_name,
-            f"Telegram updates stale for {now - last_update}s (last={kind})",
+            f"Telegram updates stale for {update_age}s (last={kind})",
             path,
             now,
         )
+        return
+
+    log_check(
+        now,
+        "healthy",
+        heartbeat_age=f"{heartbeat_age}s" if heartbeat_age is not None else "unknown",
+        update_age=f"{update_age}s" if update_age is not None else "unknown",
+        last=kind,
+        method=os.getenv("WATCHDOG_RESTART_METHOD", "kill").strip().lower(),
+    )
 
 
 def main() -> None:
@@ -271,7 +333,10 @@ def main() -> None:
     log(
         "started "
         f"(enabled={env_bool('EXTERNAL_WATCHDOG', False)}, "
-        f"app={os.getenv('WATCHDOG_PM2_APP', 'GPH')})"
+        f"app={os.getenv('WATCHDOG_PM2_APP', 'GPH')}, "
+        f"method={os.getenv('WATCHDOG_RESTART_METHOD', 'kill')}, "
+        f"log_checks={env_bool('WATCHDOG_LOG_CHECKS', False)}, "
+        f"log_interval={env_int('WATCHDOG_LOG_INTERVAL_SECONDS', 300, minimum=30)}s)"
     )
     while True:
         try:

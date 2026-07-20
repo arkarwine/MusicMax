@@ -104,6 +104,8 @@ pm2 start /home/ubuntu/MelodyFetch/.venv/bin/python   --name melodyfetch-watchdo
 pm2 save
 ```
 
+The external watchdog logs state changes immediately and healthy summaries every `WATCHDOG_LOG_INTERVAL_SECONDS`. Set `WATCHDOG_LOG_CHECKS=true` to log every check.
+
 The external watchdog does not restart during fresh startup, recent watchdog
 restarts, missing databases, or before the bot has processed at least one real
 Telegram update. The default `kill` method targets only processes running from
