@@ -86,14 +86,14 @@ def add_sudo(db_path: Path, user_ids: list[int]) -> None:
             [(user_id,) for user_id in user_ids],
         )
     print(f"Added sudo user(s): {', '.join(map(str, user_ids))}")
-    print("Restart the bot for this to affect the running process.")
+    print("Run /reloadsudo or restart the bot for this to affect the running process.")
 
 
 def remove_sudo(db_path: Path, user_ids: list[int]) -> None:
     with _connect(db_path) as conn:
         conn.executemany("DELETE FROM sudoers WHERE user_id = ?", [(user_id,) for user_id in user_ids])
     print(f"Removed sudo user(s): {', '.join(map(str, user_ids))}")
-    print("Restart the bot for this to affect the running process.")
+    print("Run /reloadsudo or restart the bot for this to affect the running process.")
 
 
 def list_sudo(db_path: Path) -> None:

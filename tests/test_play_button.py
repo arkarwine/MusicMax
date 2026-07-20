@@ -27,6 +27,11 @@ class PlaybackButtonConfigTests(unittest.TestCase):
         )
         self.config.PLAY_MESSAGE_TEMPLATE_EN = ""
         self.config.PLAY_MESSAGE_TEMPLATE_MY = ""
+        self.config.START_BUTTONS_LAYOUT = (
+            self.config.DEFAULT_START_BUTTONS_LAYOUT
+        )
+        for attr in self.config.START_BUTTON_TEXT_FIELDS.values():
+            setattr(self.config, attr, "")
 
     def test_environment_values_are_normalized_and_safe(self):
         with patch.dict("os.environ", {
@@ -181,6 +186,61 @@ class PlaybackButtonConfigTests(unittest.TestCase):
         for value in invalid:
             with self.subTest(value=value), self.assertRaises(ValueError):
                 self.config.set_runtime("play_controls_layout", value)
+
+    def test_start_button_layout_supports_rows_and_omissions(self):
+        stored = self.config.set_runtime(
+            "start_buttons_layout", " add | help, stats | owner "
+        )
+
+        self.assertEqual(stored, "add|help,stats|owner")
+        self.assertEqual(
+            self.config.start_buttons_layout(),
+            (("add",), ("help", "stats"), ("owner",)),
+        )
+        self.assertEqual(
+            self.config.runtime_display("start_buttons_layout"),
+            "add / help · stats / owner",
+        )
+
+    def test_start_button_layout_can_hide_all_buttons(self):
+        self.config.set_runtime("start_buttons_layout", "-")
+
+        self.assertEqual(self.config.start_buttons_layout(), ())
+        self.assertEqual(
+            self.config.runtime_display("start_buttons_layout"),
+            "disabled",
+        )
+
+    def test_start_button_text_can_be_customized_and_reset(self):
+        stored = self.config.set_runtime("start_channel_text", "Cʜᴀɴɴᴇʟ")
+
+        self.assertEqual(stored, "Cʜᴀɴɴᴇʟ")
+        self.assertEqual(
+            self.config.start_button_text("channel", "Channel"),
+            "Cʜᴀɴɴᴇʟ",
+        )
+
+        self.config.set_runtime("start_channel_text", "-")
+        self.assertEqual(
+            self.config.start_button_text("channel", "Channel"),
+            "Channel",
+        )
+        self.assertEqual(
+            self.config.runtime_display("start_channel_text"),
+            "default",
+        )
+
+    def test_start_button_layout_rejects_invalid_positions(self):
+        invalid = (
+            "add,add",
+            "add,unknown",
+            "add||owner",
+            "add,,owner",
+            "",
+        )
+        for value in invalid:
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                self.config.set_runtime("start_buttons_layout", value)
 
     def test_play_message_templates_are_per_language_and_optional(self):
         template = (

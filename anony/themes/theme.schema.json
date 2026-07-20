@@ -145,6 +145,73 @@
             "string",
             "null"
           ]
+        },
+        "start_buttons_layout": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "enum": [
+                "add",
+                "help",
+                "language",
+                "stats",
+                "trending",
+                "support",
+                "channel",
+                "owner"
+              ]
+            }
+          }
+        },
+        "start_add_text": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "start_help_text": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "start_language_text": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "start_stats_text": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "start_trending_text": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "start_support_text": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "start_channel_text": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "start_owner_text": {
+          "type": [
+            "string",
+            "null"
+          ]
         }
       }
     },

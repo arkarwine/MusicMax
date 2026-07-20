@@ -370,44 +370,45 @@ class Inline:
     ) -> types.InlineKeyboardMarkup:
         rows = []
         if private:
+            add_text = config.start_button_text(
+                "add", lang["start_add_button"].format(lang["add_me"])
+            )
+            support_text = config.start_button_text(
+                "support", lang["start_support_button"].format(lang["support"])
+            )
+            channel_text = config.start_button_text(
+                "channel", lang["start_channel_button"].format(lang["channel"])
+            )
+            owner_text = config.start_button_text(
+                "owner", lang["start_owner_button"].format(lang["owner"])
+            )
             actions = {
                 "add": self.ikb(
-                    text=lang["start_add_button"].format(lang["add_me"]),
+                    text=add_text,
                     url=f"https://t.me/{app.username}?startgroup=true",
                     style=enums.ButtonStyle.DANGER,
                 ),
                 "help": self.ikb(
-                    text=lang["help"], callback_data=callbacks.help("new")
+                    text=config.start_button_text("help", lang["help"]),
+                    callback_data=callbacks.help("new"),
                 ),
                 "language": self.ikb(
-                    text=lang["language"],
+                    text=config.start_button_text("language", lang["language"]),
                     callback_data=callbacks.LANGUAGE_ROOT_NEW,
                 ),
                 "stats": self.ikb(
-                    text=lang["stats"],
+                    text=config.start_button_text("stats", lang["stats"]),
                     callback_data=callbacks.stats("view"),
                 ),
                 "trending": self.ikb(
-                    text=lang["trending"],
+                    text=config.start_button_text("trending", lang["trending"]),
                     callback_data=callbacks.trending(),
                 ),
-                "support": self.ikb(
-                    text=lang["start_support_button"].format(lang["support"]),
-                    url=config.SUPPORT_CHAT,
-                ),
-                "channel": self.ikb(
-                    text=lang["start_channel_button"].format(lang["channel"]),
-                    url=config.SUPPORT_CHANNEL,
-                ),
-                "owner": self.ikb(
-                    text=lang["start_owner_button"].format(lang["owner"]),
-                    url=app.owner_url,
-                ),
+                "support": self.ikb(text=support_text, url=config.SUPPORT_CHAT),
+                "channel": self.ikb(text=channel_text, url=config.SUPPORT_CHANNEL),
+                "owner": self.ikb(text=owner_text, url=app.owner_url),
             }
-            defaults = [
-                ["add"], ["help", "language", "stats"], ["trending"],
-                ["support", "channel"], ["owner"],
-            ]
+            defaults = [list(row) for row in config.start_buttons_layout()]
             layout = themed_keyboard_layout(
                 "start_private", defaults, set(actions)
             )

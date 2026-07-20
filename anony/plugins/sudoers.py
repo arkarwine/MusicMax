@@ -43,6 +43,36 @@ async def _sudo(_, m: types.Message):
 
 o_mention = None
 
+
+@app.on_message(filters.command(["reloadsudo", "reloadsudos"]) & app.sudoers)
+@lang.language()
+async def _reloadsudo(_, m: types.Message):
+    sudoers = await db.get_sudoers()
+    before = set(app.sudoers)
+    refreshed = {app.owner, *sudoers}
+
+    app.sudoers.clear()
+    app.sudoers.update(refreshed)
+    await app.register_sudo_commands(refreshed)
+
+    added = len(refreshed - before)
+    removed_users = before - refreshed
+    removed = len(removed_users)
+    for user_id in removed_users:
+        try:
+            await app.delete_bot_commands(
+                scope=types.BotCommandScopeChat(chat_id=user_id)
+            )
+        except Exception:
+            pass
+    await m.reply_text(
+        m.lang["sudo_reloaded"].format(
+            len(refreshed),
+            added,
+            removed,
+        )
+    )
+
 @app.on_message(filters.command(["listsudo", "sudolist"]) & app.sudoers)
 @lang.language()
 async def _listsudo(_, m: types.Message):

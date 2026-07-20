@@ -451,7 +451,14 @@ class Bot(pyrogram.Client):
         """
         await super().start()
         self.id = self.me.id
-        self.name = self.me.first_name
+        self.name = (
+            " ".join(
+                part for part in (self.me.first_name, self.me.last_name) if part
+            ).strip()
+            or self.me.first_name
+            or self.me.username
+            or "Music Bot"
+        )
         self.username = self.me.username
         self.mention = self.me.mention
         try:
@@ -532,6 +539,7 @@ class Bot(pyrogram.Client):
             ("removesession", "🗑 Remove an assistant"),
             ("status", "📊 Show advanced status"),
             ("healthalerts", "🔔 Manage private health alerts"),
+            ("reloadsudo", "🔄 Reload sudo users from database"),
             ("logs", "📄 Get the application log"),
             ("config", "⚙️ Open runtime configuration"),
             ("setconfig", "✏️ Change a safe runtime setting"),

@@ -12,6 +12,23 @@ logger = logging.getLogger(__name__)
 class Config:
     PLAY_CONTROL_NAMES = ("loop", "stop", "pause", "skip", "replay")
     DEFAULT_PLAY_CONTROLS_LAYOUT = ",".join(PLAY_CONTROL_NAMES)
+    START_BUTTON_NAMES = (
+        "add", "help", "language", "stats", "trending",
+        "support", "channel", "owner",
+    )
+    DEFAULT_START_BUTTONS_LAYOUT = (
+        "add|help,language,stats|trending|support,channel|owner"
+    )
+    START_BUTTON_TEXT_FIELDS = {
+        "start_add_text": "START_ADD_TEXT",
+        "start_help_text": "START_HELP_TEXT",
+        "start_language_text": "START_LANGUAGE_TEXT",
+        "start_stats_text": "START_STATS_TEXT",
+        "start_trending_text": "START_TRENDING_TEXT",
+        "start_support_text": "START_SUPPORT_TEXT",
+        "start_channel_text": "START_CHANNEL_TEXT",
+        "start_owner_text": "START_OWNER_TEXT",
+    }
     PLAY_TEMPLATE_FIELDS = frozenset({
         "image", "title", "title_link", "duration", "requester",
         "source_url",
@@ -34,6 +51,8 @@ class Config:
         "play_controls_layout": "PLAY_CONTROLS_LAYOUT",
         "play_message_template_en": "PLAY_MESSAGE_TEMPLATE_EN",
         "play_message_template_my": "PLAY_MESSAGE_TEMPLATE_MY",
+        "start_buttons_layout": "START_BUTTONS_LAYOUT",
+        **START_BUTTON_TEXT_FIELDS,
         "lang_code": "LANG_CODE",
         "default_thumb": "DEFAULT_THUMB",
         "ping_img": "PING_IMG",
@@ -193,6 +212,24 @@ class Config:
         self.PLAY_MESSAGE_TEMPLATE_MY = self._environment_play_template(
             "PLAY_MESSAGE_TEMPLATE_MY"
         )
+        try:
+            self.START_BUTTONS_LAYOUT = self._normalize_start_buttons_layout(
+                getenv(
+                    "START_BUTTONS_LAYOUT",
+                    self.DEFAULT_START_BUTTONS_LAYOUT,
+                )
+            )
+        except ValueError as exc:
+            logger.warning(
+                "Ignored invalid START_BUTTONS_LAYOUT: %s", exc
+            )
+            self.START_BUTTONS_LAYOUT = self.DEFAULT_START_BUTTONS_LAYOUT
+        for attr in self.START_BUTTON_TEXT_FIELDS.values():
+            value = getenv(attr, "").strip()
+            if len(value) > 64:
+                logger.warning("Ignored %s longer than 64 characters", attr)
+                value = ""
+            setattr(self, attr, value)
 
         language = getenv("LANG_CODE", "en").strip().lower()
         self.LANG_CODE = language if language in {"en", "my"} else "en"
@@ -257,33 +294,55 @@ class Config:
         )
 
     @classmethod
-    def _normalize_play_controls_layout(cls, value: str) -> str:
+    def _normalize_button_layout(
+        cls,
+        value: str,
+        *,
+        allowed: tuple[str, ...],
+        kind: str,
+    ) -> str:
         normalized = value.strip().lower()
         if normalized == "-":
             return "-"
         if not normalized:
             raise ValueError(
-                "Control layout cannot be empty; use - to hide all"
+                f"{kind} layout cannot be empty; use - to hide all"
             )
 
         rows = []
         seen = set()
-        allowed = set(cls.PLAY_CONTROL_NAMES)
+        allowed_set = set(allowed)
         for raw_row in normalized.split("|"):
             tokens = [token.strip() for token in raw_row.split(",")]
             if not tokens or any(not token for token in tokens):
-                raise ValueError("Control layout contains an empty position")
+                raise ValueError(f"{kind} layout contains an empty position")
             for token in tokens:
-                if token not in allowed:
-                    valid = ", ".join(cls.PLAY_CONTROL_NAMES)
+                if token not in allowed_set:
+                    valid = ", ".join(allowed)
                     raise ValueError(
-                        f"Unknown control {token}; use: {valid}"
+                        f"Unknown {kind} button {token}; use: {valid}"
                     )
                 if token in seen:
-                    raise ValueError(f"Control {token} is duplicated")
+                    raise ValueError(f"{kind} button {token} is duplicated")
                 seen.add(token)
             rows.append(",".join(tokens))
         return "|".join(rows)
+
+    @classmethod
+    def _normalize_play_controls_layout(cls, value: str) -> str:
+        return cls._normalize_button_layout(
+            value,
+            allowed=cls.PLAY_CONTROL_NAMES,
+            kind="Control",
+        )
+
+    @classmethod
+    def _normalize_start_buttons_layout(cls, value: str) -> str:
+        return cls._normalize_button_layout(
+            value,
+            allowed=cls.START_BUTTON_NAMES,
+            kind="Start button",
+        )
 
     @classmethod
     def _validate_play_message_template(cls, value: str) -> str:
@@ -405,6 +464,16 @@ class Config:
         elif key == "play_controls_layout":
             value = self._normalize_play_controls_layout(raw_value)
             stored = value
+        elif key == "start_buttons_layout":
+            value = self._normalize_start_buttons_layout(raw_value)
+            stored = value
+        elif key in self.START_BUTTON_TEXT_FIELDS:
+            value = raw_value.strip()
+            if value == "-":
+                value = ""
+            if len(value) > 64:
+                raise ValueError("Start button text must be 64 characters or less")
+            stored = value
         elif key in {
             "play_message_template_en", "play_message_template_my"
         }:
@@ -440,12 +509,16 @@ class Config:
             "start_img",
         } and not value:
             return "disabled"
+        if key in self.START_BUTTON_TEXT_FIELDS and not value:
+            return "default"
         if key in {
             "play_image", "start_img", "default_thumb", "ping_img",
         } and not str(value).startswith(("http://", "https://")):
             return "Telegram image"
-        if key == "play_controls_layout" and value == "-":
+        if key in {"play_controls_layout", "start_buttons_layout"} and value == "-":
             return "disabled"
+        if key == "start_buttons_layout" and value != "disabled":
+            return value.replace(",", " · ").replace("|", " / ")
         if key in {
             "play_message_template_en", "play_message_template_my"
         }:
@@ -481,6 +554,20 @@ class Config:
             tuple(row.split(",")) for row in value.split("|")
         )
 
+    def start_buttons_layout(self) -> tuple[tuple[str, ...], ...]:
+        value = self.START_BUTTONS_LAYOUT
+        if value == "-":
+            return ()
+        return tuple(
+            tuple(row.split(",")) for row in value.split("|")
+        )
+
+    def start_button_text(self, action: str, default: str) -> str:
+        attr = self.START_BUTTON_TEXT_FIELDS.get(f"start_{action}_text")
+        if not attr:
+            return default
+        return getattr(self, attr).strip() or default
+
     def play_message_template(self, lang_code: str) -> str | None:
         attr = (
             "PLAY_MESSAGE_TEMPLATE_MY"
@@ -505,12 +592,13 @@ class Config:
             return int(value)
         if key in {"auto_leave", "auto_end", "thumb_gen", "video_play"}:
             return bool(value)
-        if key == "play_controls_layout":
+        if key in {"play_controls_layout", "start_buttons_layout"}:
             if value == "-":
                 return []
             return [row.split(",") for row in value.split("|")]
         if key in {
             "play_button_text", "play_button_url", "play_image", "start_img",
+            *self.START_BUTTON_TEXT_FIELDS,
         } and not value:
             return None
         if key in {"play_message_template_en", "play_message_template_my"}:
@@ -528,11 +616,11 @@ class Config:
             }:
                 return ""
             return "-"
-        if key == "play_controls_layout" and isinstance(value, list):
+        if key in {"play_controls_layout", "start_buttons_layout"} and isinstance(value, list):
             if not value:
                 return "-"
             if any(not isinstance(row, list) for row in value):
-                raise ValueError("Play controls must be an array of rows")
+                raise ValueError("Button layout must be an array of rows")
             return "|".join(",".join(map(str, row)) for row in value)
         if isinstance(value, (str, int)):
             return str(value)

@@ -46,6 +46,7 @@ class PendingEdit:
 CATEGORIES = {
     "playback": ("🎧", "Playback", "Music limits, video and player controls"),
     "messages": ("💬", "Play card", "Now-playing text and optional link button"),
+    "start": ("🏠", "Start menu", "Welcome buttons, order and labels"),
     "automation": ("⚡", "Behavior", "Automatic actions, language and community links"),
     "appearance": ("🖼️", "Images", "Pictures shown across the bot"),
 }
@@ -105,6 +106,44 @@ SETTINGS = {
         "Markdown template for Burmese play cards.",
         "Markdown with image, title, link, duration, requester and source placeholders",
         "# Now playing",
+    ),
+    "start_buttons_layout": SettingSpec(
+        "Start buttons", "start",
+        "Choose start-menu button order, rows and hidden buttons.",
+        "add, help, language, stats, trending, support, channel, owner; comma = row, | = new row, - = hide",
+        "add|help,language,stats|support,channel|owner",
+    ),
+    "start_add_text": SettingSpec(
+        "Add button", "start", "Custom Add to Group button label.",
+        "up to 64 characters, or - for default", "➕ Add to Group",
+    ),
+    "start_help_text": SettingSpec(
+        "Help button", "start", "Custom Help button label.",
+        "up to 64 characters, or - for default", "Help",
+    ),
+    "start_language_text": SettingSpec(
+        "Language button", "start", "Custom Language button label.",
+        "up to 64 characters, or - for default", "Language",
+    ),
+    "start_stats_text": SettingSpec(
+        "Stats button", "start", "Custom Stats button label.",
+        "up to 64 characters, or - for default", "Stats",
+    ),
+    "start_trending_text": SettingSpec(
+        "Trending button", "start", "Custom Trending button label.",
+        "up to 64 characters, or - for default", "Trending",
+    ),
+    "start_support_text": SettingSpec(
+        "Support button", "start", "Custom Support button label.",
+        "up to 64 characters, or - for default", "💬 Support",
+    ),
+    "start_channel_text": SettingSpec(
+        "Channel button", "start", "Custom Channel button label.",
+        "up to 64 characters, or - for default", "📣 Cʜᴀɴɴᴇʟ",
+    ),
+    "start_owner_text": SettingSpec(
+        "Owner button", "start", "Custom Owner button label.",
+        "up to 64 characters, or - for default", "👤 Owner",
     ),
     "auto_leave": SettingSpec(
         "Auto leave", "automation",
