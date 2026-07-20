@@ -27,7 +27,6 @@ class ExternalWatchdogTests(unittest.TestCase):
     def env(self):
         return {
             "EXTERNAL_WATCHDOG": "true",
-            "WATCHDOG_APP_NAME": "GPH",
             "WATCHDOG_HEARTBEAT_STALE_SECONDS": "180",
             "WATCHDOG_UPDATE_STALE_SECONDS": "900",
             "WATCHDOG_MIN_UPTIME_SECONDS": "0",

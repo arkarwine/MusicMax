@@ -422,7 +422,6 @@ def main() -> None:
     log(
         "started "
         f"(enabled={env_bool('EXTERNAL_WATCHDOG', False)}, "
-        f"app={os.getenv('WATCHDOG_APP_NAME', 'anony')}, "
         f"bot_api_probe={env_bool('WATCHDOG_BOT_API_PROBE', True)}, "
         f"log_checks={env_bool('WATCHDOG_LOG_CHECKS', False)}, "
         f"log_interval={env_int('WATCHDOG_LOG_INTERVAL_SECONDS', 300, minimum=30)}s)"

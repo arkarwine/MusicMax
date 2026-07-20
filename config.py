@@ -166,9 +166,6 @@ class Config:
         self.EXTERNAL_WATCHDOG = self._environment_bool(
             "EXTERNAL_WATCHDOG", False
         )
-        self.WATCHDOG_APP_NAME = (
-            getenv("WATCHDOG_APP_NAME") or "anony"
-        ).strip() or "anony"
         self.WATCHDOG_CHECK_INTERVAL = self._environment_int(
             "WATCHDOG_CHECK_INTERVAL", 30, minimum=10, maximum=3600
         )

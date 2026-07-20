@@ -75,14 +75,13 @@ SQLite, flushes logs, exits non-zero, and lets PM2 restart the process.
 
 For stronger recovery, run a separate watchdog process that watches persisted SQLite
 health signals from outside the bot process. The default setup is intentionally
-small: enable it, give it a display name, and keep the standard process matcher.
-All timings already have production-safe defaults.
+small: enable it and keep the standard process matcher. All timings already
+have production-safe defaults.
 
 Minimal `.env`:
 
 ```bash
 EXTERNAL_WATCHDOG=true
-WATCHDOG_APP_NAME=melodyfetch
 WATCHDOG_PROCESS_MATCH=-m anony
 ```
 
