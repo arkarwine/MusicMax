@@ -6,7 +6,7 @@ import tempfile
 import types
 import unittest
 from pathlib import Path
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 
 ROOT = Path(__file__).parents[1]
@@ -128,6 +128,25 @@ class HealthTransitionTests(unittest.IsolatedAsyncioTestCase):
         await monitor._record("Telegram", True, "Connected")
         self.assertEqual(monitor.components["Telegram"].status, "healthy")
         monitor._alert.assert_not_awaited()
+
+    async def test_watchdog_exits_when_update_activity_is_stale(self):
+        monitor = self.make_monitor()
+        monitor.watchdog_restart = True
+        monitor.watchdog_stall_seconds = 300
+        monitor.last_update_at = int(health_module.time()) - 301
+        monitor.finish = AsyncMock()
+        with patch.object(health_module.logging, "shutdown") as shutdown, \
+             patch.object(
+                 health_module.os,
+                 "_exit",
+                 side_effect=RuntimeError("exit requested"),
+             ) as exit_call:
+            with self.assertRaises(RuntimeError):
+                await monitor._watchdog_stale_updates()
+        monitor.finish.assert_awaited_once()
+        self.assertIn("watchdog:", monitor.finish.await_args.args[0])
+        shutdown.assert_called_once()
+        exit_call.assert_called_once_with(75)
 
 
 class HealthAlertDeliveryTests(unittest.IsolatedAsyncioTestCase):

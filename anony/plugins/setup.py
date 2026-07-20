@@ -121,6 +121,12 @@ async def _status(_, m: types.Message):
     snapshot = health.snapshot()
     alert_enabled = await db.health_alerts_enabled(m.from_user.id)
     heartbeat_age = max(int(time.time()) - snapshot["last_heartbeat"], 0)
+    update_age = max(int(time.time()) - snapshot["last_update_at"], 0)
+    watchdog = (
+        f"on / {snapshot['watchdog_stall_seconds']}s"
+        if snapshot["watchdog_enabled"]
+        else "off"
+    )
     failed_workers = snapshot["workers"]["failed"]
     reliability = "Healthy" if snapshot["healthy"] else "Needs attention"
     worker_summary = (
@@ -169,6 +175,8 @@ async def _status(_, m: types.Message):
         workers=worker_summary,
         failed_workers=", ".join(failed_workers) if failed_workers else "none",
         heartbeat=f"{heartbeat_age}s ago",
+        last_update=f"{update_age}s ago ({snapshot['last_update_kind']})",
+        watchdog=watchdog,
         previous_exit=snapshot["previous_result"],
         health_alerts=m.lang[
             "health_alerts_on" if alert_enabled else "health_alerts_off"

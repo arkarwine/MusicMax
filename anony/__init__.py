@@ -89,6 +89,8 @@ health = HealthMonitor(
     language=lang,
     supervisor=supervisor,
     logger=logger,
+    watchdog_restart=config.WATCHDOG_RESTART_ON_STALL,
+    watchdog_stall_seconds=config.WATCHDOG_STALL_SECONDS,
 )
 _stopping = False
 

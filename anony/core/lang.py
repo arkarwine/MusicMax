@@ -177,6 +177,9 @@ class Language:
 
                 lang_dict = self.languages["en"]
                 try:
+                    from anony import health
+
+                    health.mark_update(fallen)
                     if chat.id in db.blacklisted:
                         logger.info(f"Chat {chat.id} is blacklisted, leaving...")
                         return await chat.leave()

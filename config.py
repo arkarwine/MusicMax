@@ -138,6 +138,12 @@ class Config:
         self.THUMB_GEN = self._environment_bool("THUMB_GEN", True)
         self.VIDEO_PLAY = self._environment_bool("VIDEO_PLAY", True)
         self.RICH_MESSAGES = self._environment_bool("RICH_MESSAGES", True)
+        self.WATCHDOG_RESTART_ON_STALL = self._environment_bool(
+            "WATCHDOG_RESTART_ON_STALL", False
+        )
+        self.WATCHDOG_STALL_SECONDS = self._environment_int(
+            "WATCHDOG_STALL_SECONDS", 21600, minimum=300, maximum=86400
+        )
         self.PLAY_BUTTON_TEXT = getenv("PLAY_BUTTON_TEXT", "").strip()
         if len(self.PLAY_BUTTON_TEXT) > 64:
             logger.warning(

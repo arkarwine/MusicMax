@@ -22,9 +22,11 @@ pm2 startup systemd -u ubuntu --hp /home/ubuntu
 ```
 
 Run the final command printed by `pm2 startup`, then run `pm2 save` again.
-PM2 restarts the process only when it actually exits. The bot's internal health
-monitor reports degraded components but does not deliberately exit or request a
-PM2 restart. No arbitrary memory restart limit is configured.
+PM2 restarts the process only when it actually exits. The bot's normal health
+monitor reports degraded components without requesting a PM2 restart. For the
+rare case where Python stays online but Telegram update handling goes stale, an
+optional hard watchdog can deliberately exit with code 75 so PM2 restarts it.
+No arbitrary memory restart limit is configured.
 
 ## Routine checks
 
@@ -54,6 +56,20 @@ sudo journalctl -u pm2-ubuntu --since "24 hours ago"
 
 The next successful bot start also checks SQLite process history. An unfinished
 previous run is logged as an unexpected exit with its last recorded heartbeat.
+
+## Optional stale-update watchdog
+
+Enable this only for production bots that have shown the "online but not
+responding" failure mode.
+
+```bash
+WATCHDOG_RESTART_ON_STALL=true
+WATCHDOG_STALL_SECONDS=21600
+```
+
+The value is seconds. The default example is six hours, with a minimum of five
+minutes. When triggered, the bot records a `watchdog:` shutdown reason in
+SQLite, flushes logs, exits non-zero, and lets PM2 restart the process.
 
 ## Private health alerts
 

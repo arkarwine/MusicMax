@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import logging
+import os
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from time import monotonic, time
@@ -38,6 +40,8 @@ class HealthMonitor:
         language,
         supervisor,
         logger,
+        watchdog_restart: bool = False,
+        watchdog_stall_seconds: int = 21600,
     ) -> None:
         self.app = app
         self.db = db
@@ -49,6 +53,10 @@ class HealthMonitor:
         self.run_id = uuid4().hex
         self.started_at = int(time())
         self.last_heartbeat = self.started_at
+        self.last_update_at = self.started_at
+        self.last_update_kind = "startup"
+        self.watchdog_restart = watchdog_restart
+        self.watchdog_stall_seconds = max(int(watchdog_stall_seconds), 300)
         self.previous_run: dict | None = None
         self.components = {
             name: ComponentHealth(name)
@@ -75,6 +83,11 @@ class HealthMonitor:
 
     def start(self) -> asyncio.Task:
         return self.supervisor.spawn("health-monitor", self.run, restart=True)
+
+    def mark_update(self, update=None) -> None:
+        self.last_update_at = int(time())
+        self.last_update_kind = type(update).__name__ if update is not None else "update"
+
 
     async def finish(self, reason: str) -> None:
         await self.db.finish_process_run(self.run_id, reason)
@@ -300,6 +313,28 @@ class HealthMonitor:
             await self._check("database", self._probe_database)
             await self._check("assistants", self._probe_assistants)
             await self._check("voice", self._probe_voice)
+            await self._watchdog_stale_updates()
+
+    async def _watchdog_stale_updates(self) -> None:
+        if not self.watchdog_restart:
+            return
+        idle_for = int(time()) - self.last_update_at
+        if idle_for < self.watchdog_stall_seconds:
+            return
+        reason = (
+            f"watchdog: no Telegram updates processed for {idle_for}s "
+            f"(last={self.last_update_kind})"
+        )
+        self.logger.critical(
+            "Watchdog restart requested: %s. PM2 should restart the process.",
+            reason,
+        )
+        try:
+            await self.finish(reason)
+        except Exception:
+            self.logger.exception("Could not persist watchdog shutdown reason")
+        logging.shutdown()
+        os._exit(75)
 
     def snapshot(self) -> dict:
         supervisor = self.supervisor.snapshot()
@@ -326,5 +361,9 @@ class HealthMonitor:
             "run_id": self.run_id,
             "started_at": self.started_at,
             "last_heartbeat": self.last_heartbeat,
+            "last_update_at": self.last_update_at,
+            "last_update_kind": self.last_update_kind,
+            "watchdog_enabled": self.watchdog_restart,
+            "watchdog_stall_seconds": self.watchdog_stall_seconds,
             "previous_result": previous_result,
         }
