@@ -1,7 +1,5 @@
 import importlib.util
-import json
 import sqlite3
-import subprocess
 import sys
 import tempfile
 import unittest
@@ -29,8 +27,7 @@ class ExternalWatchdogTests(unittest.TestCase):
     def env(self):
         return {
             "EXTERNAL_WATCHDOG": "true",
-            "WATCHDOG_PM2_APP": "GPH",
-            "WATCHDOG_RESTART_METHOD": "kill",
+            "WATCHDOG_APP_NAME": "GPH",
             "WATCHDOG_HEARTBEAT_STALE_SECONDS": "180",
             "WATCHDOG_UPDATE_STALE_SECONDS": "900",
             "WATCHDOG_MIN_UPTIME_SECONDS": "0",
@@ -38,19 +35,14 @@ class ExternalWatchdogTests(unittest.TestCase):
             "DATABASE_PATH": str(self.db_path),
         }
 
-    def pm2_result(self, now=1_000, status="online"):
-        payload = [{
-            "name": "GPH",
-            "pm2_env": {
-                "status": status,
-                "pm_uptime": (now - 1_000) * 1_000,
-            },
-        }]
-        return subprocess.CompletedProcess(
-            ["pm2", "jlist"], 0, stdout=json.dumps(payload), stderr=""
-        )
-
-    def run_check(self, health, *, now=1_000, env=None):
+    def run_check(self, health, *, now=1_000, env=None, bot_api=(True, "ok")):
+        health = {
+            "telegram_probe_at": now - 20,
+            "telegram_probe_status": "ok",
+            "telegram_probe_detail": "Connected",
+            "telegram_probe_failures": "0",
+            **health,
+        }
         watchdog.write_runtime_health(self.db_path, health)
         terminations = []
         merged_env = self.env()
@@ -63,6 +55,7 @@ class ExternalWatchdogTests(unittest.TestCase):
 
         with patch.dict(watchdog.os.environ, merged_env, clear=False), \
              patch.object(watchdog.time, "time", return_value=now), \
+             patch.object(watchdog, "bot_api_get_me", return_value=bot_api), \
              patch.object(watchdog, "terminate_bot_processes", side_effect=fake_terminate):
             watchdog.check_once()
         return terminations
@@ -123,31 +116,10 @@ class ExternalWatchdogTests(unittest.TestCase):
 
         with patch.dict(watchdog.os.environ, self.env(), clear=False), \
              patch.object(watchdog.time, "time", return_value=1_000), \
+             patch.object(watchdog, "bot_api_get_me", return_value=(True, "ok")), \
              patch.object(watchdog, "terminate_bot_processes", side_effect=fake_terminate):
             watchdog.check_once()
         self.assertEqual(terminations, [])
-
-    def test_optional_pm2_restart_method_is_still_supported(self):
-        watchdog.write_runtime_health(self.db_path, {
-            "heartbeat_at": 700,
-            "last_update_at": 990,
-            "last_update_kind": "Message",
-        })
-        calls = []
-
-        def fake_run(command, **kwargs):
-            calls.append(command)
-            return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
-
-        env = self.env()
-        env["WATCHDOG_RESTART_METHOD"] = "pm2"
-        with patch.dict(watchdog.os.environ, env, clear=False), \
-             patch.object(watchdog.time, "time", return_value=1_000), \
-             patch.object(watchdog.subprocess, "run", side_effect=fake_run):
-            watchdog.check_once()
-
-        self.assertEqual(calls, [["pm2", "restart", "GPH", "--update-env"]])
-
 
     def test_check_logging_is_periodic_by_default(self):
         watchdog._last_check_log_at = 0
@@ -163,6 +135,7 @@ class ExternalWatchdogTests(unittest.TestCase):
         env["WATCHDOG_LOG_INTERVAL_SECONDS"] = "300"
 
         with patch.dict(watchdog.os.environ, env, clear=False), \
+             patch.object(watchdog, "bot_api_get_me", return_value=(True, "ok")), \
              patch.object(watchdog, "log", side_effect=messages.append):
             with patch.object(watchdog.time, "time", return_value=1_000):
                 watchdog.check_once()
@@ -199,6 +172,7 @@ class ExternalWatchdogTests(unittest.TestCase):
         env["WATCHDOG_LOG_CHECKS"] = "true"
 
         with patch.dict(watchdog.os.environ, env, clear=False), \
+             patch.object(watchdog, "bot_api_get_me", return_value=(True, "ok")), \
              patch.object(watchdog, "log", side_effect=messages.append):
             with patch.object(watchdog.time, "time", return_value=1_000):
                 watchdog.check_once()
@@ -207,6 +181,44 @@ class ExternalWatchdogTests(unittest.TestCase):
 
         self.assertEqual(len(messages), 2)
         self.assertTrue(all("state=healthy" in message for message in messages))
+
+    def test_failed_internal_telegram_probe_restarts(self):
+        terminations = self.run_check({
+            "heartbeat_at": 990,
+            "last_update_at": 990,
+            "last_update_kind": "Message",
+            "telegram_probe_at": 980,
+            "telegram_probe_status": "failed",
+            "telegram_probe_detail": "TimeoutError",
+            "telegram_probe_failures": "3",
+        })
+        self.assertEqual(len(terminations), 1)
+        self.assertIn("internal Telegram probe failed", terminations[0])
+
+    def test_stale_internal_telegram_probe_restarts(self):
+        terminations = self.run_check({
+            "heartbeat_at": 990,
+            "last_update_at": 990,
+            "last_update_kind": "Message",
+            "telegram_probe_at": 700,
+            "telegram_probe_status": "ok",
+            "telegram_probe_detail": "Connected",
+            "telegram_probe_failures": "0",
+        })
+        self.assertEqual(len(terminations), 1)
+        self.assertIn("internal Telegram probe stale", terminations[0])
+
+    def test_repeated_external_bot_api_failures_restart(self):
+        watchdog._bot_api_failures = 2
+        terminations = self.run_check({
+            "heartbeat_at": 990,
+            "last_update_at": 990,
+            "last_update_kind": "Message",
+        }, bot_api=(False, "TimeoutError"))
+        self.assertEqual(len(terminations), 1)
+        self.assertIn("external Bot API probe failed", terminations[0])
+        values = watchdog.read_runtime_health(self.db_path)
+        self.assertEqual(values["external_bot_api_probe_status"], "failed")
 
 
 if __name__ == "__main__":

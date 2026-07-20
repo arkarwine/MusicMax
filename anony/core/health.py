@@ -55,6 +55,9 @@ class HealthMonitor:
         self.last_heartbeat = self.started_at
         self.last_update_at = self.started_at
         self.last_update_kind = "startup"
+        self.telegram_probe_at = self.started_at
+        self.telegram_probe_status = "startup"
+        self.telegram_probe_detail = "Not checked yet"
         self.watchdog_restart = watchdog_restart
         self.watchdog_stall_seconds = max(int(watchdog_stall_seconds), 300)
         self.previous_run: dict | None = None
@@ -75,6 +78,9 @@ class HealthMonitor:
             "heartbeat_at": self.last_heartbeat,
             "last_update_at": self.last_update_at,
             "last_update_kind": self.last_update_kind,
+            "telegram_probe_at": self.telegram_probe_at,
+            "telegram_probe_status": self.telegram_probe_status,
+            "telegram_probe_detail": self.telegram_probe_detail,
             "last_shutdown_reason": "running",
         })
         if self.previous_run and self.previous_run["stopped_at"] is None:
@@ -165,6 +171,22 @@ class HealthMonitor:
         state = self.components[name]
         now = monotonic()
         state.detail = detail
+        if name == "Telegram":
+            self.telegram_probe_at = int(time())
+            self.telegram_probe_status = "ok" if success else "failed"
+            self.telegram_probe_detail = detail[:200]
+            if hasattr(self.db, "set_runtime_health_values"):
+                try:
+                    await self.db.set_runtime_health_values({
+                        "telegram_probe_at": self.telegram_probe_at,
+                        "telegram_probe_status": self.telegram_probe_status,
+                        "telegram_probe_detail": self.telegram_probe_detail,
+                        "telegram_probe_failures": state.failures + (0 if success else 1),
+                    })
+                except Exception:
+                    self.logger.warning(
+                        "Could not persist Telegram probe health", exc_info=True
+                    )
         if success:
             state.failures = 0
             state.successes += 1
@@ -318,6 +340,9 @@ class HealthMonitor:
                     "heartbeat_at": self.last_heartbeat,
                     "last_update_at": self.last_update_at,
                     "last_update_kind": self.last_update_kind,
+                    "telegram_probe_at": self.telegram_probe_at,
+                    "telegram_probe_status": self.telegram_probe_status,
+                    "telegram_probe_detail": self.telegram_probe_detail,
                 })
             except Exception as exc:
                 await self._record(
@@ -380,6 +405,9 @@ class HealthMonitor:
             "last_heartbeat": self.last_heartbeat,
             "last_update_at": self.last_update_at,
             "last_update_kind": self.last_update_kind,
+            "telegram_probe_at": self.telegram_probe_at,
+            "telegram_probe_status": self.telegram_probe_status,
+            "telegram_probe_detail": self.telegram_probe_detail,
             "watchdog_enabled": self.watchdog_restart,
             "watchdog_stall_seconds": self.watchdog_stall_seconds,
             "previous_result": previous_result,

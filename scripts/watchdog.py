@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 """External watchdog for an online-but-stale bot process.
 
-The default recovery path intentionally avoids the PM2 CLI. If the PM2 daemon
-or CLI is wedged, `pm2 jlist` and `pm2 restart` can both hang. Killing the stale
-bot process directly lets PM2's normal autorestart path handle recovery when the
-daemon is healthy, and still makes the failure visible when the daemon is not.
+The watchdog deliberately avoids supervisor-specific APIs. It only checks
+persisted health signals and terminates stale bot processes. Any external
+supervisor can then restart the bot.
 """
 
 from __future__ import annotations
@@ -12,14 +11,16 @@ from __future__ import annotations
 import os
 import signal
 import sqlite3
-import subprocess
 import time
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 
 DEFAULT_DB = "data/anonxmusic.db"
 _last_check_log_at = 0
 _last_check_state = ""
+_bot_api_failures = 0
 
 
 def log(message: str) -> None:
@@ -100,6 +101,42 @@ def write_runtime_health(path: Path, values: dict[str, object]) -> None:
         connection.commit()
     finally:
         connection.close()
+
+
+def bot_api_get_me(token: str, timeout: int = 5) -> tuple[bool, str]:
+    if not token:
+        return False, "BOT_TOKEN is missing"
+    url = f"https://api.telegram.org/bot{token}/getMe"
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as response:
+            body = response.read(4096).decode("utf-8", "ignore")
+    except urllib.error.HTTPError as exc:
+        return False, f"HTTP {exc.code}"
+    except Exception as exc:
+        return False, f"{type(exc).__name__}: {exc}"
+    if '"ok":true' not in body.replace(" ", "").lower():
+        return False, "Bot API returned ok=false"
+    return True, "ok"
+
+
+def check_bot_api_probe(path: Path, now: int) -> tuple[bool, str, int]:
+    global _bot_api_failures
+    if not env_bool("WATCHDOG_BOT_API_PROBE", True):
+        return True, "disabled", _bot_api_failures
+    token = os.getenv("BOT_TOKEN", "").strip()
+    timeout = env_int("WATCHDOG_PROBE_TIMEOUT_SECONDS", 5, minimum=1)
+    ok, detail = bot_api_get_me(token, timeout=timeout)
+    _bot_api_failures = 0 if ok else _bot_api_failures + 1
+    write_runtime_health(
+        path,
+        {
+            "external_bot_api_probe_at": now,
+            "external_bot_api_probe_status": "ok" if ok else "failed",
+            "external_bot_api_probe_detail": detail[:200],
+            "external_bot_api_probe_failures": _bot_api_failures,
+        },
+    )
+    return ok, detail, _bot_api_failures
 
 
 def int_value(values: dict[str, str], key: str) -> int | None:
@@ -216,7 +253,7 @@ def terminate_bot_processes(reason: str) -> bool:
     return True
 
 
-def restart(app_name: str, reason: str, path: Path, now: int) -> None:
+def restart(reason: str, path: Path, now: int) -> None:
     write_runtime_health(
         path,
         {
@@ -224,20 +261,6 @@ def restart(app_name: str, reason: str, path: Path, now: int) -> None:
             "watchdog_last_reason": reason,
         },
     )
-    method = os.getenv("WATCHDOG_RESTART_METHOD", "kill").strip().lower()
-    if method == "pm2":
-        log(f"restarting {app_name} through PM2 CLI: {reason}")
-        result = subprocess.run(
-            ["pm2", "restart", app_name, "--update-env"],
-            text=True,
-            capture_output=True,
-            timeout=30,
-            check=False,
-        )
-        if result.returncode != 0:
-            log(f"pm2 restart failed: {result.stderr.strip() or result.stdout.strip()}")
-        return
-
     terminate_bot_processes(reason)
 
 
@@ -245,9 +268,17 @@ def check_once() -> None:
     if not env_bool("EXTERNAL_WATCHDOG", False):
         return
 
-    app_name = os.getenv("WATCHDOG_PM2_APP", "GPH").strip() or "GPH"
     heartbeat_stale = env_int("WATCHDOG_HEARTBEAT_STALE_SECONDS", 180, minimum=60)
-    update_stale = env_int("WATCHDOG_UPDATE_STALE_SECONDS", 900, minimum=300)
+    update_stale = env_int("WATCHDOG_UPDATE_STALE_SECONDS", 300, minimum=120)
+    internal_probe_stale = env_int(
+        "WATCHDOG_INTERNAL_PROBE_STALE_SECONDS", 180, minimum=60
+    )
+    internal_probe_failures_limit = env_int(
+        "WATCHDOG_INTERNAL_PROBE_FAILURES", 3, minimum=1
+    )
+    bot_api_failures_limit = env_int(
+        "WATCHDOG_BOT_API_FAILURES", 3, minimum=1
+    )
     min_uptime = env_int("WATCHDOG_MIN_UPTIME_SECONDS", 300, minimum=0)
     cooldown = env_int("WATCHDOG_RESTART_COOLDOWN_SECONDS", 600, minimum=60)
     path = db_path()
@@ -287,8 +318,63 @@ def check_once() -> None:
             limit=f"{heartbeat_stale}s",
         )
         restart(
-            app_name,
             f"heartbeat stale for {heartbeat_age}s",
+            path,
+            now,
+        )
+        return
+
+    internal_probe_at = int_value(values, "telegram_probe_at")
+    internal_probe_age = now - internal_probe_at if internal_probe_at is not None else None
+    internal_probe_status = values.get("telegram_probe_status", "unknown")
+    internal_probe_failures = int_value(values, "telegram_probe_failures") or 0
+    if internal_probe_age is not None and internal_probe_age > internal_probe_stale:
+        log_check(
+            now,
+            "stale-internal-telegram-probe",
+            probe_age=f"{internal_probe_age}s",
+            limit=f"{internal_probe_stale}s",
+            status=internal_probe_status,
+        )
+        restart(
+            f"internal Telegram probe stale for {internal_probe_age}s "
+            f"(status={internal_probe_status})",
+            path,
+            now,
+        )
+        return
+    if (
+        internal_probe_status == "failed"
+        and internal_probe_failures >= internal_probe_failures_limit
+    ):
+        log_check(
+            now,
+            "internal-telegram-probe-failed",
+            failures=internal_probe_failures,
+            limit=internal_probe_failures_limit,
+            detail=values.get("telegram_probe_detail", ""),
+        )
+        restart(
+            "internal Telegram probe failed "
+            f"{internal_probe_failures} time(s): "
+            f"{values.get('telegram_probe_detail', '')}",
+            path,
+            now,
+        )
+        return
+
+    bot_api_ok, bot_api_detail, bot_api_failures = check_bot_api_probe(path, now)
+    if not bot_api_ok and bot_api_failures >= bot_api_failures_limit:
+        log_check(
+            now,
+            "external-bot-api-probe-failed",
+            failures=bot_api_failures,
+            limit=bot_api_failures_limit,
+            detail=bot_api_detail,
+        )
+        restart(
+            f"external Bot API probe failed {bot_api_failures} time(s): "
+            f"{bot_api_detail}",
             path,
             now,
         )
@@ -310,7 +396,6 @@ def check_once() -> None:
             last=kind,
         )
         restart(
-            app_name,
             f"Telegram updates stale for {update_age}s (last={kind})",
             path,
             now,
@@ -323,7 +408,11 @@ def check_once() -> None:
         heartbeat_age=f"{heartbeat_age}s" if heartbeat_age is not None else "unknown",
         update_age=f"{update_age}s" if update_age is not None else "unknown",
         last=kind,
-        method=os.getenv("WATCHDOG_RESTART_METHOD", "kill").strip().lower(),
+        internal_probe=(
+            f"{internal_probe_status}/{internal_probe_age}s"
+            if internal_probe_age is not None else internal_probe_status
+        ),
+        bot_api=("ok" if bot_api_ok else f"failed/{bot_api_failures}"),
     )
 
 
@@ -333,8 +422,8 @@ def main() -> None:
     log(
         "started "
         f"(enabled={env_bool('EXTERNAL_WATCHDOG', False)}, "
-        f"app={os.getenv('WATCHDOG_PM2_APP', 'GPH')}, "
-        f"method={os.getenv('WATCHDOG_RESTART_METHOD', 'kill')}, "
+        f"app={os.getenv('WATCHDOG_APP_NAME', 'anony')}, "
+        f"bot_api_probe={env_bool('WATCHDOG_BOT_API_PROBE', True)}, "
         f"log_checks={env_bool('WATCHDOG_LOG_CHECKS', False)}, "
         f"log_interval={env_int('WATCHDOG_LOG_INTERVAL_SECONDS', 300, minimum=30)}s)"
     )

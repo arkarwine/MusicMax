@@ -73,56 +73,81 @@ SQLite, flushes logs, exits non-zero, and lets PM2 restart the process.
 
 ## External watchdog
 
-For stronger recovery, run a second PM2 process that watches persisted SQLite
-health signals from outside the bot process. By default it does **not** call
-`pm2 jlist` or `pm2 restart`, because the PM2 daemon/CLI can be wedged during the
-same failure. Instead it finds the bot process by working directory and command,
-sends `SIGTERM`, then `SIGKILL` after a short grace period. PM2's normal
-autorestart then starts the bot again.
+For stronger recovery, run a separate watchdog process that watches persisted SQLite
+health signals from outside the bot process. The default setup is intentionally
+small: enable it, give it a display name, and keep the standard process matcher.
+All timings already have production-safe defaults.
 
-Add these values to `.env`:
+Minimal `.env`:
 
 ```bash
 EXTERNAL_WATCHDOG=true
-WATCHDOG_PM2_APP=melodyfetch
-WATCHDOG_RESTART_METHOD=kill
+WATCHDOG_APP_NAME=melodyfetch
 WATCHDOG_PROCESS_MATCH=-m anony
+```
+
+Default behavior:
+
+```text
+check every 30s
+restart if heartbeat is stale for 180s
+restart if Telegram self-check is stale for 180s
+restart if real updates are stale for 300s
+restart if external Bot API check fails 3 times
+wait 300s after fresh startup
+wait 600s between watchdog restarts
+terminate with SIGTERM, then SIGKILL after 15s
+log state changes and one healthy summary every 300s
+```
+
+Optional overrides:
+
+```bash
 WATCHDOG_HEARTBEAT_STALE_SECONDS=180
-WATCHDOG_UPDATE_STALE_SECONDS=900
+WATCHDOG_UPDATE_STALE_SECONDS=300
+WATCHDOG_INTERNAL_PROBE_STALE_SECONDS=180
+WATCHDOG_INTERNAL_PROBE_FAILURES=3
+WATCHDOG_BOT_API_PROBE=true
+WATCHDOG_BOT_API_FAILURES=3
+WATCHDOG_PROBE_TIMEOUT_SECONDS=5
 WATCHDOG_MIN_UPTIME_SECONDS=300
 WATCHDOG_RESTART_COOLDOWN_SECONDS=600
 WATCHDOG_KILL_GRACE_SECONDS=15
 WATCHDOG_CHECK_INTERVAL=30
+WATCHDOG_LOG_INTERVAL_SECONDS=300
+WATCHDOG_LOG_CHECKS=false
 ```
 
-Start the watchdog:
+The watchdog does **not** call `pm2 jlist`, `pm2 restart`, Docker, systemd, or
+any other supervisor API. It finds the bot process by working directory and
+`WATCHDOG_PROCESS_MATCH`, sends `SIGTERM`, then sends `SIGKILL` after the grace
+period. Your external supervisor's normal autorestart starts the bot again.
+
+Use a stricter matcher if more than one `-m anony` process runs from the same
+repository directory:
+
+```bash
+WATCHDOG_PROCESS_MATCH=/home/ubuntu/MelodyFetch/.venv/bin/python -m anony
+```
+
+Start the watchdog with PM2:
 
 ```bash
 pm2 delete melodyfetch-watchdog 2>/dev/null || true
-pm2 start /home/ubuntu/MelodyFetch/.venv/bin/python   --name melodyfetch-watchdog   --cwd /home/ubuntu/MelodyFetch   --interpreter none   --time   --restart-delay 3000   --   scripts/watchdog.py
+pm2 start /home/ubuntu/MelodyFetch/.venv/bin/python \
+  --name melodyfetch-watchdog \
+  --cwd /home/ubuntu/MelodyFetch \
+  --interpreter none \
+  --time \
+  --restart-delay 3000 \
+  -- \
+  scripts/watchdog.py
 
 pm2 save
 ```
 
-The external watchdog logs state changes immediately and healthy summaries every `WATCHDOG_LOG_INTERVAL_SECONDS`. Set `WATCHDOG_LOG_CHECKS=true` to log every check.
-
-The external watchdog does not restart during fresh startup, recent watchdog
-restarts, missing databases, or before the bot has processed at least one real
-Telegram update. The default `kill` method targets only processes running from
-the watchdog's current working directory whose command contains
-`WATCHDOG_PROCESS_MATCH`.
-
-If you deliberately want the old PM2-CLI restart path, set:
-
-```bash
-WATCHDOG_RESTART_METHOD=pm2
-```
-
-Use this only when `pm2 jlist` and `pm2 restart` are known to be reliable.
-
 `/status` shows the internal watchdog, external watchdog configuration, last
 processed update, and the last external watchdog restart reason.
-
 ## Private health alerts
 
 Each sudo user chooses independently in the bot's private chat:

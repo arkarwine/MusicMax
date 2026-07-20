@@ -166,7 +166,9 @@ class Config:
         self.EXTERNAL_WATCHDOG = self._environment_bool(
             "EXTERNAL_WATCHDOG", False
         )
-        self.WATCHDOG_PM2_APP = (getenv("WATCHDOG_PM2_APP") or "GPH").strip() or "GPH"
+        self.WATCHDOG_APP_NAME = (
+            getenv("WATCHDOG_APP_NAME") or "anony"
+        ).strip() or "anony"
         self.WATCHDOG_CHECK_INTERVAL = self._environment_int(
             "WATCHDOG_CHECK_INTERVAL", 30, minimum=10, maximum=3600
         )
@@ -174,7 +176,19 @@ class Config:
             "WATCHDOG_HEARTBEAT_STALE_SECONDS", 180, minimum=60, maximum=86400
         )
         self.WATCHDOG_UPDATE_STALE_SECONDS = self._environment_int(
-            "WATCHDOG_UPDATE_STALE_SECONDS", 900, minimum=300, maximum=86400
+            "WATCHDOG_UPDATE_STALE_SECONDS", 300, minimum=120, maximum=86400
+        )
+        self.WATCHDOG_INTERNAL_PROBE_STALE_SECONDS = self._environment_int(
+            "WATCHDOG_INTERNAL_PROBE_STALE_SECONDS", 180, minimum=60, maximum=86400
+        )
+        self.WATCHDOG_INTERNAL_PROBE_FAILURES = self._environment_int(
+            "WATCHDOG_INTERNAL_PROBE_FAILURES", 3, minimum=1, maximum=100
+        )
+        self.WATCHDOG_BOT_API_PROBE = self._environment_bool(
+            "WATCHDOG_BOT_API_PROBE", True
+        )
+        self.WATCHDOG_BOT_API_FAILURES = self._environment_int(
+            "WATCHDOG_BOT_API_FAILURES", 3, minimum=1, maximum=100
         )
         self.WATCHDOG_MIN_UPTIME_SECONDS = self._environment_int(
             "WATCHDOG_MIN_UPTIME_SECONDS", 300, minimum=0, maximum=86400
