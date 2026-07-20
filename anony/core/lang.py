@@ -97,9 +97,17 @@ class Language:
         self.lang_codes = lang_codes
         self.lang_dir = Path("anony/locales")
         self._theme_overrides: dict[str, dict[str, str]] = {}
-        self.languages = self.load_files(self._theme_overrides)
+        self._text_overrides: dict[str, dict[str, str]] = {}
+        self.languages = self.load_files(
+            self._theme_overrides,
+            self._text_overrides,
+        )
 
-    def load_files(self, overrides: dict[str, dict[str, str]] | None = None):
+    def load_files(
+        self,
+        overrides: dict[str, dict[str, str]] | None = None,
+        text_overrides: dict[str, dict[str, str]] | None = None,
+    ):
         languages = {}
         lang_files = {
             file.stem: file
@@ -117,12 +125,13 @@ class Language:
             code: {**english, **translations}
             for code, translations in languages.items()
         }
-        for code, values in (overrides or {}).items():
-            if code in languages:
-                languages[code].update({
-                    key: _localized(value, key)
-                    for key, value in values.items()
-                })
+        for source in (overrides or {}, text_overrides or {}):
+            for code, values in source.items():
+                if code in languages:
+                    languages[code].update({
+                        key: _localized(value, key)
+                        for key, value in values.items()
+                    })
         for translations in languages.values():
             for key, value in list(translations.items()):
                 if key.startswith("heading_"):
@@ -144,7 +153,17 @@ class Language:
 
     def apply_theme(self, overrides: dict[str, dict[str, str]]) -> None:
         self._theme_overrides = overrides
-        self.languages = self.load_files(overrides)
+        self.languages = self.load_files(overrides, self._text_overrides)
+
+    def apply_text_overrides(self, overrides: dict[str, dict[str, str]]) -> None:
+        self._text_overrides = overrides
+        self.languages = self.load_files(
+            self._theme_overrides,
+            self._text_overrides,
+        )
+
+    async def load_text_overrides(self, database) -> None:
+        self.apply_text_overrides(await database.get_text_overrides())
 
     async def get_lang(self, chat_id: int) -> dict:
         lang_code = await db.get_lang(chat_id)

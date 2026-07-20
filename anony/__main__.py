@@ -8,7 +8,7 @@ import signal
 import importlib
 from contextlib import suppress
 
-from anony import (anon, app, config, db, health, logger, stop,
+from anony import (anon, app, config, db, health, lang, logger, stop,
                    supervisor, themes, thumb, userbot, yt)
 from anony.core.recovery import recovery
 from anony.plugins import all_modules

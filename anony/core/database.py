@@ -107,6 +107,13 @@ class SQLiteDB:
                     value TEXT NOT NULL,
                     updated_at INTEGER NOT NULL DEFAULT (unixepoch())
                 );
+                CREATE TABLE IF NOT EXISTS text_overrides (
+                    lang TEXT NOT NULL,
+                    key TEXT NOT NULL,
+                    value TEXT NOT NULL,
+                    updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+                    PRIMARY KEY (lang, key)
+                );
                 CREATE TABLE IF NOT EXISTS themes (
                     theme_id TEXT PRIMARY KEY,
                     manifest TEXT NOT NULL,
@@ -1003,6 +1010,36 @@ class SQLiteDB:
             "SELECT key, value FROM runtime_config ORDER BY key"
         )
         return dict(await cursor.fetchall())
+
+    async def get_text_overrides(self) -> dict[str, dict[str, str]]:
+        cursor = await self.conn.execute(
+            "SELECT lang, key, value FROM text_overrides ORDER BY lang, key"
+        )
+        overrides: dict[str, dict[str, str]] = {}
+        for lang_code, key, value in await cursor.fetchall():
+            overrides.setdefault(lang_code, {})[key] = value
+        return overrides
+
+    async def set_text_override(self, lang_code: str, key: str, value: str) -> None:
+        await self.conn.execute(
+            "INSERT INTO text_overrides (lang, key, value, updated_at) "
+            "VALUES (?, ?, ?, unixepoch()) "
+            "ON CONFLICT(lang, key) DO UPDATE SET value = excluded.value, "
+            "updated_at = unixepoch()",
+            (lang_code, key, value),
+        )
+        await self.conn.commit()
+
+    async def reset_text_override(self, lang_code: str, key: str) -> None:
+        await self.conn.execute(
+            "DELETE FROM text_overrides WHERE lang = ? AND key = ?",
+            (lang_code, key),
+        )
+        await self.conn.commit()
+
+    async def reset_all_text_overrides(self) -> None:
+        await self.conn.execute("DELETE FROM text_overrides")
+        await self.conn.commit()
 
     async def set_runtime_config(self, key: str, value: str) -> None:
         await self.conn.execute(

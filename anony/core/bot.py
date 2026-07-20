@@ -544,6 +544,7 @@ class Bot(pyrogram.Client):
             ("config", "⚙️ Open runtime configuration"),
             ("setconfig", "✏️ Change a safe runtime setting"),
             ("resetconfig", "↩️ Restore a runtime setting"),
+            ("texts", "📝 Manage runtime text"),
             ("themes", "🎨 Manage global themes"),
             ("importtheme", "📥 Import a theme JSON file"),
             ("exporttheme", "📤 Export a theme JSON file"),
