@@ -91,7 +91,9 @@ Default behavior:
 check every 30s
 restart if heartbeat is stale for 180s
 restart if Telegram self-check is stale for 180s
-restart if real updates are stale for 300s
+check bot responsiveness through an assistant after 300s of no real activity
+restart if the assistant-originated probe is not handled
+restart if real updates are stale and no assistant probe is passing
 restart if external Bot API check fails 3 times
 wait 300s after fresh startup
 wait 600s between watchdog restarts
@@ -109,6 +111,12 @@ WATCHDOG_INTERNAL_PROBE_FAILURES=3
 WATCHDOG_BOT_API_PROBE=true
 WATCHDOG_BOT_API_FAILURES=3
 WATCHDOG_PROBE_TIMEOUT_SECONDS=5
+WATCHDOG_ASSISTANT_PROBE=true
+WATCHDOG_ASSISTANT_PROBE_IDLE_SECONDS=300
+WATCHDOG_ASSISTANT_PROBE_INTERVAL_SECONDS=300
+WATCHDOG_ASSISTANT_PROBE_TIMEOUT_SECONDS=20
+WATCHDOG_ASSISTANT_PROBE_FAILURES=1
+WATCHDOG_ASSISTANT_PROBE_STALE_SECONDS=660
 WATCHDOG_MIN_UPTIME_SECONDS=300
 WATCHDOG_RESTART_COOLDOWN_SECONDS=600
 WATCHDOG_KILL_GRACE_SECONDS=15

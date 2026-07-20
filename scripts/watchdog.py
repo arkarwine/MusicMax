@@ -279,6 +279,13 @@ def check_once() -> None:
     bot_api_failures_limit = env_int(
         "WATCHDOG_BOT_API_FAILURES", 3, minimum=1
     )
+    assistant_probe_enabled = env_bool("WATCHDOG_ASSISTANT_PROBE", True)
+    assistant_probe_stale = env_int(
+        "WATCHDOG_ASSISTANT_PROBE_STALE_SECONDS", 660, minimum=120
+    )
+    assistant_probe_failures_limit = env_int(
+        "WATCHDOG_ASSISTANT_PROBE_FAILURES", 1, minimum=1
+    )
     min_uptime = env_int("WATCHDOG_MIN_UPTIME_SECONDS", 300, minimum=0)
     cooldown = env_int("WATCHDOG_RESTART_COOLDOWN_SECONDS", 600, minimum=60)
     path = db_path()
@@ -380,6 +387,53 @@ def check_once() -> None:
         )
         return
 
+    assistant_probe_at = int_value(values, "assistant_probe_at")
+    assistant_probe_age = (
+        now - assistant_probe_at if assistant_probe_at is not None else None
+    )
+    assistant_probe_status = values.get("assistant_probe_status", "unknown")
+    assistant_probe_failures = int_value(values, "assistant_probe_failures") or 0
+    if (
+        assistant_probe_enabled
+        and assistant_probe_status == "failed"
+        and assistant_probe_failures >= assistant_probe_failures_limit
+    ):
+        log_check(
+            now,
+            "assistant-probe-failed",
+            failures=assistant_probe_failures,
+            limit=assistant_probe_failures_limit,
+            detail=values.get("assistant_probe_detail", ""),
+        )
+        restart(
+            "assistant-originated bot probe failed "
+            f"{assistant_probe_failures} time(s): "
+            f"{values.get('assistant_probe_detail', '')}",
+            path,
+            now,
+        )
+        return
+    if (
+        assistant_probe_enabled
+        and assistant_probe_status not in {"startup", "unknown", "Disabled"}
+        and assistant_probe_age is not None
+        and assistant_probe_age > assistant_probe_stale
+    ):
+        log_check(
+            now,
+            "stale-assistant-probe",
+            probe_age=f"{assistant_probe_age}s",
+            limit=f"{assistant_probe_stale}s",
+            status=assistant_probe_status,
+        )
+        restart(
+            f"assistant-originated bot probe stale for {assistant_probe_age}s "
+            f"(status={assistant_probe_status})",
+            path,
+            now,
+        )
+        return
+
     kind = values.get("last_update_kind", "unknown")
     last_update = int_value(values, "last_update_at")
     update_age = now - last_update if last_update is not None else None
@@ -388,6 +442,28 @@ def check_once() -> None:
         and kind != "startup"
         and update_age > update_stale
     ):
+        if assistant_probe_enabled and assistant_probe_status == "ok":
+            log_check(
+                now,
+                "quiet-but-probed",
+                update_age=f"{update_age}s",
+                limit=f"{update_stale}s",
+                assistant_probe=f"ok/{assistant_probe_age}s",
+            )
+            return
+        if (
+            assistant_probe_enabled
+            and assistant_probe_status in {"startup", "unknown"}
+            and assistant_probe_age is not None
+            and assistant_probe_age <= assistant_probe_stale
+        ):
+            log_check(
+                now,
+                "awaiting-assistant-probe",
+                update_age=f"{update_age}s",
+                assistant_probe=f"{assistant_probe_status}/{assistant_probe_age}s",
+            )
+            return
         log_check(
             now,
             "stale-updates",
@@ -413,6 +489,10 @@ def check_once() -> None:
             if internal_probe_age is not None else internal_probe_status
         ),
         bot_api=("ok" if bot_api_ok else f"failed/{bot_api_failures}"),
+        assistant_probe=(
+            f"{assistant_probe_status}/{assistant_probe_age}s"
+            if assistant_probe_age is not None else assistant_probe_status
+        ),
     )
 
 
@@ -423,6 +503,7 @@ def main() -> None:
         "started "
         f"(enabled={env_bool('EXTERNAL_WATCHDOG', False)}, "
         f"bot_api_probe={env_bool('WATCHDOG_BOT_API_PROBE', True)}, "
+        f"assistant_probe={env_bool('WATCHDOG_ASSISTANT_PROBE', True)}, "
         f"log_checks={env_bool('WATCHDOG_LOG_CHECKS', False)}, "
         f"log_interval={env_int('WATCHDOG_LOG_INTERVAL_SECONDS', 300, minimum=30)}s)"
     )

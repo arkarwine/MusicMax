@@ -130,6 +130,7 @@ async def _status(_, m: types.Message):
     external_watchdog = (
         f"on / updates {config.WATCHDOG_UPDATE_STALE_SECONDS}s / "
         f"probe {config.WATCHDOG_INTERNAL_PROBE_STALE_SECONDS}s / "
+        f"assistant {'on' if config.WATCHDOG_ASSISTANT_PROBE else 'off'} / "
         f"bot-api {'on' if config.WATCHDOG_BOT_API_PROBE else 'off'}"
         if config.EXTERNAL_WATCHDOG
         else "off"

@@ -97,6 +97,41 @@ class ExternalWatchdogTests(unittest.TestCase):
         })
         self.assertEqual(terminations, [])
 
+    def test_stale_update_waits_for_fresh_assistant_probe_window(self):
+        terminations = self.run_check({
+            "heartbeat_at": 990,
+            "last_update_at": 50,
+            "last_update_kind": "Message",
+            "assistant_probe_at": 950,
+            "assistant_probe_status": "startup",
+            "assistant_probe_failures": "0",
+        })
+        self.assertEqual(terminations, [])
+
+    def test_stale_update_is_allowed_when_assistant_probe_passes(self):
+        terminations = self.run_check({
+            "heartbeat_at": 990,
+            "last_update_at": 50,
+            "last_update_kind": "Message",
+            "assistant_probe_at": 950,
+            "assistant_probe_status": "ok",
+            "assistant_probe_failures": "0",
+        })
+        self.assertEqual(terminations, [])
+
+    def test_failed_assistant_probe_restarts(self):
+        terminations = self.run_check({
+            "heartbeat_at": 990,
+            "last_update_at": 50,
+            "last_update_kind": "Message",
+            "assistant_probe_at": 990,
+            "assistant_probe_status": "failed",
+            "assistant_probe_detail": "not handled",
+            "assistant_probe_failures": "1",
+        })
+        self.assertEqual(len(terminations), 1)
+        self.assertIn("assistant-originated bot probe failed", terminations[0])
+
     def test_restart_cooldown_prevents_loop(self):
         terminations = self.run_check({
             "heartbeat_at": 700,

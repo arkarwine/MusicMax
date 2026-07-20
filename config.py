@@ -187,6 +187,24 @@ class Config:
         self.WATCHDOG_BOT_API_FAILURES = self._environment_int(
             "WATCHDOG_BOT_API_FAILURES", 3, minimum=1, maximum=100
         )
+        self.WATCHDOG_ASSISTANT_PROBE = self._environment_bool(
+            "WATCHDOG_ASSISTANT_PROBE", True
+        )
+        self.WATCHDOG_ASSISTANT_PROBE_IDLE_SECONDS = self._environment_int(
+            "WATCHDOG_ASSISTANT_PROBE_IDLE_SECONDS", 300, minimum=120, maximum=86400
+        )
+        self.WATCHDOG_ASSISTANT_PROBE_INTERVAL_SECONDS = self._environment_int(
+            "WATCHDOG_ASSISTANT_PROBE_INTERVAL_SECONDS", 300, minimum=60, maximum=86400
+        )
+        self.WATCHDOG_ASSISTANT_PROBE_TIMEOUT_SECONDS = self._environment_int(
+            "WATCHDOG_ASSISTANT_PROBE_TIMEOUT_SECONDS", 20, minimum=5, maximum=300
+        )
+        self.WATCHDOG_ASSISTANT_PROBE_FAILURES = self._environment_int(
+            "WATCHDOG_ASSISTANT_PROBE_FAILURES", 1, minimum=1, maximum=100
+        )
+        self.WATCHDOG_ASSISTANT_PROBE_STALE_SECONDS = self._environment_int(
+            "WATCHDOG_ASSISTANT_PROBE_STALE_SECONDS", 660, minimum=120, maximum=86400
+        )
         self.WATCHDOG_MIN_UPTIME_SECONDS = self._environment_int(
             "WATCHDOG_MIN_UPTIME_SECONDS", 300, minimum=0, maximum=86400
         )

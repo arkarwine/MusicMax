@@ -22,6 +22,21 @@ class ComponentHealth:
     reminded_at: float = 0.0
 
 
+def _env_bool(name: str, default: bool) -> bool:
+    raw = os.getenv(name)
+    if raw is None or not raw.strip():
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on", "enabled"}
+
+
+def _env_int(name: str, default: int, minimum: int = 0) -> int:
+    try:
+        value = int((os.getenv(name) or "").strip())
+    except ValueError:
+        return default
+    return max(value, minimum)
+
+
 class HealthMonitor:
     CHECK_INTERVAL = 60
     HEARTBEAT_INTERVAL = 30
@@ -58,12 +73,20 @@ class HealthMonitor:
         self.telegram_probe_at = self.started_at
         self.telegram_probe_status = "startup"
         self.telegram_probe_detail = "Not checked yet"
+        self.assistant_probe_at = self.started_at
+        self.assistant_probe_status = "startup"
+        self.assistant_probe_detail = "Not checked yet"
+        self.assistant_probe_failures = 0
+        self._assistant_probe_last_sent = 0
         self.watchdog_restart = watchdog_restart
         self.watchdog_stall_seconds = max(int(watchdog_stall_seconds), 300)
         self.previous_run: dict | None = None
         self.components = {
             name: ComponentHealth(name)
-            for name in ("event loop", "Telegram", "database", "assistants", "voice")
+            for name in (
+                "event loop", "Telegram", "database", "assistants",
+                "voice", "application",
+            )
         }
         self._pending: dict[str, str] = {}
         self._pending_alerts: list[tuple[str, tuple]] = []
@@ -81,6 +104,10 @@ class HealthMonitor:
             "telegram_probe_at": self.telegram_probe_at,
             "telegram_probe_status": self.telegram_probe_status,
             "telegram_probe_detail": self.telegram_probe_detail,
+            "assistant_probe_at": self.assistant_probe_at,
+            "assistant_probe_status": self.assistant_probe_status,
+            "assistant_probe_detail": self.assistant_probe_detail,
+            "assistant_probe_failures": self.assistant_probe_failures,
             "last_shutdown_reason": "running",
         })
         if self.previous_run and self.previous_run["stopped_at"] is None:
@@ -157,6 +184,46 @@ class HealthMonitor:
             )
         return f"{len(active)} ready" if active else "Not configured"
 
+    async def _probe_application(self) -> str:
+        if not _env_bool("WATCHDOG_ASSISTANT_PROBE", True):
+            return "Skip: disabled"
+
+        now = int(time())
+        idle_seconds = _env_int("WATCHDOG_ASSISTANT_PROBE_IDLE_SECONDS", 300, 120)
+        interval = _env_int("WATCHDOG_ASSISTANT_PROBE_INTERVAL_SECONDS", 300, 60)
+        idle_for = now - self.last_update_at
+        if idle_for < idle_seconds:
+            return f"Skip: recent activity {idle_for}s ago"
+        if now - self._assistant_probe_last_sent < interval:
+            return f"Skip: waiting {now - self._assistant_probe_last_sent}s since last probe"
+
+        assistants = [
+            (slot, client)
+            for slot, client in sorted(self.userbot.clients.items())
+            if getattr(client, "is_connected", False)
+        ]
+        if not assistants:
+            return "Skip: no connected assistant"
+
+        slot, client = assistants[0]
+        username = getattr(self.app, "username", None)
+        if not username:
+            raise RuntimeError("Bot username is unknown")
+
+        nonce = uuid4().hex
+        timeout = _env_int("WATCHDOG_ASSISTANT_PROBE_TIMEOUT_SECONDS", 20, 5)
+        self._assistant_probe_last_sent = now
+        await self._with_timeout(client.send_message(username, f"/__watchdog_probe {nonce}"))
+
+        deadline = monotonic() + timeout
+        while monotonic() < deadline:
+            values = await self._with_timeout(self.db.get_runtime_health())
+            seen = values.get("assistant_probe_seen_nonce", {}).get("value")
+            if seen == nonce:
+                return f"Assistant {slot} reached bot"
+            await asyncio.sleep(1)
+        raise RuntimeError(f"Assistant {slot} probe was not handled in {timeout}s")
+
     async def _check(self, name: str, probe) -> None:
         try:
             detail = await probe()
@@ -165,6 +232,9 @@ class HealthMonitor:
         except Exception as exc:
             await self._record(name, False, f"{type(exc).__name__}: {exc}")
         else:
+            if name == "application" and str(detail).startswith("Skip: "):
+                self.components[name].detail = str(detail)[6:]
+                return
             await self._record(name, True, detail)
 
     async def _record(self, name: str, success: bool, detail: str) -> None:
@@ -186,6 +256,23 @@ class HealthMonitor:
                 except Exception:
                     self.logger.warning(
                         "Could not persist Telegram probe health", exc_info=True
+                    )
+        if name == "application":
+            self.assistant_probe_at = int(time())
+            self.assistant_probe_status = "ok" if success else "failed"
+            self.assistant_probe_detail = detail[:200]
+            self.assistant_probe_failures = state.failures + (0 if success else 1)
+            if hasattr(self.db, "set_runtime_health_values"):
+                try:
+                    await self.db.set_runtime_health_values({
+                        "assistant_probe_at": self.assistant_probe_at,
+                        "assistant_probe_status": self.assistant_probe_status,
+                        "assistant_probe_detail": self.assistant_probe_detail,
+                        "assistant_probe_failures": self.assistant_probe_failures,
+                    })
+                except Exception:
+                    self.logger.warning(
+                        "Could not persist assistant probe health", exc_info=True
                     )
         if success:
             state.failures = 0
@@ -343,6 +430,10 @@ class HealthMonitor:
                     "telegram_probe_at": self.telegram_probe_at,
                     "telegram_probe_status": self.telegram_probe_status,
                     "telegram_probe_detail": self.telegram_probe_detail,
+                    "assistant_probe_at": self.assistant_probe_at,
+                    "assistant_probe_status": self.assistant_probe_status,
+                    "assistant_probe_detail": self.assistant_probe_detail,
+                    "assistant_probe_failures": self.assistant_probe_failures,
                 })
             except Exception as exc:
                 await self._record(
@@ -355,6 +446,7 @@ class HealthMonitor:
             await self._check("database", self._probe_database)
             await self._check("assistants", self._probe_assistants)
             await self._check("voice", self._probe_voice)
+            await self._check("application", self._probe_application)
             await self._watchdog_stale_updates()
 
     async def _watchdog_stale_updates(self) -> None:
@@ -368,7 +460,7 @@ class HealthMonitor:
             f"(last={self.last_update_kind})"
         )
         self.logger.critical(
-            "Watchdog restart requested: %s. PM2 should restart the process.",
+            "Watchdog restart requested: %s. The external supervisor should restart the process.",
             reason,
         )
         try:
@@ -408,6 +500,10 @@ class HealthMonitor:
             "telegram_probe_at": self.telegram_probe_at,
             "telegram_probe_status": self.telegram_probe_status,
             "telegram_probe_detail": self.telegram_probe_detail,
+            "assistant_probe_at": self.assistant_probe_at,
+            "assistant_probe_status": self.assistant_probe_status,
+            "assistant_probe_detail": self.assistant_probe_detail,
+            "assistant_probe_failures": self.assistant_probe_failures,
             "watchdog_enabled": self.watchdog_restart,
             "watchdog_stall_seconds": self.watchdog_stall_seconds,
             "previous_result": previous_result,

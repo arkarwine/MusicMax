@@ -7,8 +7,24 @@ import time
 import psutil
 
 from pyrogram import filters, types
-from anony import app, anon, boot, config, db, lang
+from anony import app, anon, boot, config, db, lang, userbot
 from anony.helpers import buttons
+
+
+@app.on_message(filters.private & filters.command(["__watchdog_probe"]), group=-20)
+async def _watchdog_probe(_, m: types.Message):
+    assistant_ids = {
+        getattr(client, "id", None) for client in userbot.clients.values()
+    }
+    sender_id = getattr(getattr(m, "from_user", None), "id", None)
+    if sender_id not in assistant_ids:
+        return
+    nonce = m.command[1] if len(getattr(m, "command", [])) > 1 else ""
+    await db.set_runtime_health_values({
+        "assistant_probe_seen_at": int(time.time()),
+        "assistant_probe_seen_nonce": nonce,
+        "assistant_probe_seen_sender": sender_id,
+    })
 
 
 @app.on_message(filters.command(["alive", "ping"]) & ~app.bl_users)
