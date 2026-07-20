@@ -302,11 +302,11 @@ class Config:
         kind: str,
     ) -> str:
         normalized = value.strip().lower()
-        if normalized == "-":
+        if normalized in {"-", "off", "none", "disabled"}:
             return "-"
         if not normalized:
             raise ValueError(
-                f"{kind} layout cannot be empty; use - to hide all"
+                f"{kind} layout cannot be empty; use off to hide all"
             )
 
         rows = []

@@ -203,7 +203,7 @@ class PlaybackButtonConfigTests(unittest.TestCase):
         )
 
     def test_start_button_layout_can_hide_all_buttons(self):
-        self.config.set_runtime("start_buttons_layout", "-")
+        self.config.set_runtime("start_buttons_layout", "off")
 
         self.assertEqual(self.config.start_buttons_layout(), ())
         self.assertEqual(

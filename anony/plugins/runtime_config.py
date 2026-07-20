@@ -82,7 +82,7 @@ SETTINGS = {
     "play_controls_layout": SettingSpec(
         "Play controls", "playback",
         "Choose control order, rows and omitted controls.",
-        "loop, stop, pause, skip, replay; comma = row, | = new row, - = hide",
+        "loop, stop, pause, skip, replay; comma = row, | = new row, off = hide all",
         "pause,skip|stop",
     ),
     "play_button_text": SettingSpec(
@@ -110,7 +110,7 @@ SETTINGS = {
     "start_buttons_layout": SettingSpec(
         "Start buttons", "start",
         "Choose start-menu button order, rows and hidden buttons.",
-        "add, help, language, stats, trending, support, channel, owner; comma = row, | = new row, - = hide",
+        "add, help, language, stats, trending, support, channel, owner; comma = row, | = new row, off = hide all",
         "add|help,language,stats|support,channel|owner",
     ),
     "start_add_text": SettingSpec(
