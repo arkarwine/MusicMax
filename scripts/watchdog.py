@@ -1,10 +1,16 @@
 #!/usr/bin/env python3
-"""External PM2 watchdog for an online-but-stale bot process."""
+"""External watchdog for an online-but-stale bot process.
+
+The default recovery path intentionally avoids the PM2 CLI. If the PM2 daemon
+or CLI is wedged, `pm2 jlist` and `pm2 restart` can both hang. Killing the stale
+bot process directly lets PM2's normal autorestart path handle recovery when the
+daemon is healthy, and still makes the failure visible when the daemon is not.
+"""
 
 from __future__ import annotations
 
-import json
 import os
+import signal
 import sqlite3
 import subprocess
 import time
@@ -94,42 +100,94 @@ def write_runtime_health(path: Path, values: dict[str, object]) -> None:
         connection.close()
 
 
-def pm2_app(name: str) -> dict | None:
-    result = subprocess.run(
-        ["pm2", "jlist"],
-        text=True,
-        capture_output=True,
-        timeout=10,
-        check=False,
-    )
-    if result.returncode != 0:
-        log(f"pm2 jlist failed: {result.stderr.strip() or result.stdout.strip()}")
-        return None
-    try:
-        apps = json.loads(result.stdout)
-    except json.JSONDecodeError as exc:
-        log(f"pm2 jlist returned invalid JSON: {exc}")
-        return None
-    for app in apps:
-        if app.get("name") == name:
-            return app
-    log(f"PM2 app not found: {name}")
-    return None
-
-
-def app_uptime_seconds(app: dict, now: int) -> int:
-    pm_uptime = ((app.get("pm2_env") or {}).get("pm_uptime")) or 0
-    try:
-        return max(now - int(pm_uptime / 1000), 0)
-    except (TypeError, ValueError):
-        return 0
-
-
 def int_value(values: dict[str, str], key: str) -> int | None:
     try:
         return int(values[key])
     except (KeyError, TypeError, ValueError):
         return None
+
+
+def proc_cmdline(pid: int) -> str:
+    try:
+        raw = Path(f"/proc/{pid}/cmdline").read_bytes()
+    except OSError:
+        return ""
+    return raw.replace(b"\0", b" ").decode("utf-8", "ignore").strip()
+
+
+def proc_cwd(pid: int) -> Path | None:
+    try:
+        return Path(f"/proc/{pid}/cwd").resolve()
+    except OSError:
+        return None
+
+
+def find_bot_pids() -> list[int]:
+    proc_root = Path("/proc")
+    if not proc_root.exists():
+        return []
+    self_pid = os.getpid()
+    expected_cwd = Path.cwd().resolve()
+    match = os.getenv("WATCHDOG_PROCESS_MATCH", "-m anony").strip()
+    pids: list[int] = []
+    for entry in proc_root.iterdir():
+        if not entry.name.isdigit():
+            continue
+        pid = int(entry.name)
+        if pid == self_pid:
+            continue
+        command = proc_cmdline(pid)
+        if not command or "scripts/watchdog.py" in command:
+            continue
+        if match and match not in command:
+            continue
+        cwd = proc_cwd(pid)
+        if cwd != expected_cwd:
+            continue
+        pids.append(pid)
+    return sorted(pids)
+
+
+def process_alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return False
+    return True
+
+
+def terminate_bot_processes(reason: str) -> bool:
+    pids = find_bot_pids()
+    if not pids:
+        log(
+            "no matching bot process found "
+            f"(WATCHDOG_PROCESS_MATCH={os.getenv('WATCHDOG_PROCESS_MATCH', '-m anony')!r})"
+        )
+        return False
+
+    grace = env_int("WATCHDOG_KILL_GRACE_SECONDS", 15, minimum=1)
+    log(f"terminating stale bot process(es) {pids}: {reason}")
+    for pid in pids:
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except OSError as exc:
+            log(f"could not SIGTERM {pid}: {type(exc).__name__}: {exc}")
+
+    deadline = time.time() + grace
+    while time.time() < deadline:
+        if not any(process_alive(pid) for pid in pids):
+            return True
+        time.sleep(0.5)
+
+    alive = [pid for pid in pids if process_alive(pid)]
+    if alive:
+        log(f"forcing stale bot process(es) {alive} after {grace}s")
+        for pid in alive:
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except OSError as exc:
+                log(f"could not SIGKILL {pid}: {type(exc).__name__}: {exc}")
+    return True
 
 
 def restart(app_name: str, reason: str, path: Path, now: int) -> None:
@@ -140,16 +198,21 @@ def restart(app_name: str, reason: str, path: Path, now: int) -> None:
             "watchdog_last_reason": reason,
         },
     )
-    log(f"restarting {app_name}: {reason}")
-    result = subprocess.run(
-        ["pm2", "restart", app_name, "--update-env"],
-        text=True,
-        capture_output=True,
-        timeout=30,
-        check=False,
-    )
-    if result.returncode != 0:
-        log(f"pm2 restart failed: {result.stderr.strip() or result.stdout.strip()}")
+    method = os.getenv("WATCHDOG_RESTART_METHOD", "kill").strip().lower()
+    if method == "pm2":
+        log(f"restarting {app_name} through PM2 CLI: {reason}")
+        result = subprocess.run(
+            ["pm2", "restart", app_name, "--update-env"],
+            text=True,
+            capture_output=True,
+            timeout=30,
+            check=False,
+        )
+        if result.returncode != 0:
+            log(f"pm2 restart failed: {result.stderr.strip() or result.stdout.strip()}")
+        return
+
+    terminate_bot_processes(reason)
 
 
 def check_once() -> None:
@@ -164,20 +227,13 @@ def check_once() -> None:
     path = db_path()
     now = int(time.time())
 
-    app = pm2_app(app_name)
-    if not app:
-        return
-    status = (app.get("pm2_env") or {}).get("status")
-    if status != "online":
-        log(f"{app_name} is {status or 'unknown'}; PM2 owns this state")
-        return
-    uptime = app_uptime_seconds(app, now)
-    if uptime < min_uptime:
-        return
-
     values = read_runtime_health(path)
     if not values:
         log("runtime health is unavailable; waiting for bot heartbeat")
+        return
+
+    started_at = int_value(values, "started_at")
+    if started_at is not None and now - started_at < min_uptime:
         return
 
     last_restart = int_value(values, "watchdog_last_restart_at")

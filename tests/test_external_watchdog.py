@@ -30,6 +30,7 @@ class ExternalWatchdogTests(unittest.TestCase):
         return {
             "EXTERNAL_WATCHDOG": "true",
             "WATCHDOG_PM2_APP": "GPH",
+            "WATCHDOG_RESTART_METHOD": "kill",
             "WATCHDOG_HEARTBEAT_STALE_SECONDS": "180",
             "WATCHDOG_UPDATE_STALE_SECONDS": "900",
             "WATCHDOG_MIN_UPTIME_SECONDS": "0",
@@ -49,79 +50,103 @@ class ExternalWatchdogTests(unittest.TestCase):
             ["pm2", "jlist"], 0, stdout=json.dumps(payload), stderr=""
         )
 
-    def run_check(self, health, *, now=1_000, status="online"):
+    def run_check(self, health, *, now=1_000, env=None):
         watchdog.write_runtime_health(self.db_path, health)
-        calls = []
+        terminations = []
+        merged_env = self.env()
+        if env:
+            merged_env.update(env)
 
-        def fake_run(command, **kwargs):
-            calls.append(command)
-            if command[:2] == ["pm2", "jlist"]:
-                return self.pm2_result(now=now, status=status)
-            return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+        def fake_terminate(reason):
+            terminations.append(reason)
+            return True
 
-        with patch.dict(watchdog.os.environ, self.env(), clear=False), \
+        with patch.dict(watchdog.os.environ, merged_env, clear=False), \
              patch.object(watchdog.time, "time", return_value=now), \
-             patch.object(watchdog.subprocess, "run", side_effect=fake_run):
+             patch.object(watchdog, "terminate_bot_processes", side_effect=fake_terminate):
             watchdog.check_once()
-        return calls
+        return terminations
 
     def test_fresh_health_does_not_restart(self):
-        calls = self.run_check({
+        terminations = self.run_check({
             "heartbeat_at": 950,
             "last_update_at": 900,
             "last_update_kind": "Message",
         })
-        self.assertEqual(calls, [["pm2", "jlist"]])
+        self.assertEqual(terminations, [])
 
-    def test_stale_heartbeat_restarts_pm2_app(self):
-        calls = self.run_check({
+    def test_stale_heartbeat_terminates_bot_process(self):
+        terminations = self.run_check({
             "heartbeat_at": 700,
             "last_update_at": 990,
             "last_update_kind": "Message",
         })
-        self.assertEqual(calls[-1], ["pm2", "restart", "GPH", "--update-env"])
+        self.assertEqual(len(terminations), 1)
+        self.assertIn("heartbeat stale", terminations[0])
         values = watchdog.read_runtime_health(self.db_path)
         self.assertIn("heartbeat stale", values["watchdog_last_reason"])
 
     def test_stale_update_restarts_after_real_update(self):
-        calls = self.run_check({
+        terminations = self.run_check({
             "heartbeat_at": 990,
             "last_update_at": 50,
             "last_update_kind": "CallbackQuery",
         })
-        self.assertEqual(calls[-1], ["pm2", "restart", "GPH", "--update-env"])
+        self.assertEqual(len(terminations), 1)
+        self.assertIn("Telegram updates stale", terminations[0])
         values = watchdog.read_runtime_health(self.db_path)
         self.assertIn("Telegram updates stale", values["watchdog_last_reason"])
 
     def test_startup_update_marker_does_not_restart_on_quiet_bot(self):
-        calls = self.run_check({
+        terminations = self.run_check({
             "heartbeat_at": 990,
             "last_update_at": 50,
             "last_update_kind": "startup",
         })
-        self.assertEqual(calls, [["pm2", "jlist"]])
+        self.assertEqual(terminations, [])
 
     def test_restart_cooldown_prevents_loop(self):
-        calls = self.run_check({
+        terminations = self.run_check({
             "heartbeat_at": 700,
             "last_update_at": 50,
             "last_update_kind": "Message",
             "watchdog_last_restart_at": 950,
         })
-        self.assertEqual(calls, [["pm2", "jlist"]])
+        self.assertEqual(terminations, [])
 
     def test_missing_database_does_not_restart(self):
+        terminations = []
+
+        def fake_terminate(reason):
+            terminations.append(reason)
+            return True
+
+        with patch.dict(watchdog.os.environ, self.env(), clear=False), \
+             patch.object(watchdog.time, "time", return_value=1_000), \
+             patch.object(watchdog, "terminate_bot_processes", side_effect=fake_terminate):
+            watchdog.check_once()
+        self.assertEqual(terminations, [])
+
+    def test_optional_pm2_restart_method_is_still_supported(self):
+        watchdog.write_runtime_health(self.db_path, {
+            "heartbeat_at": 700,
+            "last_update_at": 990,
+            "last_update_kind": "Message",
+        })
         calls = []
 
         def fake_run(command, **kwargs):
             calls.append(command)
-            return self.pm2_result()
+            return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
 
-        with patch.dict(watchdog.os.environ, self.env(), clear=False), \
+        env = self.env()
+        env["WATCHDOG_RESTART_METHOD"] = "pm2"
+        with patch.dict(watchdog.os.environ, env, clear=False), \
              patch.object(watchdog.time, "time", return_value=1_000), \
              patch.object(watchdog.subprocess, "run", side_effect=fake_run):
             watchdog.check_once()
-        self.assertEqual(calls, [["pm2", "jlist"]])
+
+        self.assertEqual(calls, [["pm2", "restart", "GPH", "--update-env"]])
 
 
 if __name__ == "__main__":
