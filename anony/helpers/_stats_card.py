@@ -320,7 +320,7 @@ class StatsCard:
         )
         draw.text(
             (1536, 84),
-            "Growth · listening · active chats",
+            "Growth · plays · listening chats",
             font=self._font(18),
             fill=self.MUTED,
             anchor="ra",
@@ -344,8 +344,8 @@ class StatsCard:
             (810, 530, 1540, 930),
             month,
             field="active_chats",
-            title="Active chats",
-            subtitle="Unique listening chats · last 30 days",
+            title="Listening chats",
+            subtitle="Unique chats with plays · last 30 days",
             unit="chats",
             accent=self.BLUE,
             fill=self.BLUE_FILL,

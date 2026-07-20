@@ -69,6 +69,14 @@ class HealthMonitor:
 
     async def begin_run(self) -> dict | None:
         self.previous_run = await self.db.start_process_run(self.run_id)
+        await self.db.set_runtime_health_values({
+            "run_id": self.run_id,
+            "started_at": self.started_at,
+            "heartbeat_at": self.last_heartbeat,
+            "last_update_at": self.last_update_at,
+            "last_update_kind": self.last_update_kind,
+            "last_shutdown_reason": "running",
+        })
         if self.previous_run and self.previous_run["stopped_at"] is None:
             heartbeat = datetime.fromtimestamp(
                 self.previous_run["heartbeat_at"], timezone.utc
@@ -90,6 +98,9 @@ class HealthMonitor:
 
 
     async def finish(self, reason: str) -> None:
+        await self.db.set_runtime_health_values({
+            "last_shutdown_reason": reason[:200],
+        })
         await self.db.finish_process_run(self.run_id, reason)
 
     async def _with_timeout(self, awaitable) -> object:
@@ -302,6 +313,12 @@ class HealthMonitor:
             try:
                 await self.db.heartbeat_process_run(self.run_id)
                 self.last_heartbeat = int(time())
+                await self.db.set_runtime_health_values({
+                    "run_id": self.run_id,
+                    "heartbeat_at": self.last_heartbeat,
+                    "last_update_at": self.last_update_at,
+                    "last_update_kind": self.last_update_kind,
+                })
             except Exception as exc:
                 await self._record(
                     "database", False, f"Heartbeat failed: {type(exc).__name__}: {exc}"

@@ -245,6 +245,16 @@ class ReliabilityDatabaseTests(unittest.IsolatedAsyncioTestCase):
             else:
                 sys.modules[key] = value
 
+    async def test_runtime_health_values_persist(self):
+        await self.db.set_runtime_health_values({
+            "heartbeat_at": 123,
+            "last_update_kind": "Message",
+        })
+        values = await self.db.get_runtime_health()
+        self.assertEqual(values["heartbeat_at"]["value"], "123")
+        self.assertEqual(values["last_update_kind"]["value"], "Message")
+        self.assertIsInstance(values["heartbeat_at"]["updated_at"], int)
+
     async def test_process_run_detects_unfinished_previous_run(self):
         self.assertIsNone(await self.db.start_process_run("first"))
         await self.db.heartbeat_process_run("first")

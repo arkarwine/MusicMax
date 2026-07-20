@@ -14,7 +14,7 @@ from pathlib import Path
 import psutil
 from pyrogram import enums, filters, types
 
-from anony import anon, app, boot, db, health, lang, userbot, yt
+from anony import anon, app, boot, config, db, health, lang, userbot, yt
 from anony.helpers import admin_check, buttons, feedback
 
 
@@ -127,6 +127,27 @@ async def _status(_, m: types.Message):
         if snapshot["watchdog_enabled"]
         else "off"
     )
+    external_watchdog = (
+        f"on / {config.WATCHDOG_PM2_APP} / {config.WATCHDOG_UPDATE_STALE_SECONDS}s"
+        if config.EXTERNAL_WATCHDOG
+        else "off"
+    )
+    try:
+        runtime_health = await db.get_runtime_health()
+    except Exception:
+        runtime_health = {}
+    last_restart = runtime_health.get("watchdog_last_restart_at", {})
+    if last_restart.get("value"):
+        try:
+            restart_age = max(int(time.time()) - int(last_restart["value"]), 0)
+        except (TypeError, ValueError):
+            restart_age = 0
+        restart_reason = runtime_health.get("watchdog_last_reason", {}).get(
+            "value", "unknown"
+        )
+        external_restart = f"{restart_age}s ago ({restart_reason[:80]})"
+    else:
+        external_restart = "none"
     failed_workers = snapshot["workers"]["failed"]
     reliability = "Healthy" if snapshot["healthy"] else "Needs attention"
     worker_summary = (
@@ -177,6 +198,8 @@ async def _status(_, m: types.Message):
         heartbeat=f"{heartbeat_age}s ago",
         last_update=f"{update_age}s ago ({snapshot['last_update_kind']})",
         watchdog=watchdog,
+        external_watchdog=external_watchdog,
+        external_restart=external_restart,
         previous_exit=snapshot["previous_result"],
         health_alerts=m.lang[
             "health_alerts_on" if alert_enabled else "health_alerts_off"

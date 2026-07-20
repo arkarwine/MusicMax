@@ -137,6 +137,11 @@ class SQLiteDB:
                     stopped_at INTEGER,
                     stop_reason TEXT
                 );
+                CREATE TABLE IF NOT EXISTS runtime_health (
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL,
+                    updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+                );
                 CREATE INDEX IF NOT EXISTS process_runs_started
                     ON process_runs (started_at DESC);
                 CREATE TABLE IF NOT EXISTS users (
@@ -1256,6 +1261,28 @@ class SQLiteDB:
         )
         return [int(row[0]) for row in await cursor.fetchall()]
 
+    async def set_runtime_health_values(self, values: dict[str, object]) -> None:
+        if not values:
+            return
+        rows = [(str(key), str(value)) for key, value in values.items()]
+        async with self.write_lock:
+            await self.conn.executemany(
+                "INSERT INTO runtime_health (key, value, updated_at) "
+                "VALUES (?, ?, unixepoch()) "
+                "ON CONFLICT(key) DO UPDATE SET "
+                "value = excluded.value, updated_at = unixepoch()",
+                rows,
+            )
+            await self.conn.commit()
+
+    async def get_runtime_health(self) -> dict[str, dict]:
+        cursor = await self.conn.execute(
+            "SELECT key, value, updated_at FROM runtime_health"
+        )
+        return {
+            row[0]: {"value": row[1], "updated_at": int(row[2])}
+            for row in await cursor.fetchall()
+        }
     async def start_process_run(self, run_id: str) -> dict | None:
         cursor = await self.conn.execute(
             "SELECT run_id, started_at, heartbeat_at, stopped_at, stop_reason "

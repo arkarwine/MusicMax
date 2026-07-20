@@ -144,6 +144,25 @@ class Config:
         self.WATCHDOG_STALL_SECONDS = self._environment_int(
             "WATCHDOG_STALL_SECONDS", 21600, minimum=300, maximum=86400
         )
+        self.EXTERNAL_WATCHDOG = self._environment_bool(
+            "EXTERNAL_WATCHDOG", False
+        )
+        self.WATCHDOG_PM2_APP = (getenv("WATCHDOG_PM2_APP") or "GPH").strip() or "GPH"
+        self.WATCHDOG_CHECK_INTERVAL = self._environment_int(
+            "WATCHDOG_CHECK_INTERVAL", 30, minimum=10, maximum=3600
+        )
+        self.WATCHDOG_HEARTBEAT_STALE_SECONDS = self._environment_int(
+            "WATCHDOG_HEARTBEAT_STALE_SECONDS", 180, minimum=60, maximum=86400
+        )
+        self.WATCHDOG_UPDATE_STALE_SECONDS = self._environment_int(
+            "WATCHDOG_UPDATE_STALE_SECONDS", 900, minimum=300, maximum=86400
+        )
+        self.WATCHDOG_MIN_UPTIME_SECONDS = self._environment_int(
+            "WATCHDOG_MIN_UPTIME_SECONDS", 300, minimum=0, maximum=86400
+        )
+        self.WATCHDOG_RESTART_COOLDOWN_SECONDS = self._environment_int(
+            "WATCHDOG_RESTART_COOLDOWN_SECONDS", 600, minimum=60, maximum=86400
+        )
         self.PLAY_BUTTON_TEXT = getenv("PLAY_BUTTON_TEXT", "").strip()
         if len(self.PLAY_BUTTON_TEXT) > 64:
             logger.warning(
