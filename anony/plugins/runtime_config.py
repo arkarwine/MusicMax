@@ -17,16 +17,6 @@ from anony.core.rich_messages import themed_emoji_token
 from anony.ui.keyboards import home_row
 
 
-@dataclass(frozen=True, slots=True)
-class SettingSpec:
-    label: str
-    category: str
-    description: str
-    accepted: str
-    example: str
-    boolean: bool = False
-
-
 @dataclass(slots=True)
 class ConfigView:
     rich: str
@@ -44,144 +34,12 @@ class PendingEdit:
 
 
 CATEGORIES = {
-    "playback": ("🎧", "Playback", "Music limits, video and player controls"),
-    "messages": ("💬", "Play card", "Now-playing text and optional link button"),
-    "start": ("🏠", "Start menu", "Welcome buttons, order and labels"),
-    "automation": ("⚡", "Behavior", "Automatic actions, language and community links"),
-    "appearance": ("🖼️", "Images", "Pictures shown across the bot"),
+    key: (category.icon, category.label, category.description)
+    for key, category in config.RUNTIME_CATEGORIES.items()
 }
-
 SETTINGS = {
-    "duration_limit": SettingSpec(
-        "Track limit", "playback", "Maximum length accepted for one track.",
-        "1–1440 minutes", "60",
-    ),
-    "queue_limit": SettingSpec(
-        "Queue limit", "playback", "Maximum queued tracks per chat.",
-        "1–1000 tracks", "20",
-    ),
-    "playlist_limit": SettingSpec(
-        "Playlist limit", "playback", "Maximum tracks imported at once.",
-        "1–1000 tracks", "20",
-    ),
-    "thumb_gen": SettingSpec(
-        "Generated artwork", "playback",
-        "Create a track-specific thumbnail for play cards.",
-        "on or off", "on", True,
-    ),
-    "video_play": SettingSpec(
-        "Video playback", "playback", "Allow video streams when requested.",
-        "on or off", "on", True,
-    ),
-    "play_image": SettingSpec(
-        "Play cover", "playback",
-        "Override the first play-card image; generated artwork remains second.",
-        "HTTP(S), @username, or - to disable",
-        "https://example.com/cover.jpg",
-    ),
-    "play_controls_layout": SettingSpec(
-        "Play controls", "playback",
-        "Choose control order, rows and omitted controls.",
-        "loop, stop, pause, skip, replay; comma = row, | = new row, off = hide all",
-        "pause,skip|stop",
-    ),
-    "play_button_text": SettingSpec(
-        "Button text", "messages",
-        "Play-card link label; both text and link are required.",
-        "up to 64 characters, or - to disable", "Open channel",
-    ),
-    "play_button_url": SettingSpec(
-        "Button link", "messages",
-        "Play-card button destination; both text and link are required.",
-        "HTTP(S), @username, or - to disable", "@anonxmusic",
-    ),
-    "play_message_template_en": SettingSpec(
-        "English template", "messages",
-        "Markdown template for English play cards.",
-        "Markdown with image, title, link, duration, requester and source placeholders",
-        "# Now playing",
-    ),
-    "play_message_template_my": SettingSpec(
-        "Burmese template", "messages",
-        "Markdown template for Burmese play cards.",
-        "Markdown with image, title, link, duration, requester and source placeholders",
-        "# Now playing",
-    ),
-    "start_buttons_layout": SettingSpec(
-        "Start buttons", "start",
-        "Choose start-menu button order, rows and hidden buttons.",
-        "add, help, language, stats, trending, support, channel, owner; comma = row, | = new row, off = hide all",
-        "add|help,language,stats|support,channel|owner",
-    ),
-    "start_add_text": SettingSpec(
-        "Add button", "start", "Custom Add to Group button label.",
-        "up to 64 characters, or - for default", "➕ Add to Group",
-    ),
-    "start_help_text": SettingSpec(
-        "Help button", "start", "Custom Help button label.",
-        "up to 64 characters, or - for default", "Help",
-    ),
-    "start_language_text": SettingSpec(
-        "Language button", "start", "Custom Language button label.",
-        "up to 64 characters, or - for default", "Language",
-    ),
-    "start_stats_text": SettingSpec(
-        "Stats button", "start", "Custom Stats button label.",
-        "up to 64 characters, or - for default", "Stats",
-    ),
-    "start_trending_text": SettingSpec(
-        "Trending button", "start", "Custom Trending button label.",
-        "up to 64 characters, or - for default", "Trending",
-    ),
-    "start_support_text": SettingSpec(
-        "Support button", "start", "Custom Support button label.",
-        "up to 64 characters, or - for default", "💬 Support",
-    ),
-    "start_channel_text": SettingSpec(
-        "Channel button", "start", "Custom Channel button label.",
-        "up to 64 characters, or - for default", "📣 Cʜᴀɴɴᴇʟ",
-    ),
-    "start_owner_text": SettingSpec(
-        "Owner button", "start", "Custom Owner button label.",
-        "up to 64 characters, or - for default", "👤 Owner",
-    ),
-    "auto_leave": SettingSpec(
-        "Auto leave", "automation",
-        "Leave the voice chat after playback becomes idle.",
-        "on or off", "off", True,
-    ),
-    "auto_end": SettingSpec(
-        "Auto end", "automation",
-        "End an idle group voice chat when permitted.",
-        "on or off", "off", True,
-    ),
-    "lang_code": SettingSpec(
-        "Default language", "automation",
-        "Language used by chats without a saved preference.",
-        "en or my", "en",
-    ),
-    "support_channel": SettingSpec(
-        "Channel", "automation", "Primary updates or support channel.",
-        "HTTP(S) or @username", "@anonxmusic",
-    ),
-    "support_chat": SettingSpec(
-        "Support group", "automation", "Community support destination.",
-        "HTTP(S) or @username", "@anonxsupport",
-    ),
-    "default_thumb": SettingSpec(
-        "Default artwork", "appearance",
-        "Fallback image when a track has no artwork.",
-        "complete HTTP(S) URL", "https://example.com/default.jpg",
-    ),
-    "ping_img": SettingSpec(
-        "Stats artwork", "appearance", "Image used by status and stats cards.",
-        "complete HTTP(S) URL", "https://example.com/stats.jpg",
-    ),
-    "start_img": SettingSpec(
-        "Start artwork", "appearance", "Optional image on the start screen.",
-        "complete HTTP(S) URL, or - to disable",
-        "https://example.com/start.jpg",
-    ),
+    key: config.RUNTIME_SETTINGS[key]
+    for key in config.RUNTIME_FIELDS
 }
 
 BOOLEAN_KEYS = tuple(key for key, spec in SETTINGS.items() if spec.boolean)
@@ -237,8 +95,8 @@ def _short_value(key: str, limit: int = 34) -> str:
 
 def _source(key: str, overrides: dict[str, str]) -> str:
     if key in overrides:
-        return "Custom"
-    return "Theme" if key in themes.active.config else "Environment"
+        return "Saved"
+    return "Theme" if key in themes.active.config else "Default"
 
 
 def _header(icon: str, title: str) -> str:
@@ -260,23 +118,25 @@ def _overview_markup(has_overrides: bool) -> types.InlineKeyboardMarkup:
                 callback_data=callbacks.runtime_config("category", key),
             ))
         rows.append(row)
+    rows.append([
+        buttons.ikb(
+            text="😀 Emoji",
+            callback_data=callbacks.runtime_config("emoji", "root"),
+        ),
+        buttons.ikb(
+            text="🎨 Themes", callback_data=callbacks.theme("home", "root")
+        ),
+    ])
     actions = [buttons.ikb(
-        text="🔄 Refresh",
+        text="Refresh",
         callback_data=callbacks.runtime_config("home", "root"),
     )]
     if has_overrides:
         actions.append(buttons.ikb(
-            text="↩️ Reset all",
+            text="Reset all",
             callback_data=callbacks.runtime_config("confirm_all", "all"),
         ))
     rows.append(actions)
-    rows.append([buttons.ikb(
-        text="😀 Emoji style",
-        callback_data=callbacks.runtime_config("emoji", "root"),
-    )])
-    rows.append([buttons.ikb(
-        text="🎨 Themes", callback_data=callbacks.theme("home", "root")
-    )])
     rows.append(home_row("⬅️ Home", callbacks.HELP_HOME))
     return buttons.ikm(rows)
 
@@ -297,17 +157,16 @@ async def _overview_view() -> ConfigView:
             f"{icon} <b>{label}</b> · {custom}/{len(keys)} custom"
         )
     rich = (
-        _header("⚙️", "Bot settings")
-        + f"<blockquote>Active theme · {escape(themes.active.name)}</blockquote>"
+        _header("⚙️", "Configuration")
+        + f"<blockquote>{escape(themes.active.name)} · Live settings · Restart-proof</blockquote>"
         + '<table bordered striped>' + "".join(rows) + "</table>"
-        + "<blockquote>Changes apply immediately · Saved across restarts</blockquote>"
+        + "<blockquote>Secrets stay in env. Safe settings can change here.</blockquote>"
     )
     fallback = (
-        f"⚙️ <b>{_small_caps_title('Bot settings')}</b>\n\n"
-        f"<blockquote>Active theme · {escape(themes.active.name)}</blockquote>\n\n"
+        f"⚙️ <b>{_small_caps_title('Configuration')}</b>\n\n"
+        f"<blockquote>{escape(themes.active.name)} · Live settings · Restart-proof</blockquote>\n\n"
         + "\n".join(fallback_rows)
-        + "\n\n<blockquote>Changes apply immediately · "
-        "Saved across restarts</blockquote>"
+        + "\n\n<blockquote>Secrets stay in env. Safe settings can change here.</blockquote>"
     )
     return ConfigView(rich, fallback, _overview_markup(bool(overrides)))
 
@@ -503,11 +362,11 @@ def _category_markup(
         rows.append(row)
     rows.append([
         buttons.ikb(
-            text="🔄 Refresh",
+            text="Refresh",
             callback_data=callbacks.runtime_config("category", category),
         ),
         buttons.ikb(
-            text="⬅️ Overview",
+            text="Overview",
             callback_data=callbacks.runtime_config("home", "root"),
         ),
     ])
@@ -533,7 +392,7 @@ async def _category_view(category: str) -> ConfigView:
         )
     rich = (
         _header(icon, label)
-        + f"<blockquote>{escape(description)}</blockquote>"
+        + f"<blockquote>{escape(description)} · {sum(key in overrides for key in _category_keys(category))}/{len(_category_keys(category))} saved</blockquote>"
         + '<table bordered striped>' + "".join(rows) + "</table>"
     )
     fallback = (
@@ -568,7 +427,7 @@ def _setting_markup(
         )])
     if key in TEMPLATE_KEYS:
         rows.append([buttons.ikb(
-            text="📄 View template",
+            text="View template",
             callback_data=callbacks.runtime_config("template", key),
         )])
     if key in overrides:
@@ -657,7 +516,7 @@ async def _template_view(key: str) -> ConfigView:
     ]]
     if key in overrides:
         rows.append([buttons.ikb(
-            text="↩️ Restore default",
+            text="Restore",
             callback_data=callbacks.runtime_config("reset", key),
         )])
     rows.append([
@@ -666,8 +525,8 @@ async def _template_view(key: str) -> ConfigView:
             callback_data=callbacks.runtime_config("view", key),
         ),
         buttons.ikb(
-            text="💬 Messages",
-            callback_data=callbacks.runtime_config("category", "messages"),
+            text="✨ Interface",
+            callback_data=callbacks.runtime_config("category", "interface"),
         ),
     ])
     return ConfigView(rich, fallback, buttons.ikm(rows))

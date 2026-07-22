@@ -5,12 +5,21 @@
 
 import asyncio
 import os
+from os import getenv
 import time
 
 from pyrogram import errors, types
 
 from anony import config
 from anony.helpers import Media, buttons, utils
+
+
+def _env_int(name: str, default: int, minimum: int = 1) -> int:
+    try:
+        value = int((getenv(name) or "").strip())
+    except ValueError:
+        return default
+    return max(value, minimum)
 
 
 class Telegram:
@@ -107,7 +116,15 @@ class Telegram:
                     msg.download(file_name=file_path, progress=progress)
                 )
                 self.active_tasks[msg_id] = task
-                downloaded = await task
+                try:
+                    downloaded = await asyncio.wait_for(
+                        task,
+                        timeout=_env_int("TELEGRAM_DOWNLOAD_TIMEOUT_SECONDS", 300, 60),
+                    )
+                except asyncio.TimeoutError:
+                    task.cancel()
+                    await sent.edit_text(sent.lang["error_no_file"].format(config.SUPPORT_CHAT))
+                    return None
                 if not downloaded or not os.path.exists(file_path):
                     await sent.edit_text(sent.lang["error_no_file"].format(config.SUPPORT_CHAT))
                     return None

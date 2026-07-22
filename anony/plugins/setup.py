@@ -120,18 +120,11 @@ async def _status(_, m: types.Message):
 
     snapshot = health.snapshot()
     alert_enabled = await db.health_alerts_enabled(m.from_user.id)
-    heartbeat_age = max(int(time.time()) - snapshot["last_heartbeat"], 0)
     update_age = max(int(time.time()) - snapshot["last_update_at"], 0)
-    watchdog = (
-        f"on / {snapshot['watchdog_stall_seconds']}s"
-        if snapshot["watchdog_enabled"]
-        else "off"
-    )
     external_watchdog = (
-        f"on / updates {config.WATCHDOG_UPDATE_STALE_SECONDS}s / "
-        f"probe {config.WATCHDOG_INTERNAL_PROBE_STALE_SECONDS}s / "
-        f"assistant {'on' if config.WATCHDOG_ASSISTANT_PROBE else 'off'} / "
-        f"bot-api {'on' if config.WATCHDOG_BOT_API_PROBE else 'off'}"
+        f"{config.WATCHDOG_MODE} · "
+        f"quiet {config.WATCHDOG_UPDATE_STALE_SECONDS}s · "
+        f"proof {config.WATCHDOG_ASSISTANT_PROBE_STALE_SECONDS}s"
         if config.EXTERNAL_WATCHDOG
         else "off"
     )
@@ -148,7 +141,7 @@ async def _status(_, m: types.Message):
         restart_reason = runtime_health.get("watchdog_last_reason", {}).get(
             "value", "unknown"
         )
-        external_restart = f"{restart_age}s ago ({restart_reason[:80]})"
+        external_restart = f"{restart_age}s ago · {restart_reason[:80]}"
     else:
         external_restart = "none"
     failed_workers = snapshot["workers"]["failed"]
@@ -156,6 +149,31 @@ async def _status(_, m: types.Message):
     worker_summary = (
         f'{snapshot["workers"]["running"]} running'
     )
+    active_handlers = int(snapshot.get("active_handler_count") or 0)
+    oldest_handler_at = int(snapshot.get("oldest_active_handler_at") or 0)
+    if active_handlers and oldest_handler_at:
+        handler_age = max(int(time.time()) - oldest_handler_at, 0)
+        handler_summary = (
+            f"{active_handlers} active · "
+            f"{snapshot.get('oldest_active_handler') or 'unknown'} · {handler_age}s"
+        )
+    else:
+        handler_summary = "idle"
+
+    assistant_probe_at = int(snapshot.get("assistant_probe_at") or 0)
+    assistant_probe_age = max(int(time.time()) - assistant_probe_at, 0) if assistant_probe_at else None
+    assistant_probe_status = str(snapshot.get("assistant_probe_status") or "unknown")
+    assistant_probe_detail = str(snapshot.get("assistant_probe_detail") or "")
+    if assistant_probe_status == "ok" and assistant_probe_age is not None:
+        assistant_proof = f"reachable · {assistant_probe_age}s ago"
+    elif assistant_probe_status in {"startup", "unknown"}:
+        assistant_proof = "pending"
+    elif assistant_probe_age is not None:
+        assistant_proof = f"{assistant_probe_status} · {assistant_probe_age}s ago"
+    else:
+        assistant_proof = assistant_probe_status
+    if assistant_probe_detail and assistant_probe_status not in {"ok", "startup", "unknown"}:
+        assistant_proof = f"{assistant_proof} · {assistant_probe_detail[:50]}"
 
     database_ready = db.connection is not None
     assistants = len(userbot.clients)
@@ -198,9 +216,9 @@ async def _status(_, m: types.Message):
         supervisor=reliability,
         workers=worker_summary,
         failed_workers=", ".join(failed_workers) if failed_workers else "none",
-        heartbeat=f"{heartbeat_age}s ago",
-        last_update=f"{update_age}s ago ({snapshot['last_update_kind']})",
-        watchdog=watchdog,
+        last_update=f"{update_age}s ago · {snapshot['last_update_kind']}",
+        handlers=handler_summary,
+        assistant_proof=assistant_proof,
         external_watchdog=external_watchdog,
         external_restart=external_restart,
         previous_exit=snapshot["previous_result"],

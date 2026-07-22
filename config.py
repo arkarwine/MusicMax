@@ -1,5 +1,6 @@
 import logging
 import re
+from dataclasses import dataclass
 from os import getenv
 from string import Formatter
 from urllib.parse import urlparse
@@ -8,6 +9,24 @@ from dotenv import load_dotenv
 
 load_dotenv()
 logger = logging.getLogger(__name__)
+
+@dataclass(frozen=True, slots=True)
+class RuntimeCategory:
+    icon: str
+    label: str
+    description: str
+
+
+@dataclass(frozen=True, slots=True)
+class RuntimeSetting:
+    label: str
+    category: str
+    description: str
+    accepted: str
+    example: str
+    boolean: bool = False
+    advanced: bool = False
+
 
 class Config:
     PLAY_CONTROL_NAMES = ("loop", "stop", "pause", "skip", "replay")
@@ -57,6 +76,143 @@ class Config:
         "default_thumb": "DEFAULT_THUMB",
         "ping_img": "PING_IMG",
         "start_img": "START_IMG",
+    }
+
+    RUNTIME_CATEGORIES = {
+        "essentials": RuntimeCategory(
+            "⚙️", "Essentials", "Core limits and default behavior"
+        ),
+        "player": RuntimeCategory(
+            "🎧", "Player", "Playback mode, limits and controls"
+        ),
+        "interface": RuntimeCategory(
+            "✨", "Interface", "Messages, buttons and visible text"
+        ),
+        "brand": RuntimeCategory(
+            "🖼", "Brand", "Images and public destinations"
+        ),
+        "automation": RuntimeCategory(
+            "⚡", "Automation", "Quiet automatic actions"
+        ),
+    }
+
+    RUNTIME_SETTINGS = {
+        "duration_limit": RuntimeSetting(
+            "Track length", "essentials",
+            "Longest track the bot will accept.",
+            "1–1440 minutes", "60", advanced=True,
+        ),
+        "queue_limit": RuntimeSetting(
+            "Queue size", "essentials",
+            "Maximum queued tracks per chat.",
+            "1–1000 tracks", "20", advanced=True,
+        ),
+        "playlist_limit": RuntimeSetting(
+            "Playlist import", "essentials",
+            "Maximum tracks imported from one playlist.",
+            "1–1000 tracks", "20", advanced=True,
+        ),
+        "lang_code": RuntimeSetting(
+            "Default language", "essentials",
+            "Language used before a chat chooses its own preference.",
+            "en or my", "en",
+        ),
+        "video_play": RuntimeSetting(
+            "Video playback", "player",
+            "Allow video streams when requested.",
+            "on or off", "on", True,
+        ),
+        "thumb_gen": RuntimeSetting(
+            "Generated artwork", "player",
+            "Create track-specific artwork for play cards.",
+            "on or off", "on", True,
+        ),
+        "play_controls_layout": RuntimeSetting(
+            "Player controls", "player",
+            "Arrange or hide playback controls.",
+            "loop, stop, pause, skip, replay; comma = same row, | = new row, off = hide",
+            "pause,skip|stop",
+        ),
+        "play_image": RuntimeSetting(
+            "Play image", "player",
+            "Optional first image for every play card.",
+            "HTTP(S), @username, Telegram file ID, or -",
+            "https://example.com/play.jpg",
+        ),
+        "play_button_text": RuntimeSetting(
+            "Play button label", "interface",
+            "Optional link button text shown on play cards.",
+            "up to 64 characters, or -", "Open channel",
+        ),
+        "play_button_url": RuntimeSetting(
+            "Play button link", "interface",
+            "Destination for the optional play-card link button.",
+            "HTTP(S), @username, or -", "@anonxmusic",
+        ),
+        "play_message_template_en": RuntimeSetting(
+            "Play text · English", "interface",
+            "Markdown template for English play cards.",
+            "Markdown with supported play placeholders",
+            "# Now playing", advanced=True,
+        ),
+        "play_message_template_my": RuntimeSetting(
+            "Play text · Myanmar", "interface",
+            "Markdown template for Myanmar play cards.",
+            "Markdown with supported play placeholders",
+            "# Now playing", advanced=True,
+        ),
+        "start_buttons_layout": RuntimeSetting(
+            "Start buttons", "interface",
+            "Arrange or hide private start-menu buttons.",
+            "add, help, language, stats, trending, support, channel, owner; comma = same row, | = new row, off = hide",
+            "add|help,language,stats|support,channel|owner",
+        ),
+        "start_add_text": RuntimeSetting("Add button", "interface", "Custom Add to Group label.", "up to 64 characters, or -", "Add to Group"),
+        "start_help_text": RuntimeSetting("Help button", "interface", "Custom Help label.", "up to 64 characters, or -", "Help"),
+        "start_language_text": RuntimeSetting("Language button", "interface", "Custom Language label.", "up to 64 characters, or -", "Language"),
+        "start_stats_text": RuntimeSetting("Stats button", "interface", "Custom Stats label.", "up to 64 characters, or -", "Stats"),
+        "start_trending_text": RuntimeSetting("Trending button", "interface", "Custom Trending label.", "up to 64 characters, or -", "Trending"),
+        "start_support_text": RuntimeSetting("Support button", "interface", "Custom Support label.", "up to 64 characters, or -", "Support"),
+        "start_channel_text": RuntimeSetting("Channel button", "interface", "Custom Channel label.", "up to 64 characters, or -", "Channel"),
+        "start_owner_text": RuntimeSetting("Owner button", "interface", "Custom Owner label.", "up to 64 characters, or -", "Owner"),
+        "support_channel": RuntimeSetting(
+            "Channel", "brand",
+            "Public updates or channel destination.",
+            "HTTP(S) or @username", "@anonxmusic",
+        ),
+        "support_chat": RuntimeSetting(
+            "Support chat", "brand",
+            "Public support group or contact destination.",
+            "HTTP(S) or @username", "@anonxsupport",
+        ),
+        "default_thumb": RuntimeSetting(
+            "Default artwork", "brand",
+            "Fallback artwork when no track image is available.",
+            "complete HTTP(S) URL or Telegram file ID",
+            "https://example.com/default.jpg",
+        ),
+        "ping_img": RuntimeSetting(
+            "Status artwork", "brand",
+            "Image used by status/stat surfaces.",
+            "complete HTTP(S) URL or Telegram file ID",
+            "https://example.com/status.jpg",
+        ),
+        "start_img": RuntimeSetting(
+            "Start image", "brand",
+            "Optional image on the private start screen.",
+            "HTTP(S), @username, Telegram file ID, or -",
+            "https://example.com/start.jpg",
+        ),
+        "auto_leave": RuntimeSetting(
+            "Auto leave", "automation",
+            "Leave voice chat after playback becomes idle.",
+            "on or off", "off", True,
+        ),
+        "auto_end": RuntimeSetting(
+            "Auto end", "automation",
+            "End an idle voice chat when permitted.",
+            "on or off", "off", True,
+        ),
     }
 
     @staticmethod
@@ -157,23 +313,41 @@ class Config:
         self.THUMB_GEN = self._environment_bool("THUMB_GEN", True)
         self.VIDEO_PLAY = self._environment_bool("VIDEO_PLAY", True)
         self.RICH_MESSAGES = self._environment_bool("RICH_MESSAGES", True)
+        self.WATCHDOG_MODE = getenv("WATCHDOG_MODE", "standard").strip().lower()
+        if self.WATCHDOG_MODE in {"disabled", "false", "0"}:
+            self.WATCHDOG_MODE = "off"
+        if self.WATCHDOG_MODE not in {"off", "standard", "strict", "relaxed"}:
+            logger.warning("Ignored invalid WATCHDOG_MODE; using standard")
+            self.WATCHDOG_MODE = "standard"
+        self.WATCHDOG_ENABLED = self._environment_bool(
+            "WATCHDOG_ENABLED", self._environment_bool("EXTERNAL_WATCHDOG", False)
+        ) and self.WATCHDOG_MODE != "off"
+        self.EXTERNAL_WATCHDOG = self.WATCHDOG_ENABLED
         self.WATCHDOG_RESTART_ON_STALL = self._environment_bool(
             "WATCHDOG_RESTART_ON_STALL", False
         )
         self.WATCHDOG_STALL_SECONDS = self._environment_int(
             "WATCHDOG_STALL_SECONDS", 21600, minimum=300, maximum=86400
         )
-        self.EXTERNAL_WATCHDOG = self._environment_bool(
-            "EXTERNAL_WATCHDOG", False
-        )
+        _watchdog_presets = {
+            "standard": dict(updates=180, assistant_stale=300, min_uptime=120, cooldown=300),
+            "strict": dict(updates=120, assistant_stale=240, min_uptime=90, cooldown=240),
+            "relaxed": dict(updates=300, assistant_stale=480, min_uptime=180, cooldown=420),
+        }
+        _watchdog = _watchdog_presets.get(self.WATCHDOG_MODE, _watchdog_presets["standard"])
         self.WATCHDOG_CHECK_INTERVAL = self._environment_int(
             "WATCHDOG_CHECK_INTERVAL", 30, minimum=10, maximum=3600
         )
+        # Backward-compatible advanced knobs. The external watchdog now uses only
+        # stale Telegram updates plus assistant reachability.
         self.WATCHDOG_HEARTBEAT_STALE_SECONDS = self._environment_int(
             "WATCHDOG_HEARTBEAT_STALE_SECONDS", 180, minimum=60, maximum=86400
         )
         self.WATCHDOG_UPDATE_STALE_SECONDS = self._environment_int(
-            "WATCHDOG_UPDATE_STALE_SECONDS", 300, minimum=120, maximum=86400
+            "WATCHDOG_UPDATE_STALE_SECONDS", _watchdog["updates"], minimum=60, maximum=86400
+        )
+        self.WATCHDOG_HANDLER_STALE_SECONDS = self._environment_int(
+            "WATCHDOG_HANDLER_STALE_SECONDS", 240, minimum=60, maximum=86400
         )
         self.WATCHDOG_INTERNAL_PROBE_STALE_SECONDS = self._environment_int(
             "WATCHDOG_INTERNAL_PROBE_STALE_SECONDS", 180, minimum=60, maximum=86400
@@ -191,10 +365,10 @@ class Config:
             "WATCHDOG_ASSISTANT_PROBE", True
         )
         self.WATCHDOG_ASSISTANT_PROBE_IDLE_SECONDS = self._environment_int(
-            "WATCHDOG_ASSISTANT_PROBE_IDLE_SECONDS", 300, minimum=120, maximum=86400
+            "WATCHDOG_ASSISTANT_PROBE_IDLE_SECONDS", 120, minimum=60, maximum=86400
         )
         self.WATCHDOG_ASSISTANT_PROBE_INTERVAL_SECONDS = self._environment_int(
-            "WATCHDOG_ASSISTANT_PROBE_INTERVAL_SECONDS", 300, minimum=60, maximum=86400
+            "WATCHDOG_ASSISTANT_PROBE_INTERVAL_SECONDS", 120, minimum=60, maximum=86400
         )
         self.WATCHDOG_ASSISTANT_PROBE_TIMEOUT_SECONDS = self._environment_int(
             "WATCHDOG_ASSISTANT_PROBE_TIMEOUT_SECONDS", 20, minimum=5, maximum=300
@@ -203,13 +377,28 @@ class Config:
             "WATCHDOG_ASSISTANT_PROBE_FAILURES", 1, minimum=1, maximum=100
         )
         self.WATCHDOG_ASSISTANT_PROBE_STALE_SECONDS = self._environment_int(
-            "WATCHDOG_ASSISTANT_PROBE_STALE_SECONDS", 660, minimum=120, maximum=86400
+            "WATCHDOG_ASSISTANT_PROBE_STALE_SECONDS", _watchdog["assistant_stale"], minimum=120, maximum=86400
         )
         self.WATCHDOG_MIN_UPTIME_SECONDS = self._environment_int(
-            "WATCHDOG_MIN_UPTIME_SECONDS", 300, minimum=0, maximum=86400
+            "WATCHDOG_MIN_UPTIME_SECONDS", _watchdog["min_uptime"], minimum=0, maximum=86400
         )
         self.WATCHDOG_RESTART_COOLDOWN_SECONDS = self._environment_int(
-            "WATCHDOG_RESTART_COOLDOWN_SECONDS", 600, minimum=60, maximum=86400
+            "WATCHDOG_RESTART_COOLDOWN_SECONDS", _watchdog["cooldown"], minimum=60, maximum=86400
+        )
+        self.HANDLER_TIMEOUT_SECONDS = self._environment_int(
+            "HANDLER_TIMEOUT_SECONDS", 300, minimum=60, maximum=86400
+        )
+        self.DOWNLOAD_TIMEOUT_SECONDS = self._environment_int(
+            "DOWNLOAD_TIMEOUT_SECONDS", 240, minimum=60, maximum=86400
+        )
+        self.SONG_DOWNLOAD_TIMEOUT_SECONDS = self._environment_int(
+            "SONG_DOWNLOAD_TIMEOUT_SECONDS", 300, minimum=60, maximum=86400
+        )
+        self.PLAYBACK_CONNECT_TIMEOUT_SECONDS = self._environment_int(
+            "PLAYBACK_CONNECT_TIMEOUT_SECONDS", 45, minimum=10, maximum=600
+        )
+        self.TELEGRAM_DOWNLOAD_TIMEOUT_SECONDS = self._environment_int(
+            "TELEGRAM_DOWNLOAD_TIMEOUT_SECONDS", 300, minimum=60, maximum=86400
         )
         self.PLAY_BUTTON_TEXT = getenv("PLAY_BUTTON_TEXT", "").strip()
         if len(self.PLAY_BUTTON_TEXT) > 64:

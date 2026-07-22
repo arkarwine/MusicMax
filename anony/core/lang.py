@@ -4,6 +4,7 @@
 
 
 import re
+import asyncio
 import json
 import secrets
 from html import escape
@@ -195,10 +196,13 @@ class Language:
                     return
 
                 lang_dict = self.languages["en"]
+                handler_token = None
+                handler_failed = False
+                handler_detail = "ok"
                 try:
-                    from anony import health
+                    from anony import config, health
 
-                    health.mark_update(fallen)
+                    handler_token = await health.handler_started(fallen, func.__name__)
                     if chat.id in db.blacklisted:
                         logger.info(f"Chat {chat.id} is blacklisted, leaving...")
                         return await chat.leave()
@@ -206,7 +210,10 @@ class Language:
                     lang_code = await db.get_lang(chat.id)
                     lang_dict = self.languages.get(lang_code, lang_dict)
                     setattr(fallen, "lang", lang_dict)
-                    result = await func(*args, **kwargs)
+                    result = await asyncio.wait_for(
+                        func(*args, **kwargs),
+                        timeout=config.HANDLER_TIMEOUT_SECONDS,
+                    )
                     if (
                         hasattr(fallen, "command")
                         and fallen.command
@@ -221,14 +228,20 @@ class Language:
                         except Exception:
                             pass
                     return result
-                except (errors.ChannelPrivate, errors.MessageIdInvalid, errors.MessageNotModified):
+                except (errors.ChannelPrivate, errors.MessageIdInvalid, errors.MessageNotModified) as ex:
+                    handler_failed = True
+                    handler_detail = type(ex).__name__
                     return
                 except (
                     errors.Forbidden, errors.exceptions.Forbidden,
                     errors.ChatWriteForbidden, errors.exceptions.ChatWriteForbidden,
-                ):
+                ) as ex:
+                    handler_failed = True
+                    handler_detail = type(ex).__name__
                     return
                 except Exception as ex:
+                    handler_failed = True
+                    handler_detail = f"{type(ex).__name__}: {str(ex)[:120]}"
                     if type(ex).__name__ in {"StopPropagation", "ContinuePropagation"}:
                         raise
 
@@ -279,6 +292,21 @@ class Language:
                             reference,
                         )
                         return
+                finally:
+                    if handler_token is not None:
+                        try:
+                            from anony import health
+
+                            await health.handler_finished(
+                                handler_token,
+                                success=not handler_failed,
+                                detail=handler_detail,
+                            )
+                        except Exception:
+                            logger.debug(
+                                "Could not persist handler completion",
+                                exc_info=True,
+                            )
 
             return wrapper
 

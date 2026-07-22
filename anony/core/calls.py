@@ -4,6 +4,7 @@
 
 
 import asyncio
+from os import getenv
 
 from ntgcalls import (ConnectionNotFound, TelegramServerError,
                       RTMPStreamingUnsupported, ConnectionError)
@@ -22,6 +23,14 @@ from anony.core.play_message import (
     render_play_message,
     select_play_media,
 )
+
+
+def _env_int(name: str, default: int, minimum: int = 1) -> int:
+    try:
+        value = int((getenv(name) or "").strip())
+    except ValueError:
+        return default
+    return max(value, minimum)
 from anony.core.rich_messages import RichMedia
 
 
@@ -291,10 +300,13 @@ class TgCall(PyTgCalls):
         try:
             if not await db.get_call(chat_id):
                 await self.reset_assistant_call(chat_id)
-            await client.play(
-                chat_id=chat_id,
-                stream=stream,
-                config=types.GroupCallConfig(auto_start=False),
+            await asyncio.wait_for(
+                client.play(
+                    chat_id=chat_id,
+                    stream=stream,
+                    config=types.GroupCallConfig(auto_start=False),
+                ),
+                timeout=_env_int("PLAYBACK_CONNECT_TIMEOUT_SECONDS", 45, 10),
             )
             if not seek_time or new_session:
                 media.time = max(seek_time, 1)

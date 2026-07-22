@@ -73,69 +73,46 @@ SQLite, flushes logs, exits non-zero, and lets PM2 restart the process.
 
 ## External watchdog
 
-For stronger recovery, run a separate watchdog process that watches persisted SQLite
-health signals from outside the bot process. The default setup is intentionally
-small: enable it and keep the standard process matcher. All timings already
-have production-safe defaults.
+Use the external watchdog for production. It is deliberately small: it reads the
+bot's SQLite health state and restarts the bot only when Telegram updates are
+stale and the assistant probe cannot prove the bot is still reachable.
 
-Minimal `.env`:
+Recommended `.env`:
 
-```bash
-EXTERNAL_WATCHDOG=true
+```env
+WATCHDOG_ENABLED=true
+WATCHDOG_MODE=standard
 WATCHDOG_PROCESS_MATCH=-m anony
 ```
 
-Default behavior:
+Modes:
 
-```text
-check every 30s
-restart if heartbeat is stale for 180s
-restart if Telegram self-check is stale for 180s
-check bot responsiveness through an assistant after 300s of no real activity
-restart if the assistant-originated probe is not handled
-restart if real updates are stale and no assistant probe is passing
-restart if external Bot API check fails 3 times
-wait 300s after fresh startup
-wait 600s between watchdog restarts
-terminate with SIGTERM, then SIGKILL after 15s
-log state changes and one healthy summary every 300s
-```
+- `standard` — restart after 180s of stale updates unless the assistant probe passes.
+- `strict` — restart after 120s.
+- `relaxed` — restart after 300s.
+- `off` — disable the watchdog.
 
 Optional overrides:
 
-```bash
-WATCHDOG_HEARTBEAT_STALE_SECONDS=180
-WATCHDOG_UPDATE_STALE_SECONDS=300
-WATCHDOG_INTERNAL_PROBE_STALE_SECONDS=180
-WATCHDOG_INTERNAL_PROBE_FAILURES=3
-WATCHDOG_BOT_API_PROBE=true
-WATCHDOG_BOT_API_FAILURES=3
-WATCHDOG_PROBE_TIMEOUT_SECONDS=5
-WATCHDOG_ASSISTANT_PROBE=true
-WATCHDOG_ASSISTANT_PROBE_IDLE_SECONDS=300
-WATCHDOG_ASSISTANT_PROBE_INTERVAL_SECONDS=300
-WATCHDOG_ASSISTANT_PROBE_TIMEOUT_SECONDS=20
-WATCHDOG_ASSISTANT_PROBE_FAILURES=1
-WATCHDOG_ASSISTANT_PROBE_STALE_SECONDS=660
-WATCHDOG_MIN_UPTIME_SECONDS=300
-WATCHDOG_RESTART_COOLDOWN_SECONDS=600
-WATCHDOG_KILL_GRACE_SECONDS=15
+```env
 WATCHDOG_CHECK_INTERVAL=30
-WATCHDOG_LOG_INTERVAL_SECONDS=300
+WATCHDOG_UPDATE_STALE_SECONDS=180
+WATCHDOG_ASSISTANT_PROBE_STALE_SECONDS=300
+WATCHDOG_RESTART_COOLDOWN_SECONDS=300
 WATCHDOG_LOG_CHECKS=false
 ```
 
-The watchdog does **not** call `pm2 jlist`, `pm2 restart`, Docker, systemd, or
-any other supervisor API. It finds the bot process by working directory and
-`WATCHDOG_PROCESS_MATCH`, sends `SIGTERM`, then sends `SIGKILL` after the grace
-period. Your external supervisor's normal autorestart starts the bot again.
+Decision rule:
 
-Use a stricter matcher if more than one `-m anony` process runs from the same
-repository directory:
-
-```bash
-WATCHDOG_PROCESS_MATCH=/home/ubuntu/MelodyFetch/.venv/bin/python -m anony
+```text
+last Telegram update is fresh       -> healthy
+last update is stale + probe passes -> quiet but reachable
+last update is stale + no proof     -> restart
 ```
+
+This intentionally ignores heartbeat, CPU, worker count, Bot API pings, and
+handler age. Those are useful diagnostics, but they made recovery noisy. The only
+question this watchdog answers is: "can the bot still process Telegram updates?"
 
 Start the watchdog with PM2:
 
@@ -145,25 +122,13 @@ pm2 start /home/ubuntu/MelodyFetch/.venv/bin/python \
   --name melodyfetch-watchdog \
   --cwd /home/ubuntu/MelodyFetch \
   --interpreter none \
-  --time \
-  --restart-delay 3000 \
   -- \
   scripts/watchdog.py
-
 pm2 save
 ```
 
-`/status` shows the internal watchdog, external watchdog configuration, last
-processed update, and the last external watchdog restart reason.
-## Private health alerts
+With systemd, run the watchdog as its own small service and let the main bot
+service use `Restart=always`.
 
-Each sudo user chooses independently in the bot's private chat:
-
-```text
-/healthalerts on
-/healthalerts off
-```
-
-Alerts are off by default. They report health state changes and recovery without
-stopping the process. `/status` shows the current supervisor state, workers,
-heartbeat freshness, previous shutdown result, and personal alert preference.
+`/status` shows the watchdog mode, stale-update window, assistant-probe window,
+last recovery reason, last update, and current work.

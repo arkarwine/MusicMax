@@ -41,11 +41,14 @@ class RuntimeConfigUiTests(unittest.TestCase):
         cls.tree = ast.parse(cls.source)
 
     def test_every_runtime_field_has_ui_metadata(self):
-        setting_keys = assignment_dict_keys(self.tree, "SETTINGS")
         self.assertEqual(
-            setting_keys,
+            set(config_module.Config.RUNTIME_SETTINGS),
             set(config_module.Config.RUNTIME_FIELDS),
         )
+        categories = set(config_module.Config.RUNTIME_CATEGORIES)
+        self.assertTrue(categories)
+        for spec in config_module.Config.RUNTIME_SETTINGS.values():
+            self.assertIn(spec.category, categories)
 
     def test_component_has_navigation_tables_and_force_reply_editing(self):
         self.assertIn("<table bordered striped>", self.source)
@@ -64,7 +67,7 @@ class RuntimeConfigUiTests(unittest.TestCase):
         self.assertEqual(len(force_replies), 2)
 
     def test_play_templates_can_be_viewed_without_rendering_markdown(self):
-        self.assertIn('text="📄 View template"', self.source)
+        self.assertIn('text="View template"', self.source)
         self.assertIn('f"<pre>{encoded}</pre>"', self.source)
         self.assertIn('lang.languages[lang_code]["play_message_template"]', self.source)
         self.assertIn('source = "Environment"', self.source)
@@ -103,10 +106,11 @@ class RuntimeConfigUiTests(unittest.TestCase):
 
     def test_bot_settings_are_independent_from_theme_editability(self):
         self.assertNotIn("if not themes.editable", self.source)
-        self.assertIn('return "Custom"', self.source)
-        self.assertIn('return "Theme" if key in themes.active.config else "Environment"', self.source)
-        self.assertIn("Saved across restarts", self.source)
+        self.assertIn('return "Saved"', self.source)
+        self.assertIn('return "Theme" if key in themes.active.config else "Default"', self.source)
+        self.assertIn("Restart-proof", self.source)
         self.assertIn("_overview_markup(bool(overrides))", self.source)
+        self.assertIn("config.RUNTIME_SETTINGS", self.source)
 
     def test_database_exposes_atomic_reset_all(self):
         database_tree = ast.parse(

@@ -4,6 +4,7 @@
 
 
 import os
+from os import getenv
 import re
 import yt_dlp
 import random
@@ -18,6 +19,14 @@ from py_yt import Playlist, VideosSearch
 
 from anony import logger
 from anony.helpers import Track, utils
+
+
+def _env_int(name: str, default: int, minimum: int = 1) -> int:
+    try:
+        value = int((getenv(name) or "").strip())
+    except ValueError:
+        return default
+    return max(value, minimum)
 
 
 class YouTube:
@@ -224,7 +233,12 @@ class YouTube:
                 logger.warning("Song download failed: %s", ex)
                 return None
 
-        return await asyncio.to_thread(_download)
+        timeout = _env_int("SONG_DOWNLOAD_TIMEOUT_SECONDS", 300, 60)
+        try:
+            return await asyncio.wait_for(asyncio.to_thread(_download), timeout=timeout)
+        except asyncio.TimeoutError:
+            logger.warning("Song download timed out after %ss", timeout)
+            return None
 
     async def _download_once(
         self, video_id: str, video: bool, filename: str
@@ -277,8 +291,15 @@ class YouTube:
             return filename if Path(filename).is_file() else None
 
         started = monotonic()
+        timeout = _env_int("DOWNLOAD_TIMEOUT_SECONDS", 240, 60)
         async with self._download_slots:
-            result = await asyncio.to_thread(run)
+            try:
+                result = await asyncio.wait_for(
+                    asyncio.to_thread(run), timeout=timeout
+                )
+            except asyncio.TimeoutError:
+                logger.warning("YouTube download timed out after %ss", timeout)
+                result = None
         elapsed = monotonic() - started
         if elapsed >= 5:
             logger.info(
@@ -306,7 +327,13 @@ class YouTube:
                 )
                 self._download_tasks[key] = task
         try:
-            return await asyncio.shield(task)
+            timeout = _env_int("DOWNLOAD_TIMEOUT_SECONDS", 240, 60)
+            return await asyncio.wait_for(asyncio.shield(task), timeout=timeout + 5)
+        except asyncio.TimeoutError:
+            logger.warning("Shared YouTube download wait timed out for %s", video_id)
+            if not task.done():
+                task.cancel()
+            return None
         finally:
             if task.done():
                 async with self._download_lock:

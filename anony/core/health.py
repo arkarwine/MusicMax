@@ -70,6 +70,12 @@ class HealthMonitor:
         self.last_heartbeat = self.started_at
         self.last_update_at = self.started_at
         self.last_update_kind = "startup"
+        self.last_handler_started_at = self.started_at
+        self.last_handler_finished_at = self.started_at
+        self.last_handler_failed_at = 0
+        self.last_handler_name = "startup"
+        self.active_handlers: dict[str, dict[str, object]] = {}
+        self._handler_sequence = 0
         self.telegram_probe_at = self.started_at
         self.telegram_probe_status = "startup"
         self.telegram_probe_detail = "Not checked yet"
@@ -101,6 +107,13 @@ class HealthMonitor:
             "heartbeat_at": self.last_heartbeat,
             "last_update_at": self.last_update_at,
             "last_update_kind": self.last_update_kind,
+            "last_handler_started_at": self.last_handler_started_at,
+            "last_handler_finished_at": self.last_handler_finished_at,
+            "last_handler_failed_at": self.last_handler_failed_at,
+            "last_handler_name": self.last_handler_name,
+            "active_handler_count": self._active_handler_summary()[0],
+            "oldest_active_handler_at": self._active_handler_summary()[1],
+            "oldest_active_handler": self._active_handler_summary()[2],
             "telegram_probe_at": self.telegram_probe_at,
             "telegram_probe_status": self.telegram_probe_status,
             "telegram_probe_detail": self.telegram_probe_detail,
@@ -128,6 +141,87 @@ class HealthMonitor:
     def mark_update(self, update=None) -> None:
         self.last_update_at = int(time())
         self.last_update_kind = type(update).__name__ if update is not None else "update"
+
+    def _active_handler_summary(self) -> tuple[int, int, str]:
+        if not self.active_handlers:
+            return 0, 0, ""
+        oldest_token, oldest = min(
+            self.active_handlers.items(),
+            key=lambda item: int(item[1].get("started_at", 0)),
+        )
+        return (
+            len(self.active_handlers),
+            int(oldest.get("started_at", 0)),
+            str(oldest.get("name") or oldest_token),
+        )
+
+    async def handler_started(self, update=None, name: str = "handler") -> str:
+        now = int(time())
+        self.mark_update(update)
+        self._handler_sequence += 1
+        token = f"{now}:{self._handler_sequence}:{name}"
+        chat = getattr(update, "chat", None) or getattr(
+            getattr(update, "message", None), "chat", None
+        )
+        user = getattr(update, "from_user", None) or getattr(
+            getattr(update, "message", None), "from_user", None
+        )
+        self.active_handlers[token] = {
+            "name": name,
+            "started_at": now,
+            "update": type(update).__name__ if update is not None else "update",
+            "chat": getattr(chat, "id", ""),
+            "user": getattr(user, "id", ""),
+        }
+        self.last_handler_started_at = now
+        self.last_handler_name = name
+        count, oldest_at, oldest_name = self._active_handler_summary()
+        if hasattr(self.db, "set_runtime_health_values"):
+            try:
+                await self.db.set_runtime_health_values({
+                    "last_update_at": self.last_update_at,
+                    "last_update_kind": self.last_update_kind,
+                    "last_handler_started_at": self.last_handler_started_at,
+                    "last_handler_finished_at": self.last_handler_finished_at,
+                    "last_handler_failed_at": self.last_handler_failed_at,
+                    "last_handler_name": self.last_handler_name,
+                    "active_handler_count": self._active_handler_summary()[0],
+                    "oldest_active_handler_at": self._active_handler_summary()[1],
+                    "oldest_active_handler": self._active_handler_summary()[2],
+                    "last_handler_started_at": self.last_handler_started_at,
+                    "last_handler_name": self.last_handler_name,
+                    "active_handler_count": count,
+                    "oldest_active_handler_at": oldest_at,
+                    "oldest_active_handler": oldest_name,
+                })
+            except Exception:
+                self.logger.debug("Could not persist handler start", exc_info=True)
+        return token
+
+    async def handler_finished(
+        self, token: str | None, *, success: bool = True, detail: str = "ok"
+    ) -> None:
+        if token is None:
+            return
+        self.active_handlers.pop(token, None)
+        now = int(time())
+        self.last_handler_finished_at = now
+        if not success:
+            self.last_handler_failed_at = now
+        count, oldest_at, oldest_name = self._active_handler_summary()
+        if hasattr(self.db, "set_runtime_health_values"):
+            try:
+                await self.db.set_runtime_health_values({
+                    "last_handler_finished_at": self.last_handler_finished_at,
+                    "last_handler_failed_at": self.last_handler_failed_at,
+                    "last_handler_result": "ok" if success else "failed",
+                    "last_handler_detail": detail[:200],
+                    "active_handler_count": count,
+                    "oldest_active_handler_at": oldest_at,
+                    "oldest_active_handler": oldest_name,
+                })
+            except Exception:
+                self.logger.debug("Could not persist handler finish", exc_info=True)
 
 
     async def finish(self, reason: str) -> None:
@@ -427,6 +521,13 @@ class HealthMonitor:
                     "heartbeat_at": self.last_heartbeat,
                     "last_update_at": self.last_update_at,
                     "last_update_kind": self.last_update_kind,
+                    "last_handler_started_at": self.last_handler_started_at,
+                    "last_handler_finished_at": self.last_handler_finished_at,
+                    "last_handler_failed_at": self.last_handler_failed_at,
+                    "last_handler_name": self.last_handler_name,
+                    "active_handler_count": self._active_handler_summary()[0],
+                    "oldest_active_handler_at": self._active_handler_summary()[1],
+                    "oldest_active_handler": self._active_handler_summary()[2],
                     "telegram_probe_at": self.telegram_probe_at,
                     "telegram_probe_status": self.telegram_probe_status,
                     "telegram_probe_detail": self.telegram_probe_detail,
@@ -497,6 +598,13 @@ class HealthMonitor:
             "last_heartbeat": self.last_heartbeat,
             "last_update_at": self.last_update_at,
             "last_update_kind": self.last_update_kind,
+            "last_handler_started_at": self.last_handler_started_at,
+            "last_handler_finished_at": self.last_handler_finished_at,
+            "last_handler_failed_at": self.last_handler_failed_at,
+            "last_handler_name": self.last_handler_name,
+            "active_handler_count": self._active_handler_summary()[0],
+            "oldest_active_handler_at": self._active_handler_summary()[1],
+            "oldest_active_handler": self._active_handler_summary()[2],
             "telegram_probe_at": self.telegram_probe_at,
             "telegram_probe_status": self.telegram_probe_status,
             "telegram_probe_detail": self.telegram_probe_detail,
