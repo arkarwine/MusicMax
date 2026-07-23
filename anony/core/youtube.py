@@ -188,9 +188,9 @@ class YouTube:
             "overwrites": False,
             "nocheckcertificate": True,
             "cookiefile": cookie,
-            "socket_timeout": 15,
-            "retries": 2,
-            "fragment_retries": 2,
+            "socket_timeout": 10,
+            "retries": 1,
+            "fragment_retries": 1,
             "extractor_retries": 1,
             "file_access_retries": 1,
             "concurrent_fragment_downloads": 4,
@@ -254,9 +254,9 @@ class YouTube:
             "overwrites": False,
             "nocheckcertificate": True,
             "cookiefile": cookie,
-            "socket_timeout": 15,
-            "retries": 2,
-            "fragment_retries": 2,
+            "socket_timeout": 10,
+            "retries": 1,
+            "fragment_retries": 1,
             "extractor_retries": 1,
             "file_access_retries": 1,
             "concurrent_fragment_downloads": 4,
@@ -275,7 +275,7 @@ class YouTube:
             format_name = "audio"
             options = {
                 **base_opts,
-                "format": "bestaudio[ext=webm][acodec=opus]",
+                "format": "bestaudio[ext=webm][acodec=opus]/bestaudio/best",
             }
         logger.info(
             "Starting YouTube %s download for %s using cookie=%s",
@@ -287,7 +287,17 @@ class YouTube:
         def run():
             with yt_dlp.YoutubeDL(options) as ydl:
                 try:
-                    ydl.download([url])
+                    info = ydl.extract_info(url, download=True)
+                    actual = Path(ydl.prepare_filename(info))
+                    requested = Path(filename)
+                    candidates = [actual, requested]
+                    if video:
+                        candidates.append(requested.with_suffix(".mp4"))
+                    for candidate in candidates:
+                        if candidate.is_file():
+                            return str(candidate)
+                    matches = sorted(Path("downloads").glob(f"{video_id}.*"))
+                    return str(matches[0]) if matches else None
                 except (
                     yt_dlp.utils.DownloadError,
                     yt_dlp.utils.ExtractorError,
@@ -296,7 +306,6 @@ class YouTube:
                 except Exception as exc:
                     logger.warning("Download failed: %s", exc)
                     return None
-            return filename if Path(filename).is_file() else None
 
         started = monotonic()
         timeout = _env_int("DOWNLOAD_TIMEOUT_SECONDS", 240, 60)
@@ -325,6 +334,10 @@ class YouTube:
         filename = f"downloads/{video_id}.{ext}"
         if Path(filename).is_file():
             return filename
+        if not video:
+            existing = sorted(Path("downloads").glob(f"{video_id}.*"))
+            if existing:
+                return str(existing[0])
 
         key = (video_id, bool(video))
         async with self._download_lock:

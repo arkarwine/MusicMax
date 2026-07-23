@@ -128,15 +128,17 @@ class YouTubePerformanceTests(unittest.IsolatedAsyncioTestCase):
     def test_downloader_has_bounded_network_behavior(self):
         source = (ROOT / "anony/core/youtube.py").read_text(encoding="utf-8")
         for option in (
-            '"socket_timeout": 15',
-            '"retries": 2',
-            '"fragment_retries": 2',
+            '"socket_timeout": 10',
+            '"retries": 1',
+            '"fragment_retries": 1',
             '"extractor_retries": 1',
             '"concurrent_fragment_downloads": 4',
         ):
             self.assertIn(option, source)
         self.assertIn("asyncio.wait_for", source)
-        self.assertIn("return filename if Path(filename).is_file() else None", source)
+        self.assertIn('"bestaudio[ext=webm][acodec=opus]/bestaudio/best"', source)
+        self.assertIn("ydl.prepare_filename(info)", source)
+        self.assertIn('Path("downloads").glob(f"{video_id}.*")', source)
 
 
 if __name__ == "__main__":
