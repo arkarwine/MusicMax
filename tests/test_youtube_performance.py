@@ -125,6 +125,19 @@ class YouTubePerformanceTests(unittest.IsolatedAsyncioTestCase):
         ])
         self.assertFalse(youtube._download_tasks)
 
+    async def test_named_download_reuses_search_result_and_direct_downloader(self):
+        FakeSearch.calls = 0
+        youtube = self.module.YouTube()
+        youtube.download = AsyncMock(return_value="downloads/abcdefghijk.webm")
+
+        result = await youtube.download_search(" attention   song ", 30)
+
+        self.assertEqual(FakeSearch.calls, 1)
+        youtube.download.assert_awaited_once_with("abcdefghijk", video=False)
+        self.assertEqual(result.id, "abcdefghijk")
+        self.assertEqual(result.file_path, "downloads/abcdefghijk.webm")
+        self.assertEqual(result.message_id, 30)
+
     def test_downloader_has_bounded_network_behavior(self):
         source = (ROOT / "anony/core/youtube.py").read_text(encoding="utf-8")
         for option in (
@@ -139,6 +152,7 @@ class YouTubePerformanceTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('"bestaudio[ext=webm][acodec=opus]/bestaudio/best"', source)
         self.assertIn("ydl.prepare_filename(info)", source)
         self.assertIn('Path("downloads").glob(f"{video_id}.*")', source)
+        self.assertIn('async def download_search', source)
 
 
 if __name__ == "__main__":

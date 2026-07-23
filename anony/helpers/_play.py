@@ -338,10 +338,6 @@ def checkUB(play):
             ):
                 return await feedback.error(m, m.lang["play_admin"])
 
-        if chat_id not in db.active_calls:
-            if not await ensure_assistant(m):
-                return
-
         if await db.get_cmd_delete(chat_id):
             try:
                 await m.delete()

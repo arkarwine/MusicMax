@@ -10,7 +10,7 @@ from pyrogram import filters, types
 
 from anony import anon, app, config, db, lang, queue, supervisor, tg, thumb, yt
 from anony.helpers import Track, buttons, feedback, utils
-from anony.helpers._play import checkUB
+from anony.helpers._play import checkUB, ensure_assistant
 
 
 def playlist_to_queue(chat_id: int, tracks: list) -> str:
@@ -94,6 +94,10 @@ async def play_hndlr(
             sent,
             m.lang["play_duration_limit"].format(config.DURATION_LIMIT // 60),
         )
+
+    if m.chat.id not in db.active_calls:
+        if not await ensure_assistant(m):
+            return
 
     if await db.is_logger():
         await utils.play_log(m, sent.link, file.title, file.duration)

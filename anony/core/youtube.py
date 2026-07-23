@@ -38,7 +38,7 @@ class YouTube:
         self.warned = False
         self._cookie_scan_at = 0.0
         self._search_cache = OrderedDict()
-        self._search_timeout = 12
+        self._search_timeout = 7
         self._search_ttl = 600
         self._search_cache_limit = 256
         self._download_tasks = {}
@@ -326,6 +326,25 @@ class YouTube:
                 elapsed,
             )
         return result
+
+    async def download_search(
+        self,
+        query: str,
+        m_id: int,
+        *,
+        video: bool = False,
+        duration_limit: int | None = None,
+    ) -> Track | None:
+        normalized = " ".join(str(query).split())
+        if not normalized:
+            return None
+        track = await self.search(normalized, m_id, video=video)
+        if not track or not track.id:
+            return None
+        if duration_limit and track.duration_sec and track.duration_sec > duration_limit:
+            return None
+        track.file_path = await self.download(track.id, video=video)
+        return track if track.file_path else None
 
     async def download(
         self, video_id: str, video: bool = False
