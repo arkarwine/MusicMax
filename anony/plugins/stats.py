@@ -30,7 +30,6 @@ def _uptime() -> str:
 async def _stats_data() -> dict:
     users = len(await db.get_users())
     groups = len(await db.get_chats())
-    activity = await db.get_stream_activity(24)
     activity_7d = await db.get_stream_activity(24 * 7)
     activity_30d = await db.get_stream_activity(24 * 30)
     assistants = len(set(userbot.clients) & set(anon.clients))
@@ -49,8 +48,6 @@ async def _stats_data() -> dict:
         "users": users,
         "groups": groups,
         "chats": users + groups,
-        "streams_24h": activity["streams"],
-        "active_chats_24h": activity["active_chats"],
         "active_chats_7d": activity_7d["active_chats"],
         "active_chats_30d": activity_30d["active_chats"],
         "assistants": assistants,
@@ -87,6 +84,8 @@ def _stats_caption(_lang: dict, data: dict) -> str:
     today_new_chats = int(today.get("users_added", 0)) + int(
         today.get("groups_added", 0)
     )
+    today_plays = int(today.get("plays", 0))
+    today_active_chats = int(today.get("active_chats", 0))
     month_new_chats = sum(
         int(day.get("users_added", 0)) + int(day.get("groups_added", 0))
         for day in data["month"]
@@ -101,8 +100,8 @@ def _stats_caption(_lang: dict, data: dict) -> str:
     body = _lang["stats_caption"].format(
         escape(str(data["bot_name"])),
         _compact(data["chats"]),
-        _compact(data["streams_24h"]),
-        _compact(data["active_chats_24h"]),
+        _compact(today_plays),
+        _compact(today_active_chats),
         data["assistants"],
         escape(data["uptime"]),
         status,

@@ -198,6 +198,28 @@ class SQLiteDB:
                 );
                 CREATE INDEX IF NOT EXISTS track_plays_recent
                     ON track_plays (day, plays DESC);
+                CREATE TABLE IF NOT EXISTS broadcast_jobs (
+                    job_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    status TEXT NOT NULL DEFAULT 'active'
+                        CHECK (status IN ('active', 'running', 'done', 'paused', 'cancelled', 'failed')),
+                    source_chat_id INTEGER NOT NULL,
+                    source_message_id INTEGER NOT NULL,
+                    source_media_group_id TEXT,
+                    include_users INTEGER NOT NULL DEFAULT 0,
+                    include_groups INTEGER NOT NULL DEFAULT 1,
+                    copy_mode INTEGER NOT NULL DEFAULT 1,
+                    daily_minute INTEGER NOT NULL,
+                    timezone TEXT NOT NULL DEFAULT 'Asia/Yangon',
+                    repeat_limit INTEGER,
+                    sent_count INTEGER NOT NULL DEFAULT 0,
+                    next_run_at INTEGER NOT NULL,
+                    last_run_at INTEGER,
+                    created_by INTEGER NOT NULL,
+                    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+                    updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+                );
+                CREATE INDEX IF NOT EXISTS broadcast_jobs_due
+                    ON broadcast_jobs (status, next_run_at);
                 """
             )
             await self._ensure_column(
@@ -217,6 +239,11 @@ class SQLiteDB:
                 await self.conn.execute(
                     "UPDATE chats SET feedback_cleanup = 0"
                 )
+            await self.conn.execute(
+                "UPDATE broadcast_jobs SET status = 'active', "
+                "next_run_at = unixepoch() + 60, updated_at = unixepoch() "
+                "WHERE status = 'running'"
+            )
             await self.conn.commit()
             overrides = await self.get_runtime_config()
             invalid_runtime_keys = []
@@ -1004,6 +1031,134 @@ class SQLiteDB:
             selected = row[0] if row else config.LANG_CODE
             self.lang[chat_id] = selected if selected in {"en", "my"} else "en"
         return self.lang[chat_id]
+
+    async def create_broadcast_job(
+        self,
+        *,
+        source_chat_id: int,
+        source_message_id: int,
+        source_media_group_id: str | None,
+        include_users: bool,
+        include_groups: bool,
+        copy_mode: bool,
+        daily_minute: int,
+        timezone_name: str,
+        repeat_limit: int | None,
+        next_run_at: int,
+        created_by: int,
+    ) -> int:
+        cursor = await self.conn.execute(
+            "INSERT INTO broadcast_jobs "
+            "(source_chat_id, source_message_id, source_media_group_id, "
+            "include_users, include_groups, copy_mode, daily_minute, timezone, "
+            "repeat_limit, next_run_at, created_by) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                source_chat_id,
+                source_message_id,
+                source_media_group_id,
+                int(include_users),
+                int(include_groups),
+                int(copy_mode),
+                int(daily_minute),
+                timezone_name,
+                repeat_limit,
+                int(next_run_at),
+                created_by,
+            ),
+        )
+        await self.conn.commit()
+        return int(cursor.lastrowid)
+
+    async def get_due_broadcast_jobs(
+        self, now: int, *, limit: int = 5
+    ) -> list[dict]:
+        cursor = await self.conn.execute(
+            "SELECT job_id, source_chat_id, source_message_id, "
+            "source_media_group_id, include_users, include_groups, copy_mode, "
+            "daily_minute, timezone, repeat_limit, sent_count, next_run_at, "
+            "created_by FROM broadcast_jobs "
+            "WHERE status = 'active' AND next_run_at <= ? "
+            "ORDER BY next_run_at LIMIT ?",
+            (int(now), int(limit)),
+        )
+        return [
+            {
+                "job_id": row[0],
+                "source_chat_id": row[1],
+                "source_message_id": row[2],
+                "source_media_group_id": row[3],
+                "include_users": bool(row[4]),
+                "include_groups": bool(row[5]),
+                "copy_mode": bool(row[6]),
+                "daily_minute": int(row[7]),
+                "timezone": row[8],
+                "repeat_limit": row[9],
+                "sent_count": int(row[10]),
+                "next_run_at": int(row[11]),
+                "created_by": row[12],
+            }
+            for row in await cursor.fetchall()
+        ]
+
+    async def set_broadcast_job_status(
+        self, job_id: int, status: str, *, next_run_at: int | None = None
+    ) -> None:
+        if next_run_at is None:
+            await self.conn.execute(
+                "UPDATE broadcast_jobs SET status = ?, updated_at = unixepoch() "
+                "WHERE job_id = ?",
+                (status, int(job_id)),
+            )
+        else:
+            await self.conn.execute(
+                "UPDATE broadcast_jobs SET status = ?, next_run_at = ?, "
+                "updated_at = unixepoch() WHERE job_id = ?",
+                (status, int(next_run_at), int(job_id)),
+            )
+        await self.conn.commit()
+
+    async def complete_broadcast_job_run(
+        self, job_id: int, *, next_run_at: int | None
+    ) -> None:
+        if next_run_at is None:
+            await self.conn.execute(
+                "UPDATE broadcast_jobs SET status = 'done', sent_count = sent_count + 1, "
+                "last_run_at = unixepoch(), updated_at = unixepoch() "
+                "WHERE job_id = ?",
+                (int(job_id),),
+            )
+        else:
+            await self.conn.execute(
+                "UPDATE broadcast_jobs SET status = 'active', sent_count = sent_count + 1, "
+                "last_run_at = unixepoch(), next_run_at = ?, updated_at = unixepoch() "
+                "WHERE job_id = ?",
+                (int(next_run_at), int(job_id)),
+            )
+        await self.conn.commit()
+
+    async def list_broadcast_jobs(self, *, limit: int = 10) -> list[dict]:
+        cursor = await self.conn.execute(
+            "SELECT job_id, status, include_users, include_groups, copy_mode, "
+            "daily_minute, timezone, repeat_limit, sent_count, next_run_at "
+            "FROM broadcast_jobs ORDER BY created_at DESC LIMIT ?",
+            (int(limit),),
+        )
+        return [
+            {
+                "job_id": row[0],
+                "status": row[1],
+                "include_users": bool(row[2]),
+                "include_groups": bool(row[3]),
+                "copy_mode": bool(row[4]),
+                "daily_minute": int(row[5]),
+                "timezone": row[6],
+                "repeat_limit": row[7],
+                "sent_count": int(row[8]),
+                "next_run_at": int(row[9]),
+            }
+            for row in await cursor.fetchall()
+        ]
 
     async def get_runtime_config(self) -> dict[str, str]:
         cursor = await self.conn.execute(

@@ -69,3 +69,6 @@ def trending(action: str = "view") -> str:
 
 def setup(action: str = "check") -> str:
     return build("setup", action)
+
+def broadcast(action: str, *parts: object) -> str:
+    return build("broadcast", action, *parts)

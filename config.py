@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from os import getenv
 from string import Formatter
 from urllib.parse import urlparse
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from dotenv import load_dotenv
 
@@ -73,6 +74,7 @@ class Config:
         "start_buttons_layout": "START_BUTTONS_LAYOUT",
         **START_BUTTON_TEXT_FIELDS,
         "lang_code": "LANG_CODE",
+        "project_timezone": "PROJECT_TIMEZONE",
         "default_thumb": "DEFAULT_THUMB",
         "ping_img": "PING_IMG",
         "start_img": "START_IMG",
@@ -116,6 +118,11 @@ class Config:
             "Default language", "essentials",
             "Language used before a chat chooses its own preference.",
             "en or my", "en",
+        ),
+        "project_timezone": RuntimeSetting(
+            "Project timezone", "essentials",
+            "Timezone used for daily broadcasts and visible schedule times.",
+            "IANA timezone name", "Asia/Yangon", advanced=True,
         ),
         "video_play": RuntimeSetting(
             "Video playback", "player",
@@ -262,6 +269,18 @@ class Config:
         except ValueError as exc:
             logger.warning("Ignored invalid %s: %s", name, exc)
             return cls._url(default, telegram=telegram) if default else ""
+
+    @classmethod
+    def _environment_timezone(cls, name: str, default: str) -> str:
+        raw = getenv(name, default).strip() or default
+        if raw in {"Asia/Yangon", "Asia/Rangoon"}:
+            return "Asia/Yangon"
+        try:
+            ZoneInfo(raw)
+            return raw
+        except ZoneInfoNotFoundError:
+            logger.warning("Ignored invalid %s; using %s", name, default)
+            return default
 
     @classmethod
     def _environment_media(
@@ -451,6 +470,9 @@ class Config:
 
         language = getenv("LANG_CODE", "en").strip().lower()
         self.LANG_CODE = language if language in {"en", "my"} else "en"
+        self.PROJECT_TIMEZONE = self._environment_timezone(
+            "PROJECT_TIMEZONE", "Asia/Yangon"
+        )
 
         cookie_urls = re.split(r"[\s,]+", getenv("COOKIES_URL", "").strip())
         self.COOKIES_URL = [
@@ -662,23 +684,36 @@ class Config:
             if value not in {"en", "my"}:
                 raise ValueError("Language must be en or my")
             stored = value
+        elif key == "project_timezone":
+            value = raw_value.strip()
+            if value in {"Asia/Yangon", "Asia/Rangoon"}:
+                value = "Asia/Yangon"
+            else:
+                try:
+                    ZoneInfo(value)
+                except ZoneInfoNotFoundError as exc:
+                    raise ValueError("Use a valid timezone like Asia/Yangon") from exc
+            stored = value
         elif key == "play_button_text":
             value = raw_value.strip()
-            if value == "-":
+            disabled = value in {"", "-"}
+            if disabled:
                 value = ""
             if len(value) > 64:
                 raise ValueError("Playback button text must be 64 characters or less")
-            stored = value
+            stored = "-" if disabled else value
         elif key == "play_button_url":
             normalized = raw_value.strip()
-            value = "" if normalized == "-" else self._url(normalized, telegram=True)
-            stored = value
+            disabled = normalized in {"", "-"}
+            value = "" if disabled else self._url(normalized, telegram=True)
+            stored = "-" if disabled else value
         elif key in {"play_image", "start_img"}:
             normalized = raw_value.strip()
-            value = "" if normalized == "-" else self._media(
+            disabled = normalized in {"", "-"}
+            value = "" if disabled else self._media(
                 normalized, telegram=True
             )
-            stored = value
+            stored = "-" if disabled else value
         elif key == "play_controls_layout":
             value = self._normalize_play_controls_layout(raw_value)
             stored = value
@@ -687,11 +722,12 @@ class Config:
             stored = value
         elif key in self.START_BUTTON_TEXT_FIELDS:
             value = raw_value.strip()
-            if value == "-":
+            disabled = value in {"", "-"}
+            if disabled:
                 value = ""
             if len(value) > 64:
                 raise ValueError("Start button text must be 64 characters or less")
-            stored = value
+            stored = "-" if disabled else value
         elif key in {
             "play_message_template_en", "play_message_template_my"
         }:

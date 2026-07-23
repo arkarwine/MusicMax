@@ -106,7 +106,8 @@ class PlaybackButtonConfigTests(unittest.TestCase):
             ("Open channel", "https://t.me/anonxmusic"),
         )
 
-        self.config.set_runtime("play_button_url", "-")
+        self.assertEqual(self.config.set_runtime("play_button_url", "-"), "-")
+        self.assertEqual(self.config.set_runtime("play_button_url", ""), "-")
         self.assertIsNone(self.config.playback_button())
         self.assertEqual(
             self.config.runtime_display("play_button_url"),
@@ -125,7 +126,8 @@ class PlaybackButtonConfigTests(unittest.TestCase):
             "https://t.me/anonxmusic",
         )
 
-        self.config.set_runtime("play_image", "-")
+        self.assertEqual(self.config.set_runtime("play_image", "-"), "-")
+        self.assertEqual(self.config.set_runtime("play_image", ""), "-")
         self.assertIsNone(self.config.play_image_url())
         self.assertEqual(
             self.config.runtime_display("play_image"),
@@ -273,7 +275,7 @@ class PlaybackButtonConfigTests(unittest.TestCase):
         self.config._runtime_defaults["start_img"] = self.config.START_IMG
 
         stored = self.config.set_runtime("start_img", "-")
-        self.assertEqual(stored, "")
+        self.assertEqual(stored, "-")
         self.assertEqual(self.config.runtime_display("start_img"), "disabled")
 
         self.config.reset_runtime("start_img")

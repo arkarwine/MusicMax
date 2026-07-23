@@ -253,6 +253,49 @@ class TgCall(PyTgCalls):
             artwork,
         )
 
+    async def _refresh_play_card_artwork(
+        self,
+        chat_id: int,
+        message_id: int,
+        media: Media | Track,
+        _lang: dict,
+        lang_code: str,
+        artwork_task: asyncio.Task,
+    ) -> None:
+        try:
+            artwork = await artwork_task
+            if not artwork:
+                return
+            current = queue.get_current(chat_id)
+            if current is None or getattr(current, "id", None) != getattr(
+                media, "id", None
+            ):
+                return
+            if not await db.get_call(chat_id):
+                return
+            card_id = getattr(media, "message_id", 0) or message_id
+            if not card_id:
+                return
+            message = await app.get_messages(chat_id, card_id)
+            if not message:
+                return
+            await self._show_play_card(
+                chat_id,
+                message,
+                media,
+                _lang,
+                lang_code,
+                artwork,
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.debug(
+                "Could not refresh play card artwork in chat %s",
+                chat_id,
+                exc_info=True,
+            )
+
 
     async def play_media(
         self,
@@ -311,8 +354,22 @@ class TgCall(PyTgCalls):
             if not seek_time or new_session:
                 media.time = max(seek_time, 1)
                 await db.add_call(chat_id)
+                refresh_artwork = False
                 if artwork_task is not None:
-                    _thumb = await artwork_task
+                    if artwork_task.done():
+                        try:
+                            _thumb = artwork_task.result()
+                        except Exception:
+                            logger.debug(
+                                "Generated artwork is unavailable for chat %s",
+                                chat_id,
+                                exc_info=True,
+                            )
+                            _thumb = None
+                    else:
+                        refresh_artwork = True
+                        if _thumb is None:
+                            _thumb = config.DEFAULT_THUMB
                 try:
                     await self._show_play_card(
                         chat_id,
@@ -322,6 +379,18 @@ class TgCall(PyTgCalls):
                         lang_code,
                         _thumb,
                     )
+                    if refresh_artwork:
+                        supervisor.spawn_once(
+                            f"play-card-artwork:{chat_id}",
+                            self._refresh_play_card_artwork(
+                                chat_id,
+                                message.id,
+                                media,
+                                _lang,
+                                lang_code,
+                                artwork_task,
+                            ),
+                        )
                 except Exception:
                     # Playback success must not be rolled back solely because a
                     # Telegram status message could not be edited or replaced.

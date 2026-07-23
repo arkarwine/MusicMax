@@ -262,11 +262,16 @@ class StatsCard:
         unit: str,
         accent,
         fill,
+        summary_value: int | None = None,
+        summary_scope: str | None = None,
     ) -> None:
         self._panel(draw, box)
         values = [int(day.get(field, 0)) for day in days]
         is_active_chats = field == "active_chats"
-        summary = values[-1] if is_active_chats and values else sum(values)
+        if summary_value is None:
+            summary = values[-1] if is_active_chats and values else sum(values)
+        else:
+            summary = int(summary_value)
         self._header(
             draw,
             box,
@@ -274,7 +279,7 @@ class StatsCard:
             subtitle,
             f"{self._compact(summary)} {unit}",
             accent,
-            "latest day" if is_active_chats else "30-day total",
+            summary_scope or ("latest day" if is_active_chats else "30-day total"),
         )
         x1, y1, x2, y2 = box
         plot = (x1 + 72, y1 + 112, x2 - 30, y2 - 47)
@@ -349,6 +354,8 @@ class StatsCard:
             unit="chats",
             accent=self.BLUE,
             fill=self.BLUE_FILL,
+            summary_value=int(data.get("active_chats_30d", 0)),
+            summary_scope="30-day reach",
         )
         draw.text(
             (60, 963),
