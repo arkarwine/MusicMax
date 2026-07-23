@@ -262,6 +262,7 @@ class YouTube:
             "concurrent_fragment_downloads": 4,
         }
         if video:
+            format_name = "video"
             options = {
                 **base_opts,
                 "format": (
@@ -271,10 +272,17 @@ class YouTube:
                 "merge_output_format": "mp4",
             }
         else:
+            format_name = "audio"
             options = {
                 **base_opts,
                 "format": "bestaudio[ext=webm][acodec=opus]",
             }
+        logger.info(
+            "Starting YouTube %s download for %s using cookie=%s",
+            format_name,
+            video_id,
+            Path(cookie).name if cookie else "none",
+        )
 
         def run():
             with yt_dlp.YoutubeDL(options) as ydl:

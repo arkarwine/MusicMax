@@ -122,21 +122,27 @@ def _dashboard_text(_lang: dict, draft: BroadcastDraft, users: int, groups: int)
     return "\n".join(lines)
 
 
-def _dashboard_markup(_lang: dict, draft: BroadcastDraft) -> types.InlineKeyboardMarkup:
+def _dashboard_markup(
+    _lang: dict,
+    draft: BroadcastDraft,
+    *,
+    users: int = 0,
+    groups: int = 0,
+) -> types.InlineKeyboardMarkup:
     style_on = enums.ButtonStyle.SUCCESS
     token = draft.token
     rows = [
         [
             buttons.ikb(
                 text=_lang["gcast_users_button"].format(
-                    _lang["on"] if draft.include_users else _lang["off"]
+                    users if draft.include_users else _lang["off"]
                 ),
                 callback_data=callbacks.broadcast("toggle", token, "users"),
                 style=style_on if draft.include_users else enums.ButtonStyle.DEFAULT,
             ),
             buttons.ikb(
                 text=_lang["gcast_groups_button"].format(
-                    _lang["on"] if draft.include_groups else _lang["off"]
+                    groups if draft.include_groups else _lang["off"]
                 ),
                 callback_data=callbacks.broadcast("toggle", token, "groups"),
                 style=style_on if draft.include_groups else enums.ButtonStyle.DEFAULT,
@@ -175,7 +181,7 @@ def _dashboard_markup(_lang: dict, draft: BroadcastDraft) -> types.InlineKeyboar
         buttons.ikb(
             text=_lang["gcast_send_button"],
             callback_data=callbacks.broadcast("send", token),
-            style=enums.ButtonStyle.SUCCESS,
+            style=enums.ButtonStyle.PRIMARY,
         )
     ])
     return buttons.ikm(rows)
@@ -236,7 +242,7 @@ def _repeat_markup(_lang: dict, token: str) -> types.InlineKeyboardMarkup:
 async def _show_dashboard(message_or_query, draft: BroadcastDraft, _lang: dict):
     users, groups, _ = await _counts(draft)
     text = _dashboard_text(_lang, draft, users, groups)
-    markup = _dashboard_markup(_lang, draft)
+    markup = _dashboard_markup(_lang, draft, users=users, groups=groups)
     if isinstance(message_or_query, types.CallbackQuery):
         return await message_or_query.message.edit_text(text, reply_markup=markup)
     return await message_or_query.reply_text(text, reply_markup=markup)
