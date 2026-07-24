@@ -107,6 +107,23 @@ class VoiceWorkerArchitectureTests(unittest.TestCase):
         self.assertNotIn("session_string", process_call)
         self.assertIn('"session_string": self._session_string', source)
 
+    def test_parent_does_not_wait_for_lifetime_connection_before_init(self):
+        source = (
+            ROOT / "anony/core/voice_worker.py"
+        ).read_text(encoding="utf-8")
+        startup = source[
+            source.index("server = await asyncio.start_server"):
+            source.index("ready = loop.create_future()")
+        ]
+        self.assertIn("server.close()", startup)
+        self.assertNotIn("await server.wait_closed()", startup)
+
+    def test_plugins_load_before_voice_worker_boot(self):
+        source = (ROOT / "anony/__main__.py").read_text(encoding="utf-8")
+        plugin_load = source.index("for module in all_modules:")
+        voice_boot = source.index("await anon.boot()")
+        self.assertLess(plugin_load, voice_boot)
+
 
 if __name__ == "__main__":
     unittest.main()

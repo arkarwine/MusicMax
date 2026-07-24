@@ -155,8 +155,12 @@ class VoiceWorkerClient:
             await self._terminate_process()
             raise
         finally:
+            # On Python 3.12, wait_closed() also waits for accepted client
+            # connections.  This IPC connection is the worker's lifetime
+            # channel, so awaiting it here deadlocks the initialization:
+            # the parent waits for the child to disconnect while the child
+            # waits for the parent to send "initialize".
             server.close()
-            await server.wait_closed()
 
         ready = loop.create_future()
         self._pending["ready"] = ready

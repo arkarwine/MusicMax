@@ -147,7 +147,9 @@ async def _run(host: str, port: int, token: str) -> None:
         {"kind": "hello", "token": token, "pid": os.getpid()},
     )
 
-    line = await asyncio.wait_for(reader.readline(), timeout=20)
+    # This only protects the initial handshake. Once initialized, the worker
+    # remains idle indefinitely and is governed by the parent health checks.
+    line = await asyncio.wait_for(reader.readline(), timeout=45)
     if not line:
         raise RuntimeError("Voice worker initialization channel closed")
     initialization = json.loads(line.decode("utf-8"))

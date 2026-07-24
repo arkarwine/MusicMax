@@ -776,12 +776,23 @@ class TgCall:
             if slot is not None
         ]
         for slot in failed_slots:
-            try:
-                await userbot.disable_session(slot)
-            except Exception:
-                logger.exception(
-                    "Failed to take unusable assistant session %s offline", slot
+            # A voice-worker startup failure is transient and must not disable
+            # an otherwise valid Telegram assistant session. Keep the account
+            # available and recover the isolated voice process in background.
+            running = self._restart_tasks.get(slot)
+            if running is not None and not running.done():
+                continue
+            task = supervisor.spawn_once(
+                f"voice-worker-recovery:{slot}",
+                self._recover_worker(slot),
+            )
+            self._restart_tasks[slot] = task
+            task.add_done_callback(
+                lambda done, worker_slot=slot: self._restart_tasks.pop(
+                    worker_slot,
+                    None,
                 )
+            )
         if self.clients:
             logger.info(
                 "Started %s isolated voice worker(s): audio=%s, video=%s.",

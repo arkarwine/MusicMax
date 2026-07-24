@@ -41,22 +41,26 @@ async def main():
         await themes.boot()
         app.logger = await db.get_log_chat()
         await app.boot()
-        await userbot.boot()
-        await anon.boot()
-        await thumb.start()
 
+        # Register Telegram handlers as soon as the bot client is connected.
+        # Assistant voice processes are optional runtime components and must
+        # never leave an online bot with an empty dispatcher.
         for module in all_modules:
             importlib.import_module(f"anony.plugins.{module}")
         logger.info(f"Loaded {len(all_modules)} modules.")
-
-        if config.COOKIES_URL:
-            await yt.save_cookies(config.COOKIES_URL)
 
         sudoers = await db.get_sudoers()
         app.sudoers.update(sudoers)
         app.bl_users.update(await db.get_blacklisted())
         logger.info(f"Loaded {len(app.sudoers)} sudo users.")
         await app.register_sudo_commands(app.sudoers)
+
+        await userbot.boot()
+        await anon.boot()
+        await thumb.start()
+
+        if config.COOKIES_URL:
+            await yt.save_cookies(config.COOKIES_URL)
 
         await recovery.restore_queues()
         supervisor.spawn_once("playback-recovery", recovery.run_startup())
