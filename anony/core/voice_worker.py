@@ -326,6 +326,7 @@ class VoiceWorkerClient:
         video: bool,
         audio_quality: str,
         video_quality: str,
+        video_fps: int,
         ffmpeg_parameters: str | None,
         peer: dict | None,
         timeout: float,
@@ -338,6 +339,7 @@ class VoiceWorkerClient:
             video=video,
             audio_quality=audio_quality,
             video_quality=video_quality,
+            video_fps=video_fps,
             ffmpeg_parameters=ffmpeg_parameters,
             peer=peer,
         ))

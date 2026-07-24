@@ -209,6 +209,8 @@ class PlayMessageRendererTests(unittest.TestCase):
             ],
             ["\n\n", "\n\n", "\n\n"],
         )
+        self.assertNotIn("<br>", rendered.fallback_html)
+        self.assertIn("\n\n", rendered.fallback_html)
 
     def test_placeholders_work_inside_markdown_links(self):
         rendered = self.render(
@@ -222,14 +224,12 @@ class PlayMessageRendererTests(unittest.TestCase):
         )
         self.assertNotIn("[Charlie", rendered.rich_html)
 
-    def test_play_delivery_uses_explicit_blocks(self):
+    def test_play_delivery_uses_line_safe_standard_caption(self):
         calls_source = (
             ROOT / "anony/core/calls.py"
         ).read_text(encoding="utf-8")
-        self.assertIn(
-            "rendered.rich_blocks,\n            media=rich_media",
-            calls_source,
-        )
+        self.assertIn("rendered.fallback_html,", calls_source)
+        self.assertNotIn("app.rich_messages.edit(", calls_source)
 
     def test_render_failure_uses_localized_default(self):
         rendered = self.render("{unknown}")

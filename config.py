@@ -61,6 +61,7 @@ class Config:
         "playlist_limit": "PLAYLIST_LIMIT",
         "audio_quality": "AUDIO_QUALITY",
         "video_quality": "VIDEO_QUALITY",
+        "video_fps": "VIDEO_FPS",
         "support_channel": "SUPPORT_CHANNEL",
         "support_chat": "SUPPORT_CHAT",
         "auto_leave": "AUTO_LEAVE",
@@ -124,7 +125,12 @@ class Config:
         "video_quality": RuntimeSetting(
             "Video quality", "player",
             "Maximum resolution used for video playback.",
-            "360p, 480p, or 720p", "480p",
+            "360p, 480p, or 720p", "360p",
+        ),
+        "video_fps": RuntimeSetting(
+            "Video smoothness", "player",
+            "Frames per second. Lower values use less CPU.",
+            "15, 20, 24, or 30", "20",
         ),
         "lang_code": RuntimeSetting(
             "Default language", "essentials",
@@ -333,11 +339,18 @@ class Config:
             logger.warning("Ignored invalid AUDIO_QUALITY; using medium")
             audio_quality = "medium"
         self.AUDIO_QUALITY = audio_quality
-        video_quality = getenv("VIDEO_QUALITY", "480p").strip().lower()
+        video_quality = getenv("VIDEO_QUALITY", "360p").strip().lower()
         if video_quality not in {"360p", "480p", "720p"}:
-            logger.warning("Ignored invalid VIDEO_QUALITY; using 480p")
-            video_quality = "480p"
+            logger.warning("Ignored invalid VIDEO_QUALITY; using 360p")
+            video_quality = "360p"
         self.VIDEO_QUALITY = video_quality
+        video_fps = self._environment_int(
+            "VIDEO_FPS", 20, minimum=15, maximum=30
+        )
+        if video_fps not in {15, 20, 24, 30}:
+            logger.warning("Ignored invalid VIDEO_FPS; using 20")
+            video_fps = 20
+        self.VIDEO_FPS = video_fps
 
         first_session = (getenv("SESSION") or "").strip()
         self.SESSIONS = (first_session,) if first_session else ()
@@ -708,6 +721,11 @@ class Config:
             if value not in {"360p", "480p", "720p"}:
                 raise ValueError("Video quality must be 360p, 480p, or 720p")
             stored = value
+        elif key == "video_fps":
+            value = int(raw_value)
+            if value not in {15, 20, 24, 30}:
+                raise ValueError("Video smoothness must be 15, 20, 24, or 30")
+            stored = str(value)
         elif key in {"auto_leave", "auto_end", "thumb_gen", "video_play"}:
             value = self._boolean(raw_value)
             stored = "on" if value else "off"
@@ -874,7 +892,7 @@ class Config:
         )
         if key == "duration_limit":
             return value // 60
-        if key in {"queue_limit", "playlist_limit"}:
+        if key in {"queue_limit", "playlist_limit", "video_fps"}:
             return int(value)
         if key in {"auto_leave", "auto_end", "thumb_gen", "video_play"}:
             return bool(value)

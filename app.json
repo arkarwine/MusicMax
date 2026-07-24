@@ -27,7 +27,12 @@
         },
         "VIDEO_QUALITY": {
             "description": "Maximum video quality: 360p, 480p, or 720p.",
-            "value": "480p",
+            "value": "360p",
+            "required": false
+        },
+        "VIDEO_FPS": {
+            "description": "Video frame rate: 15, 20, 24, or 30.",
+            "value": "20",
             "required": false
         },
         "DATABASE_PATH": {

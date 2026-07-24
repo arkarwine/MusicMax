@@ -300,12 +300,24 @@ class YouTube:
             "concurrent_fragment_downloads": 4,
         }
         if video:
+            from anony import config
+
+            max_height = {
+                "360p": 360,
+                "480p": 480,
+                "720p": 720,
+            }.get(config.VIDEO_QUALITY, 360)
             format_name = "video"
             options = {
                 **base_opts,
+                "outtmpl": (
+                    str(Path(filename).with_suffix("")) + ".%(ext)s"
+                ),
                 "format": (
-                    "(bestvideo[height<=?720][width<=?1280][ext=mp4])"
-                    "+(bestaudio)"
+                    f"bestvideo[height<=?{max_height}][ext=mp4]"
+                    "+bestaudio[ext=m4a]/"
+                    f"best[height<=?{max_height}][ext=mp4]/"
+                    f"best[height<=?{max_height}]"
                 ),
                 "merge_output_format": "mp4",
             }
@@ -334,7 +346,13 @@ class YouTube:
                     for candidate in candidates:
                         if candidate.is_file():
                             return str(candidate)
-                    matches = sorted(Path("downloads").glob(f"{video_id}.*"))
+                    matches = (
+                        []
+                        if video
+                        else sorted(
+                            Path("downloads").glob(f"{video_id}.*")
+                        )
+                    )
                     return str(matches[0]) if matches else None
                 except (
                     yt_dlp.utils.DownloadError,
@@ -387,8 +405,14 @@ class YouTube:
     async def download(
         self, video_id: str, video: bool = False
     ) -> str | None:
-        ext = "mp4" if video else "webm"
-        filename = f"downloads/{video_id}.{ext}"
+        if video:
+            from anony import config
+
+            variant = config.VIDEO_QUALITY
+            filename = f"downloads/{video_id}_{variant}.mp4"
+        else:
+            variant = "audio"
+            filename = f"downloads/{video_id}.webm"
         if Path(filename).is_file():
             return filename
         if not video:
@@ -396,7 +420,7 @@ class YouTube:
             if existing:
                 return str(existing[0])
 
-        key = (video_id, bool(video))
+        key = (video_id, bool(video), variant)
         async with self._download_lock:
             task = self._download_tasks.get(key)
             if task is None:

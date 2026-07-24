@@ -210,7 +210,11 @@ async def play_hndlr(
         else None
     )
     if not file.file_path:
-        fname = f"downloads/{file.id}.{'mp4' if video else 'webm'}"
+        fname = (
+            f"downloads/{file.id}_{config.VIDEO_QUALITY}.mp4"
+            if video
+            else f"downloads/{file.id}.webm"
+        )
         cached_file = Path(fname) if Path(fname).exists() else None
         if cached_file is None and not video:
             cached_file = next(

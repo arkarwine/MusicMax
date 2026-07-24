@@ -164,6 +164,7 @@ class YouTubePerformanceTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn(option, source)
         self.assertIn("asyncio.wait_for", source)
         self.assertIn('"bestaudio[ext=webm][acodec=opus]/bestaudio/best"', source)
+        self.assertIn("bestvideo[height<=?{max_height}][ext=mp4]", source)
         self.assertIn("ydl.prepare_filename(info)", source)
         self.assertIn('Path("downloads").glob(f"{video_id}.*")', source)
         self.assertIn('async def download_search', source)

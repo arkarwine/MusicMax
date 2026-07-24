@@ -20,7 +20,6 @@ from anony.core.voice_worker import (
 from anony.helpers import Media, Track, buttons
 from anony.core.play_message import (
     render_play_message,
-    select_play_media,
 )
 
 
@@ -30,9 +29,6 @@ def _env_int(name: str, default: int, minimum: int = 1) -> int:
     except ValueError:
         return default
     return max(value, minimum)
-from anony.core.rich_messages import RichMedia
-
-
 class TgCall:
     def __init__(self):
         self.clients: dict[int, VoiceWorkerClient] = {}
@@ -163,16 +159,6 @@ class TgCall:
             )
         logger.info("Assistant voice workers stopped.")
 
-    @staticmethod
-    def _play_rich_media(
-        override, artwork, placement: str | int = "before"
-    ) -> RichMedia | None:
-        sources = select_play_media(override, artwork)
-        return (
-            RichMedia(sources[0], "photo", placement)
-            if sources else None
-        )
-
     async def _legacy_play_card(
         self,
         chat_id: int,
@@ -294,25 +280,9 @@ class TgCall:
                     override = override_url
             if override is None and _thumb:
                 override = _thumb
-        rich_media = self._play_rich_media(
-            override,
-            artwork,
-            rendered.media_index
-            if rendered.media_index is not None else "before",
-        )
-        sent = await app.rich_messages.edit(
-            chat_id,
-            message.id,
-            rendered.rich_blocks,
-            media=rich_media,
-            fallback_text=rendered.fallback_html,
-            reply_markup=keyboard,
-            timeout=1.5,
-        )
-        if sent is not None:
-            media.message_id = sent.id
-            return
-
+        # Telegram rich paragraph blocks collapse whitespace on some clients.
+        # Standard captions preserve the template's real newline characters
+        # and avoid a slow rich-to-standard retry.
         await self._legacy_play_card(
             chat_id,
             message,
@@ -413,6 +383,7 @@ class TgCall:
                 video=media.video,
                 audio_quality=config.AUDIO_QUALITY,
                 video_quality=config.VIDEO_QUALITY,
+                video_fps=config.VIDEO_FPS,
                 ffmpeg_parameters=(
                     f"-ss {seek_time}" if seek_time > 1 else None
                 ),
@@ -866,10 +837,12 @@ class TgCall:
             )
         if self.clients:
             logger.info(
-                "Started %s isolated voice worker(s): audio=%s, video=%s.",
+                "Started %s isolated voice worker(s): "
+                "audio=%s, video=%s/%sfps.",
                 len(self.clients),
                 config.AUDIO_QUALITY,
                 config.VIDEO_QUALITY,
+                config.VIDEO_FPS,
             )
         else:
             logger.warning(

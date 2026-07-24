@@ -19,6 +19,7 @@ from ntgcalls import ConnectionNotFound
 from pyrogram import Client
 from pytgcalls import PyTgCalls, exceptions, types
 from pytgcalls.pytgcalls_session import PyTgCallsSession
+from pytgcalls.types.raw import VideoParameters
 
 
 logging.basicConfig(
@@ -43,11 +44,17 @@ _AUDIO_QUALITIES = {
     "medium": types.AudioQuality.MEDIUM,
     "high": types.AudioQuality.HIGH,
 }
-_VIDEO_QUALITIES = {
-    "360p": types.VideoQuality.SD_360p,
-    "480p": types.VideoQuality.SD_480p,
-    "720p": types.VideoQuality.HD_720p,
+_VIDEO_DIMENSIONS = {
+    "360p": (640, 360),
+    "480p": (854, 480),
+    "720p": (1280, 720),
 }
+
+
+def _video_parameters(quality: str, frame_rate: int) -> VideoParameters:
+    width, height = _VIDEO_DIMENSIONS.get(quality, (640, 360))
+    fps = frame_rate if frame_rate in {15, 20, 24, 30} else 20
+    return VideoParameters(width, height, fps, False)
 
 
 async def _send(
@@ -100,9 +107,9 @@ async def _execute(
                 command.get("audio_quality"),
                 types.AudioQuality.MEDIUM,
             ),
-            video_parameters=_VIDEO_QUALITIES.get(
-                command.get("video_quality"),
-                types.VideoQuality.SD_480p,
+            video_parameters=_video_parameters(
+                command.get("video_quality", "360p"),
+                int(command.get("video_fps", 20)),
             ),
             audio_flags=types.MediaStream.Flags.REQUIRED,
             video_flags=(

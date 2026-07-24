@@ -342,7 +342,7 @@ def _markdown_html(
                 blocks.append("<ul>" + "".join(items) + "</ul>")
             else:
                 blocks.append(
-                    "<br>".join(
+                    "\n".join(
                         "• " + re.sub(r"^<li>|</li>$", "", item)
                         for item in items
                     )
@@ -366,7 +366,7 @@ def _markdown_html(
                 blocks.append("<ol>" + "".join(items) + "</ol>")
             else:
                 blocks.append(
-                    "<br>".join(
+                    "\n".join(
                         f"{number}. "
                         + re.sub(r"^<li>|</li>$", "", item)
                         for number, item in zip(numbers, items)
@@ -384,7 +384,7 @@ def _markdown_html(
                 quoted.append(_inline_html(item.group(1), fragments))
                 index += 1
             blocks.append(
-                "<blockquote>" + "<br>".join(quoted) + "</blockquote>"
+                "<blockquote>" + "\n".join(quoted) + "</blockquote>"
             )
             continue
 
@@ -399,11 +399,11 @@ def _markdown_html(
                 f"<p>{line}</p>" for line in paragraph
             )
         else:
-            blocks.append("<br>".join(paragraph))
+            blocks.append("\n".join(paragraph))
 
     if rich:
         return "".join(blocks)
-    return "<br><br>".join(blocks)
+    return "\n\n".join(blocks)
 
 
 def _markdown_blocks(

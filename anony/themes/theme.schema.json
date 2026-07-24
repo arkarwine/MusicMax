@@ -64,6 +64,15 @@
           "type": "integer",
           "minimum": 1
         },
+        "audio_quality": {
+          "enum": ["low", "medium", "high"]
+        },
+        "video_quality": {
+          "enum": ["360p", "480p", "720p"]
+        },
+        "video_fps": {
+          "enum": [15, 20, 24, 30]
+        },
         "support_channel": {
           "type": "string"
         },
