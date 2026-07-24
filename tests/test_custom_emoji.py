@@ -115,7 +115,7 @@ class CustomEmojiButtonTests(unittest.TestCase):
         )
         self.assertEqual(button.text, "▶️")
         self.assertIsNone(button.icon_custom_emoji_id)
-    def test_themed_button_hides_icon_when_custom_delivery_is_rejected(self):
+    def test_themed_button_keeps_fallback_when_custom_delivery_is_rejected(self):
         fake_rich = SimpleNamespace(
             has_themed_emoji_placement=lambda group, action: True,
             themed_button_emoji=lambda action: (
@@ -138,7 +138,7 @@ class CustomEmojiButtonTests(unittest.TestCase):
         self.assertEqual(
             str(button.icon_custom_emoji_id), "123"
         )
-        self.assertEqual(fallback.inline_keyboard[0][0].text, " Play")
+        self.assertEqual(fallback.inline_keyboard[0][0].text, "▶️ Play")
 
 
 

@@ -137,6 +137,10 @@ def _single_emoji(value: str) -> bool:
     """Accept one Unicode emoji grapheme without adding a heavy dependency."""
     if not value or len(value) > 16 or any(char.isspace() for char in value):
         return False
+    # Telegram playback buttons also support this conventional compact pause
+    # glyph. It is intentionally treated as one visual control token.
+    if value == "||":
+        return True
     emoji_like = any(
         unicodedata.category(char) in {"So", "Sk", "Sm"}
         or ord(char) == 0x20E3

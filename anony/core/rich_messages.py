@@ -270,9 +270,9 @@ def themed_emoji_token(token_name: str) -> str:
         from anony.core.custom_emoji import custom_emoji_supported
 
         if not custom_emoji_supported():
-            return ""
+            return native
     except (ImportError, SystemExit):
-        return ""
+        return native
     return f'<tg-emoji emoji-id="{custom_id}">{native}</tg-emoji>'
 
 

@@ -28,7 +28,12 @@
         "pause": {"native": "⏸️", "custom_emoji_id": null},
         "play": {"native": "▶️", "custom_emoji_id": null},
         "skip": {"native": "⏭️", "custom_emoji_id": null},
-        "stop": {"native": "⏹️", "custom_emoji_id": null}
+        "stop": {"native": "⏹️", "custom_emoji_id": null},
+        "control_repeat": {"native": "↻", "custom_emoji_id": null},
+        "control_pause": {"native": "||", "custom_emoji_id": null},
+        "control_play": {"native": "▷", "custom_emoji_id": null},
+        "control_skip": {"native": "⏭", "custom_emoji_id": null},
+        "control_stop": {"native": "◻", "custom_emoji_id": null}
       },
       "placements": {
         "messages": {
@@ -45,9 +50,9 @@
           "help.admins": null, "help.auth": null, "help.blist": null,
           "help.lang": null, "help.ping": null, "help.play": null,
           "help.queue": null, "help.stats": null, "help.sudo": null,
-          "control.loop": null, "control.stop": null,
-          "control.pause": null, "control.resume": null,
-          "control.skip": null, "control.replay": null,
+          "control.loop": "control_repeat", "control.stop": "control_stop",
+          "control.pause": "control_pause", "control.resume": "control_play",
+          "control.skip": "control_skip", "control.replay": "control_repeat",
           "stats.refresh": null,
           "settings.play_mode": null, "settings.playback": null,
           "settings.command_delete": null, "settings.cleanup": null,

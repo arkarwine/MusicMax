@@ -196,7 +196,10 @@ def custom_emoji_button(
             text=render_custom_emoji_text(text), **kwargs
         )
 
-    fallback = "" if themed_placement else match.group(3)
+    # The themed tag already replaced the locale tag, so its own fallback is
+    # the single authoritative Unicode/native value. Retain it for clients or
+    # bot accounts that cannot deliver custom button icons.
+    fallback = match.group(3)
     remainder = text[match.end():]
     emoji_id = unescape(match.group(2)).strip()
     can_use_icon = (

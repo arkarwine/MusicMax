@@ -150,6 +150,26 @@ class ThemeManagerTests(unittest.IsolatedAsyncioTestCase):
             else:
                 sys.modules[name] = module
 
+    def test_builtin_playback_controls_share_exact_native_symbols(self):
+        expected = {
+            "control_repeat": "↻",
+            "control_pause": "||",
+            "control_play": "▷",
+            "control_skip": "⏭",
+            "control_stop": "◻",
+        }
+        for theme_name in ("default", "premium"):
+            theme = json.loads(
+                (ROOT / f"anony/themes/{theme_name}.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            registry = theme["ui"]["emojis"]["registry"]
+            self.assertEqual(
+                {name: registry[name]["native"] for name in expected},
+                expected,
+            )
+
     def manager(self, *, legacy=None):
         config = config_module.Config()
         language = FakeLanguage()
