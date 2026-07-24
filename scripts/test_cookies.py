@@ -49,7 +49,12 @@ def format_spec(kind: str) -> str:
     return "bestvideo*+bestaudio/best"
 
 
-def test_cookie(cookie: Path | None, url: str, kind: str, list_formats: bool) -> bool:
+def run_cookie_test(
+    cookie: Path | None,
+    url: str,
+    kind: str,
+    list_formats: bool,
+) -> bool:
     label = str(cookie.resolve()) if cookie else "no cookie"
     print(f"\n=== Testing {label} ===")
     opts = {
@@ -123,7 +128,7 @@ def main() -> int:
         if cookie is not None and not cookie.exists():
             print(f"\nMissing cookie file: {cookie}")
             continue
-        ok += int(test_cookie(cookie, url, args.format, args.list_formats))
+        ok += int(run_cookie_test(cookie, url, args.format, args.list_formats))
 
     print(f"\nResult: {ok}/{len(selected)} passed")
     return 0 if ok else 1

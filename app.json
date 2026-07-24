@@ -20,6 +20,16 @@
             "value": "",
             "required": true
         },
+        "AUDIO_QUALITY": {
+            "description": "Playback audio quality: low, medium, or high.",
+            "value": "medium",
+            "required": false
+        },
+        "VIDEO_QUALITY": {
+            "description": "Maximum video quality: 360p, 480p, or 720p.",
+            "value": "480p",
+            "required": false
+        },
         "DATABASE_PATH": {
             "description": "Path to the SQLite database file.",
             "value": "data/anonxmusic.db",

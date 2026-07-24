@@ -271,12 +271,37 @@ class HealthMonitor:
         expected = set(self.userbot.clients)
         active = set(self.calls.clients)
         missing = expected - active
-        if missing:
+        dead = {
+            slot
+            for slot, client in self.calls.clients.items()
+            if not getattr(client, "is_alive", True)
+        }
+        if missing or dead:
+            unavailable = sorted(missing | dead)
             raise RuntimeError(
-                "Voice clients missing for assistants "
-                + ", ".join(map(str, sorted(missing)))
+                "Voice workers unavailable for assistants "
+                + ", ".join(map(str, unavailable))
             )
-        return f"{len(active)} ready" if active else "Not configured"
+        if not active:
+            return "Not configured"
+        results = await asyncio.gather(
+            *(
+                self.calls.clients[slot].measure_ping()
+                for slot in sorted(active)
+            ),
+            return_exceptions=True,
+        )
+        failed = [
+            slot
+            for slot, result in zip(sorted(active), results)
+            if isinstance(result, BaseException)
+        ]
+        if failed:
+            raise RuntimeError(
+                "Voice workers did not answer for assistants "
+                + ", ".join(map(str, failed))
+            )
+        return f"{len(active)} isolated worker(s) ready"
 
     async def _probe_application(self) -> str:
         if not _env_bool("WATCHDOG_ASSISTANT_PROBE", True):
@@ -420,7 +445,8 @@ class HealthMonitor:
                         acted = True
             elif component == "voice":
                 for slot, client in self.userbot.clients.items():
-                    if slot not in self.calls.clients:
+                    worker = self.calls.clients.get(slot)
+                    if worker is None or not getattr(worker, "is_alive", True):
                         await self._with_timeout(self.calls.add_client(slot, client))
                         acted = True
             else:

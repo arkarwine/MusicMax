@@ -222,7 +222,6 @@ class Inline:
         cmd_delete: bool,
         feedback_cleanup: bool,
         default_video: bool,
-        audio_mode: str,
         language: str,
         chat_id: int,
     ) -> types.InlineKeyboardMarkup:
@@ -257,18 +256,6 @@ class Inline:
                             else lang["setting_audio"]
                         ),
                         callback_data=callbacks.settings(chat_id, "video"),
-                        style=enums.ButtonStyle.DEFAULT,
-                    ),
-                ],
-                [
-                    self.ikb(
-                        text=lang["audio_mode"],
-                        theme_action="settings.audio_mode",
-                        callback_data=callbacks.settings(chat_id),
-                    ),
-                    self.ikb(
-                        text=lang[f"setting_{audio_mode}"],
-                        callback_data=callbacks.settings(chat_id, "audio"),
                         style=enums.ButtonStyle.DEFAULT,
                     ),
                 ],

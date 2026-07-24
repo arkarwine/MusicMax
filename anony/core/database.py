@@ -10,13 +10,11 @@ from contextlib import suppress
 from dataclasses import fields, is_dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from random import randint
 from time import time
 
 import aiosqlite
 
 from anony import config, logger, userbot
-from anony.core.audio import normalize_audio_mode
 
 
 class SQLiteDB:
@@ -30,7 +28,6 @@ class SQLiteDB:
         self.admin_play = []
         self.blacklisted = []
         self.cmd_delete = []
-        self.audio_mode = {}
         self.default_video = {}
         self.feedback_cleanup = {}
         self.loop = {}
@@ -90,9 +87,7 @@ class SQLiteDB:
                     cmd_delete INTEGER NOT NULL DEFAULT 0,
                     admin_play INTEGER NOT NULL DEFAULT 0,
                     default_video INTEGER NOT NULL DEFAULT 0,
-                    feedback_cleanup INTEGER NOT NULL DEFAULT 1,
-                    audio_mode TEXT NOT NULL DEFAULT 'original'
-                        CHECK (audio_mode IN ('original', 'spatial', 'hall'))
+                    feedback_cleanup INTEGER NOT NULL DEFAULT 1
                 );
                 CREATE TABLE IF NOT EXISTS languages (
                     chat_id INTEGER PRIMARY KEY,
@@ -224,12 +219,6 @@ class SQLiteDB:
             )
             await self._ensure_column(
                 "chats", "default_video", "INTEGER NOT NULL DEFAULT 0"
-            )
-            await self._ensure_column(
-                "chats",
-                "audio_mode",
-                "TEXT NOT NULL DEFAULT 'original' "
-                "CHECK (audio_mode IN ('original', 'spatial', 'hall'))",
             )
             cleanup_added = await self._ensure_column(
                 "chats", "feedback_cleanup", "INTEGER NOT NULL DEFAULT 1"
@@ -518,7 +507,18 @@ class SQLiteDB:
             raise RuntimeError("No assistant sessions are active")
         if slot is not None and slot not in slots:
             raise RuntimeError(f"Assistant session {slot} is not active")
-        num = slot if slot is not None else slots[randint(0, len(slots) - 1)]
+        if slot is not None:
+            num = slot
+        else:
+            loads = {
+                candidate: sum(
+                    1
+                    for active_chat in self.active_calls
+                    if self.assistant.get(active_chat) == candidate
+                )
+                for candidate in slots
+            }
+            num = min(slots, key=lambda candidate: (loads[candidate], candidate))
         await self.conn.execute(
             "INSERT INTO assistants (chat_id, num) VALUES (?, ?) "
             "ON CONFLICT(chat_id) DO UPDATE SET num = excluded.num",
@@ -921,7 +921,6 @@ class SQLiteDB:
     async def rm_chat(self, chat_id: int) -> None:
         if await self.is_chat(chat_id):
             self.chats.remove(chat_id)
-            self.audio_mode.pop(chat_id, None)
             self.default_video.pop(chat_id, None)
             self.feedback_cleanup.pop(chat_id, None)
             await self.conn.execute("DELETE FROM chats WHERE chat_id = ?", (chat_id,))
@@ -970,25 +969,6 @@ class SQLiteDB:
             "ON CONFLICT(chat_id) DO UPDATE SET "
             "default_video = excluded.default_video",
             (chat_id, int(video)),
-        )
-        await self.conn.commit()
-
-    async def get_audio_mode(self, chat_id: int) -> str:
-        if chat_id not in self.audio_mode:
-            cursor = await self.conn.execute(
-                "SELECT audio_mode FROM chats WHERE chat_id = ?", (chat_id,)
-            )
-            row = await cursor.fetchone()
-            self.audio_mode[chat_id] = normalize_audio_mode(row[0] if row else None)
-        return self.audio_mode[chat_id]
-
-    async def set_audio_mode(self, chat_id: int, mode: str) -> None:
-        selected = normalize_audio_mode(mode)
-        self.audio_mode[chat_id] = selected
-        await self.conn.execute(
-            "INSERT INTO chats (chat_id, audio_mode) VALUES (?, ?) "
-            "ON CONFLICT(chat_id) DO UPDATE SET audio_mode = excluded.audio_mode",
-            (chat_id, selected),
         )
         await self.conn.commit()
 

@@ -219,16 +219,13 @@ class ReliabilityDatabaseTests(unittest.IsolatedAsyncioTestCase):
         fake_anony.userbot = types.SimpleNamespace(clients={})
         fake_core = types.ModuleType("anony.core")
         fake_core.__path__ = []
-        fake_audio = types.ModuleType("anony.core.audio")
-        fake_audio.normalize_audio_mode = lambda value: value
         self.previous_modules = {
             key: sys.modules.get(key)
-            for key in ("anony", "anony.core", "anony.core.audio")
+            for key in ("anony", "anony.core")
         }
         sys.modules.update({
             "anony": fake_anony,
             "anony.core": fake_core,
-            "anony.core.audio": fake_audio,
         })
         module = load_module(
             "database_reliability_under_test", ROOT / "anony/core/database.py"

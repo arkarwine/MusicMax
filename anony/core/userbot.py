@@ -181,10 +181,14 @@ class Userbot:
             mapping.get(slot, slot): client
             for slot, client in self.clients.items()
         }
-        anon.clients = {
-            mapping.get(slot, slot): client
-            for slot, client in anon.clients.items()
-        }
+        remap_workers = getattr(anon, "remap_slots", None)
+        if remap_workers is not None:
+            remap_workers(mapping)
+        else:
+            anon.clients = {
+                mapping.get(slot, slot): client
+                for slot, client in anon.clients.items()
+            }
 
     async def disable_session(self, slot: int, delete: bool = False) -> None:
         from anony import db

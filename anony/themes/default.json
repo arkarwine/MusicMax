@@ -51,7 +51,6 @@
           "stats.refresh": null,
           "settings.play_mode": null, "settings.playback": null,
           "settings.command_delete": null, "settings.cleanup": null,
-          "settings.audio_mode": null,
           "settings.language": null, "settings.open": null
         }
       }

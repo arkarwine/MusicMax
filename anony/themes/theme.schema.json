@@ -400,7 +400,6 @@
                       "stats.refresh",
                       "settings.play_mode",
                       "settings.playback",
-                      "settings.audio_mode",
                       "settings.command_delete",
                       "settings.cleanup",
                       "settings.language",

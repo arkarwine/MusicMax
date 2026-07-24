@@ -8,7 +8,6 @@ from html import escape
 from pyrogram import enums, errors, filters, types
 
 from anony import anon, app, db, lang, queue, tg, yt
-from anony.core.audio import next_audio_mode
 from anony.helpers import (
     buttons,
     can_configure_group,
@@ -81,8 +80,8 @@ async def _controls(_, query: types.CallbackQuery):
     elif action == "resume":
         if await db.playing(chat_id):
             return await query.answer(query.lang["play_not_paused"], show_alert=True)
-        await feedback.toast(query, query.lang["resuming"])
         await anon.resume(chat_id)
+        await feedback.toast(query, query.lang["resuming"])
         if qaction:
             return await query.edit_message_reply_markup(
                 reply_markup=buttons.queue_markup(chat_id, query.lang["playing"], True)
@@ -249,7 +248,6 @@ async def _settings_cb(_, query: types.CallbackQuery):
     _delete = await db.get_cmd_delete(chat_id)
     _cleanup = await db.get_feedback_cleanup(chat_id)
     _video = await db.get_default_video(chat_id)
-    _audio_mode = await db.get_audio_mode(chat_id)
     _language = await db.get_lang(chat_id)
 
     action = cmd[2]
@@ -272,9 +270,6 @@ async def _settings_cb(_, query: types.CallbackQuery):
     elif action == "video":
         _video = not _video
         await db.set_default_video(chat_id, _video)
-    elif action == "audio":
-        _audio_mode = next_audio_mode(_audio_mode)
-        await db.set_audio_mode(chat_id, _audio_mode)
     elif action != "back":
         return await feedback.toast(query)
     selected = await lang.get_lang(chat_id)
@@ -292,7 +287,6 @@ async def _settings_cb(_, query: types.CallbackQuery):
             _delete,
             _cleanup,
             _video,
-            _audio_mode,
             _language,
             chat_id,
         )

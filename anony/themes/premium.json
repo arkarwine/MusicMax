@@ -84,7 +84,6 @@
           "control.skip": "skip", "control.replay": "repeat",
           "stats.refresh": "repeat",
           "settings.play_mode": "user", "settings.playback": "streams",
-          "settings.audio_mode": "music",
           "settings.command_delete": "tools", "settings.cleanup": "sparkles",
           "settings.language": "language", "settings.open": "config"
         },

@@ -113,12 +113,11 @@ async def vc_watcher(sleep=15):
         await asyncio.sleep(sleep)
         for chat_id in list(db.active_calls):
             try:
-                client = await db.get_assistant(chat_id)
                 media = queue.get_current(chat_id)
                 if not media:
                     continue
-                participants = await client.get_participants(chat_id)
-                if len(participants) < 2 and media.time > 30:
+                participant_count = await anon.participant_count(chat_id)
+                if participant_count < 2 and media.time > 30:
                     _lang = await lang.get_lang(chat_id)
                     sent = await app.edit_message_reply_markup(
                         chat_id=chat_id,

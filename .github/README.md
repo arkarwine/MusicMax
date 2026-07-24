@@ -119,9 +119,22 @@ BOT_TOKEN=123456:ABC-DEF
 OWNER_ID=123456789
 DATABASE_PATH=data/anonxmusic.db
 SESSION=BQgfh...AA
+AUDIO_QUALITY=medium
+VIDEO_QUALITY=480p
 ```
 
 > 📝 Check <a href="https://github.com/AnonymousX1025/AnonXMusic/blob/master/config.py">config.py</a> for all available options.
+
+The playback defaults are sized for a small 2-vCPU server. Sudo users can
+change audio and video quality live from <code>/config</code>; those choices
+persist in SQLite.
+
+Voice playback is isolated automatically: every active assistant runs its
+PyTgCalls/NTgCalls connection in a supervised child process. The main bot
+keeps handling commands, menus, downloads, and persistence even when a voice
+worker is saturated. Worker failures are restarted automatically and active
+playback is recovered from the saved position when possible. No additional
+configuration is required.
 
 Activity logging is disabled by default. A sudo user can configure and enable it at runtime by running <code>/setlog</code> in the destination group, or <code>/setlog &lt;chat_id|@username&gt;</code> from another chat. Use <code>/logger off</code> to pause delivery without forgetting the destination.
 

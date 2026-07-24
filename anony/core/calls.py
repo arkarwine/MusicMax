@@ -6,18 +6,17 @@
 import asyncio
 from os import getenv
 
-from ntgcalls import (ConnectionNotFound, TelegramServerError,
-                      RTMPStreamingUnsupported, ConnectionError)
 from pyrogram import enums
 from pyrogram.errors import (BadRequest, ChatSendMediaForbidden,
                              ChatSendPhotosForbidden, MessageIdInvalid)
 from pyrogram.types import InputMediaPhoto, Message
-from pytgcalls import PyTgCalls, exceptions, types
-from pytgcalls.pytgcalls_session import PyTgCallsSession
 
 from anony import (app, config, db, lang, logger, queue, supervisor,
                    thumb, userbot, yt)
-from anony.core.audio import build_ffmpeg_parameters
+from anony.core.voice_worker import (
+    VoiceWorkerClient,
+    VoiceWorkerError,
+)
 from anony.helpers import Media, Track, buttons
 from anony.core.play_message import (
     render_play_message,
@@ -34,19 +33,52 @@ def _env_int(name: str, default: int, minimum: int = 1) -> int:
 from anony.core.rich_messages import RichMedia
 
 
-class TgCall(PyTgCalls):
+class TgCall:
     def __init__(self):
-        self.clients: dict[int, PyTgCalls] = {}
+        self.clients: dict[int, VoiceWorkerClient] = {}
+        self._client_locks: dict[int, asyncio.Lock] = {}
+        self._restart_tasks: dict[int, asyncio.Task] = {}
+
+    async def _peer_payload(self, chat_id: int) -> dict | None:
+        slot = db.assistant.get(chat_id)
+        assistant = userbot.clients.get(slot) if slot is not None else None
+        if assistant is None:
+            return None
+        try:
+            peer = await assistant.resolve_peer(chat_id)
+        except Exception:
+            logger.warning(
+                "Could not resolve chat %s for voice worker %s",
+                chat_id,
+                slot,
+                exc_info=True,
+            )
+            return None
+        return {
+            "id": chat_id,
+            "access_hash": int(getattr(peer, "access_hash", 0) or 0),
+            "type": (
+                "supergroup"
+                if str(chat_id).startswith("-100")
+                else "group"
+            ),
+        }
 
     async def pause(self, chat_id: int) -> bool:
         client = await db.get_assistant(chat_id)
-        result = await client.pause(chat_id)
+        result = await client.pause(
+            chat_id,
+            peer=await self._peer_payload(chat_id),
+        )
         await db.playing(chat_id, paused=True)
         return result
 
     async def resume(self, chat_id: int) -> bool:
         client = await db.get_assistant(chat_id)
-        result = await client.resume(chat_id)
+        result = await client.resume(
+            chat_id,
+            peer=await self._peer_payload(chat_id),
+        )
         await db.playing(chat_id, paused=False)
         return result
 
@@ -61,27 +93,42 @@ class TgCall(PyTgCalls):
     async def _leave_assistant_call(self, chat_id: int) -> None:
         if not self.clients:
             return
-        try:
-            client = await db.get_assistant(chat_id)
-        except RuntimeError:
-            logger.info(
-                "No active assistant is available to leave call %s", chat_id
-            )
-            return
-        try:
-            await client.leave_call(chat_id, close=False)
-        except (ConnectionNotFound, exceptions.NotInCallError):
-            # A new process has no local ntgcalls connection, but Telegram can
-            # still contain the assistant left behind by the previous process.
-            try:
-                await client._app.leave_group_call(chat_id)
-            except Exception:
-                logger.debug(
-                    "Assistant had no stale call in chat %s", chat_id,
-                    exc_info=True,
+        assigned = db.assistant.get(chat_id)
+        client = self.clients.get(assigned) if assigned is not None else None
+        if client is None:
+            if assigned is not None:
+                logger.info(
+                    "Voice worker %s is unavailable while leaving call %s",
+                    assigned,
+                    chat_id,
                 )
-        except exceptions.NoActiveGroupCall:
-            pass
+                return
+            try:
+                client = await db.get_assistant(chat_id)
+            except RuntimeError:
+                logger.info(
+                    "No active assistant is available to leave call %s",
+                    chat_id,
+                )
+                return
+        try:
+            await client.leave_call(
+                chat_id,
+                close=False,
+                peer=await self._peer_payload(chat_id),
+            )
+        except VoiceWorkerError as exc:
+            if exc.remote_type in {
+                "ConnectionNotFound",
+                "NotInCallError",
+                "NoActiveGroupCall",
+            }:
+                return
+            logger.warning(
+                "Could not leave the assistant call in chat %s: %s",
+                chat_id,
+                exc,
+            )
         except Exception:
             logger.warning(
                 "Could not leave the assistant call in chat %s",
@@ -99,7 +146,17 @@ class TgCall(PyTgCalls):
         for chat_id in list(db.active_calls):
             await db.remove_call(chat_id)
             await self._leave_assistant_call(chat_id)
-        logger.info("Assistant voice calls stopped.")
+        workers = list(self.clients.items())
+        self.clients.clear()
+        for task in tuple(self._restart_tasks.values()):
+            task.cancel()
+        self._restart_tasks.clear()
+        if workers:
+            await asyncio.gather(
+                *(worker.stop() for _, worker in workers),
+                return_exceptions=True,
+            )
+        logger.info("Assistant voice workers stopped.")
 
     @staticmethod
     def _play_rich_media(
@@ -327,29 +384,24 @@ class TgCall(PyTgCalls):
             await self.play_next(chat_id)
             return False
 
-        audio_mode = await db.get_audio_mode(chat_id)
-        stream = types.MediaStream(
-            media_path=media.file_path,
-            audio_parameters=types.AudioQuality.HIGH,
-            video_parameters=types.VideoQuality.HD_720p,
-            audio_flags=types.MediaStream.Flags.REQUIRED,
-            video_flags=(
-                types.MediaStream.Flags.AUTO_DETECT
-                if media.video
-                else types.MediaStream.Flags.IGNORE
-            ),
-            ffmpeg_parameters=build_ffmpeg_parameters(seek_time, audio_mode),
-        )
         try:
             if not await db.get_call(chat_id):
                 await self.reset_assistant_call(chat_id)
-            await asyncio.wait_for(
-                client.play(
-                    chat_id=chat_id,
-                    stream=stream,
-                    config=types.GroupCallConfig(auto_start=False),
+            await client.play(
+                chat_id=chat_id,
+                media_path=media.file_path,
+                video=media.video,
+                audio_quality=config.AUDIO_QUALITY,
+                video_quality=config.VIDEO_QUALITY,
+                ffmpeg_parameters=(
+                    f"-ss {seek_time}" if seek_time > 1 else None
                 ),
-                timeout=_env_int("PLAYBACK_CONNECT_TIMEOUT_SECONDS", 45, 10),
+                peer=await self._peer_payload(chat_id),
+                timeout=_env_int(
+                    "PLAYBACK_CONNECT_TIMEOUT_SECONDS",
+                    45,
+                    10,
+                ),
             )
             if not seek_time or new_session:
                 media.time = max(seek_time, 1)
@@ -421,28 +473,35 @@ class TgCall(PyTgCalls):
                 seek_time,
             )
             return True
-        except FileNotFoundError:
-            await message.edit_text(_lang["error_no_file"].format(config.SUPPORT_CHAT))
-            await self.play_next(chat_id)
-            return False
-        except exceptions.NoActiveGroupCall:
-            # Keep the saved queue so /resume can run the same play path later.
-            await db.remove_call(chat_id)
-            await db.save_queue(chat_id, queue.get_queue(chat_id))
-            await db.save_playback(chat_id, "waiting", media.time)
-            await message.edit_text(_lang["error_no_call"])
-            return False
-        except exceptions.NoAudioSourceFound:
-            await message.edit_text(_lang["error_no_audio"])
-            await self.play_next(chat_id)
-            return False
-        except (ConnectionError, ConnectionNotFound, TelegramServerError):
+        except VoiceWorkerError as exc:
+            if exc.remote_type == "FileNotFoundError":
+                await message.edit_text(
+                    _lang["error_no_file"].format(config.SUPPORT_CHAT)
+                )
+                await self.play_next(chat_id)
+                return False
+            if exc.remote_type == "NoActiveGroupCall":
+                # Keep the saved queue so /resume can run the same play path.
+                await db.remove_call(chat_id)
+                await db.save_queue(chat_id, queue.get_queue(chat_id))
+                await db.save_playback(chat_id, "waiting", media.time)
+                await message.edit_text(_lang["error_no_call"])
+                return False
+            if exc.remote_type == "NoAudioSourceFound":
+                await message.edit_text(_lang["error_no_audio"])
+                await self.play_next(chat_id)
+                return False
+            if exc.remote_type == "RTMPStreamingUnsupported":
+                await self.stop(chat_id)
+                await message.edit_text(_lang["error_rtmp"])
+                return False
+            logger.error(
+                "Voice worker failed playback in chat %s: %s",
+                chat_id,
+                exc,
+            )
             await self.stop(chat_id)
             await message.edit_text(_lang["error_tg_server"])
-            return False
-        except RTMPStreamingUnsupported:
-            await self.stop(chat_id)
-            await message.edit_text(_lang["error_rtmp"])
             return False
         except Exception:
             logger.exception("Playback failed in chat %s", chat_id)
@@ -504,48 +563,218 @@ class TgCall(PyTgCalls):
 
 
     async def ping(self) -> float:
-        pings = [client.ping for client in self.clients.values()]
+        if not self.clients:
+            return 0.0
+        results = await asyncio.gather(
+            *(client.measure_ping() for client in self.clients.values()),
+            return_exceptions=True,
+        )
+        pings = [
+            value
+            for value in results
+            if isinstance(value, (int, float))
+        ]
         return round(sum(pings) / len(pings), 2) if pings else 0.0
 
+    async def participant_count(self, chat_id: int) -> int:
+        client = await db.get_assistant(chat_id)
+        return await client.get_participant_count(
+            chat_id,
+            peer=await self._peer_payload(chat_id),
+        )
 
-    async def decorators(self, client: PyTgCalls) -> None:
-        @client.on_update()
-        async def update_handler(_, update: types.Update) -> None:
-            if isinstance(update, types.StreamEnded):
-                if update.stream_type == types.StreamEnded.Type.AUDIO:
-                    if not await db.get_call(update.chat_id):
-                        return
-                    logger.info("Audio stream ended in chat %s", update.chat_id)
-                    await self.play_next(update.chat_id)
-            elif isinstance(update, types.ChatUpdate):
-                if update.status in [
-                    types.ChatUpdate.Status.KICKED,
-                    types.ChatUpdate.Status.LEFT_GROUP,
-                    types.ChatUpdate.Status.CLOSED_VOICE_CHAT,
-                ]:
-                    await self.stop(update.chat_id)
+    def _on_worker_event(
+        self,
+        slot: int,
+        worker: VoiceWorkerClient,
+        event: dict,
+    ) -> None:
+        name = event.get("event")
+        chat_id = int(event.get("chat_id") or 0)
+        if name == "stream_ended" and chat_id:
+            supervisor.spawn_once(
+                f"voice-ended:{chat_id}",
+                self._handle_stream_ended(chat_id),
+            )
+            return
+        if name == "call_closed" and chat_id:
+            supervisor.spawn_once(
+                f"voice-closed:{chat_id}",
+                self.stop(chat_id),
+            )
+            return
+        if name != "worker_exit" or self.clients.get(slot) is not worker:
+            return
 
+        self.clients.pop(slot, None)
+        logger.error(
+            "Voice worker %s exited unexpectedly (pid=%s, code=%s)",
+            slot,
+            event.get("pid"),
+            event.get("returncode"),
+        )
+        running = self._restart_tasks.get(slot)
+        if running is not None and not running.done():
+            return
+        task = supervisor.spawn_once(
+            f"voice-worker-recovery:{slot}",
+            self._recover_worker(slot),
+        )
+        self._restart_tasks[slot] = task
+        task.add_done_callback(
+            lambda done, worker_slot=slot: self._restart_tasks.pop(
+                worker_slot,
+                None,
+            )
+        )
 
-    async def add_client(self, slot: int, ub) -> PyTgCalls:
-        if slot in self.clients:
-            return self.clients[slot]
-        client = PyTgCalls(ub, cache_duration=100)
-        await client.start()
-        self.clients[slot] = client
-        await self.decorators(client)
-        return client
+    async def _handle_stream_ended(self, chat_id: int) -> None:
+        if not await db.get_call(chat_id):
+            return
+        logger.info("Audio stream ended in chat %s", chat_id)
+        await self.play_next(chat_id)
+
+    async def _recover_worker(self, slot: int) -> None:
+        affected = []
+        for chat_id in db.active_chats_for_assistant(slot):
+            playing = await db.playing(chat_id)
+            media = queue.get_current(chat_id)
+            affected.append((chat_id, playing and media is not None))
+            await db.remove_call(chat_id)
+            if media is not None:
+                await db.save_queue(chat_id, queue.get_queue(chat_id))
+                await db.save_playback(chat_id, "waiting", media.time)
+
+        attempts = 0
+        while slot in userbot.clients and not supervisor.closing:
+            session = await db.get_assistant_session(slot)
+            if not session or not session["enabled"]:
+                return
+            delay = (1, 5, 30, 60)[min(attempts, 3)]
+            await asyncio.sleep(delay)
+            session = await db.get_assistant_session(slot)
+            if (
+                slot not in userbot.clients
+                or not session
+                or not session["enabled"]
+            ):
+                return
+            try:
+                await self.add_client(slot, userbot.clients[slot])
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                attempts += 1
+                logger.exception(
+                    "Voice worker %s restart attempt %s failed",
+                    slot,
+                    attempts,
+                )
+                continue
+            logger.info(
+                "Voice worker %s recovered after %s attempt(s)",
+                slot,
+                attempts + 1,
+            )
+            break
+        else:
+            return
+
+        if affected:
+            from anony.core.recovery import recovery
+
+            for chat_id, was_playing in affected:
+                if not was_playing:
+                    continue
+                try:
+                    await recovery.play(chat_id)
+                except Exception:
+                    logger.exception(
+                        "Could not restore chat %s after voice worker recovery",
+                        chat_id,
+                    )
+
+    async def add_client(
+        self,
+        slot: int,
+        ub,
+    ) -> VoiceWorkerClient:
+        del ub
+        lock = self._client_locks.setdefault(slot, asyncio.Lock())
+        async with lock:
+            current = self.clients.get(slot)
+            if current is not None and current.is_alive:
+                return current
+            if current is not None:
+                self.clients.pop(slot, None)
+                await current.stop()
+
+            session = await db.get_assistant_session(slot)
+            if not session:
+                raise RuntimeError(f"Assistant session {slot} is unavailable")
+            worker = VoiceWorkerClient(
+                slot=slot,
+                session_string=session["session_string"],
+                api_id=config.API_ID,
+                api_hash=config.API_HASH,
+                logger=logger,
+            )
+            worker.set_event_handler(
+                lambda event, current=worker: self._on_worker_event(
+                    current.slot,
+                    current,
+                    event,
+                )
+            )
+            try:
+                await worker.start()
+            except Exception:
+                await worker.stop()
+                raise
+            self.clients[slot] = worker
+            return worker
+
+    def remap_slots(self, mapping: dict[int, int]) -> None:
+        """Apply compact public session IDs to worker proxies."""
+        self.clients = {
+            mapping.get(slot, slot): worker
+            for slot, worker in self.clients.items()
+        }
+        self._client_locks = {
+            mapping.get(slot, slot): lock
+            for slot, lock in self._client_locks.items()
+        }
+        for slot, worker in self.clients.items():
+            worker.relabel(slot)
+        for old_slot, task in tuple(self._restart_tasks.items()):
+            new_slot = mapping.get(old_slot, old_slot)
+            if new_slot == old_slot:
+                continue
+            task.cancel()
+            self._restart_tasks.pop(old_slot, None)
 
     async def boot(self) -> None:
-        PyTgCallsSession.notice_displayed = True
-        failed_slots = []
-        for slot, ub in list(userbot.clients.items()):
+        startup_limit = asyncio.Semaphore(4)
+
+        async def start_worker(slot, ub):
             try:
-                await self.add_client(slot, ub)
+                async with startup_limit:
+                    await self.add_client(slot, ub)
+                return None
             except Exception:
-                failed_slots.append(slot)
                 logger.exception(
                     "Voice client for assistant session %s could not start", slot
                 )
+                return slot
+
+        failed_slots = [
+            slot
+            for slot in await asyncio.gather(*(
+                start_worker(slot, ub)
+                for slot, ub in list(userbot.clients.items())
+            ))
+            if slot is not None
+        ]
         for slot in failed_slots:
             try:
                 await userbot.disable_session(slot)
@@ -554,7 +783,12 @@ class TgCall(PyTgCalls):
                     "Failed to take unusable assistant session %s offline", slot
                 )
         if self.clients:
-            logger.info("Started %s PyTgCalls client(s).", len(self.clients))
+            logger.info(
+                "Started %s isolated voice worker(s): audio=%s, video=%s.",
+                len(self.clients),
+                config.AUDIO_QUALITY,
+                config.VIDEO_QUALITY,
+            )
         else:
             logger.warning(
                 "No voice assistant is active; continuing in bot-only mode."

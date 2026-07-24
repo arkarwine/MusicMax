@@ -59,6 +59,8 @@ class Config:
         "duration_limit": "DURATION_LIMIT",
         "queue_limit": "QUEUE_LIMIT",
         "playlist_limit": "PLAYLIST_LIMIT",
+        "audio_quality": "AUDIO_QUALITY",
+        "video_quality": "VIDEO_QUALITY",
         "support_channel": "SUPPORT_CHANNEL",
         "support_chat": "SUPPORT_CHAT",
         "auto_leave": "AUTO_LEAVE",
@@ -85,7 +87,7 @@ class Config:
             "⚙️", "Essentials", "Core limits and default behavior"
         ),
         "player": RuntimeCategory(
-            "🎧", "Player", "Playback mode, limits and controls"
+            "🎧", "Player", "Playback quality and controls"
         ),
         "interface": RuntimeCategory(
             "✨", "Interface", "Messages, buttons and visible text"
@@ -113,6 +115,16 @@ class Config:
             "Playlist import", "essentials",
             "Maximum tracks imported from one playlist.",
             "1–1000 tracks", "20", advanced=True,
+        ),
+        "audio_quality": RuntimeSetting(
+            "Audio quality", "player",
+            "Balances sound quality and server load.",
+            "low, medium, or high", "medium",
+        ),
+        "video_quality": RuntimeSetting(
+            "Video quality", "player",
+            "Maximum resolution used for video playback.",
+            "360p, 480p, or 720p", "480p",
         ),
         "lang_code": RuntimeSetting(
             "Default language", "essentials",
@@ -316,6 +328,16 @@ class Config:
         self.PLAYLIST_LIMIT = self._environment_int(
             "PLAYLIST_LIMIT", 20, minimum=1, maximum=1000
         )
+        audio_quality = getenv("AUDIO_QUALITY", "medium").strip().lower()
+        if audio_quality not in {"low", "medium", "high"}:
+            logger.warning("Ignored invalid AUDIO_QUALITY; using medium")
+            audio_quality = "medium"
+        self.AUDIO_QUALITY = audio_quality
+        video_quality = getenv("VIDEO_QUALITY", "480p").strip().lower()
+        if video_quality not in {"360p", "480p", "720p"}:
+            logger.warning("Ignored invalid VIDEO_QUALITY; using 480p")
+            video_quality = "480p"
+        self.VIDEO_QUALITY = video_quality
 
         first_session = (getenv("SESSION") or "").strip()
         self.SESSIONS = (first_session,) if first_session else ()
@@ -676,6 +698,16 @@ class Config:
             if not 1 <= value <= 1000:
                 raise ValueError("Limit must be between 1 and 1000")
             stored = str(value)
+        elif key == "audio_quality":
+            value = raw_value.strip().lower()
+            if value not in {"low", "medium", "high"}:
+                raise ValueError("Audio quality must be low, medium, or high")
+            stored = value
+        elif key == "video_quality":
+            value = raw_value.strip().lower()
+            if value not in {"360p", "480p", "720p"}:
+                raise ValueError("Video quality must be 360p, 480p, or 720p")
+            stored = value
         elif key in {"auto_leave", "auto_end", "thumb_gen", "video_play"}:
             value = self._boolean(raw_value)
             stored = "on" if value else "off"

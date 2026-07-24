@@ -49,7 +49,7 @@ EMOJI_PLACEMENTS = {
         "help.ping", "help.play", "help.queue", "help.stats", "help.sudo",
         "control.loop", "control.stop", "control.pause", "control.resume",
         "control.skip", "control.replay", "stats.refresh",
-        "settings.play_mode", "settings.playback", "settings.audio_mode",
+        "settings.play_mode", "settings.playback",
         "settings.command_delete",
         "settings.cleanup", "settings.language", "settings.open",
     }),
