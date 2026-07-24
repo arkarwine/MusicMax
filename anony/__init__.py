@@ -89,8 +89,16 @@ health = HealthMonitor(
     language=lang,
     supervisor=supervisor,
     logger=logger,
-    watchdog_restart=config.WATCHDOG_RESTART_ON_STALL,
-    watchdog_stall_seconds=config.WATCHDOG_STALL_SECONDS,
+    assistant_probe=config.WATCHDOG_ASSISTANT_PROBE,
+    assistant_probe_idle_seconds=(
+        config.WATCHDOG_ASSISTANT_PROBE_IDLE_SECONDS
+    ),
+    assistant_probe_interval_seconds=(
+        config.WATCHDOG_ASSISTANT_PROBE_INTERVAL_SECONDS
+    ),
+    assistant_probe_timeout_seconds=(
+        config.WATCHDOG_ASSISTANT_PROBE_TIMEOUT_SECONDS
+    ),
 )
 _stopping = False
 

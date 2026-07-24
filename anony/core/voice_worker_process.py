@@ -177,6 +177,8 @@ async def _run(host: str, port: int, token: str) -> None:
     calls = PyTgCalls(app, workers=2, cache_duration=100)
     PyTgCallsSession.notice_displayed = True
     active_chats: set[int] = set()
+    request_tasks: dict[str, asyncio.Task] = {}
+    chat_locks: dict[int, asyncio.Lock] = {}
 
     @calls.on_update()
     async def update_handler(_, update: types.Update) -> None:
@@ -223,24 +225,33 @@ async def _run(host: str, port: int, token: str) -> None:
         )
         logger.info("Assistant %s voice worker ready (pid=%s)", slot, os.getpid())
 
-        while True:
-            line = await reader.readline()
-            if not line:
-                break
-            command = {}
+        async def execute_request(command: dict) -> None:
+            request_id = str(command["id"])
+            operation = str(command["operation"])
+            chat_id = int(command.get("chat_id") or 0)
+            lock = (
+                chat_locks.setdefault(chat_id, asyncio.Lock())
+                if chat_id
+                else None
+            )
             try:
-                command = json.loads(line.decode("utf-8"))
-                if command.get("kind") != "request":
-                    continue
-                request_id = command["id"]
-                operation = str(command["operation"])
-                result = await _execute(
-                    operation,
-                    command,
-                    calls,
-                    app,
-                    active_chats,
-                )
+                if lock is None:
+                    result = await _execute(
+                        operation,
+                        command,
+                        calls,
+                        app,
+                        active_chats,
+                    )
+                else:
+                    async with lock:
+                        result = await _execute(
+                            operation,
+                            command,
+                            calls,
+                            app,
+                            active_chats,
+                        )
                 await _send(
                     writer,
                     send_lock,
@@ -251,27 +262,75 @@ async def _run(host: str, port: int, token: str) -> None:
                         "result": result,
                     },
                 )
-                if operation == "shutdown":
-                    break
             except asyncio.CancelledError:
+                logger.info(
+                    "Voice operation cancelled: %s (request=%s)",
+                    operation,
+                    request_id,
+                )
                 raise
             except Exception as exc:
-                logger.exception(
-                    "Voice operation failed: %s",
-                    command.get("operation", "unknown"),
-                )
+                logger.exception("Voice operation failed: %s", operation)
                 await _send(
                     writer,
                     send_lock,
                     {
                         "kind": "response",
-                        "id": command.get("id"),
+                        "id": request_id,
                         "ok": False,
                         "error_type": type(exc).__name__,
                         "error": str(exc)[:500],
                     },
                 )
+            finally:
+                request_tasks.pop(request_id, None)
+
+        while True:
+            line = await reader.readline()
+            if not line:
+                break
+            try:
+                command = json.loads(line.decode("utf-8"))
+                kind = command.get("kind")
+                if kind == "cancel":
+                    task = request_tasks.get(str(command.get("id")))
+                    if task is not None:
+                        task.cancel()
+                    continue
+                if kind != "request":
+                    continue
+                request_id = str(command["id"])
+                operation = str(command["operation"])
+                if operation == "shutdown":
+                    await _send(
+                        writer,
+                        send_lock,
+                        {
+                            "kind": "response",
+                            "id": request_id,
+                            "ok": True,
+                            "result": True,
+                        },
+                    )
+                    break
+                task = asyncio.create_task(
+                    execute_request(command),
+                    name=f"voice-request:{slot}:{request_id}",
+                )
+                request_tasks[request_id] = task
+            except Exception as exc:
+                logger.exception(
+                    "Voice command could not be accepted: %s",
+                    type(exc).__name__,
+                )
     finally:
+        for task in tuple(request_tasks.values()):
+            task.cancel()
+        if request_tasks:
+            await asyncio.gather(
+                *tuple(request_tasks.values()),
+                return_exceptions=True,
+            )
         for chat_id in tuple(active_chats):
             with suppress(Exception):
                 await _leave_call(calls, app, chat_id)

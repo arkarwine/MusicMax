@@ -3,6 +3,8 @@ import importlib.util
 import logging
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 
 ROOT = Path(__file__).parents[1]
@@ -76,6 +78,35 @@ class VoiceWorkerProtocolTests(unittest.IsolatedAsyncioTestCase):
         client.relabel(1)
         self.assertEqual(client.slot, 1)
 
+    async def test_one_timeout_cancels_only_the_request(self):
+        client = self.make_client()
+        client._ready = True
+        client._process = SimpleNamespace(returncode=None)
+        client._writer = SimpleNamespace(is_closing=lambda: False)
+        client._send = AsyncMock()
+        client.abort = AsyncMock()
+
+        with self.assertRaises(voice_worker.VoiceWorkerUnavailable):
+            await client.request("ping", timeout=0.001)
+
+        client.abort.assert_not_awaited()
+        self.assertEqual(client._send.await_args_list[-1].args[0]["kind"], "cancel")
+        self.assertEqual(client._consecutive_timeouts, 1)
+
+    async def test_repeated_timeouts_replace_the_unresponsive_worker(self):
+        client = self.make_client()
+        client._ready = True
+        client._process = SimpleNamespace(returncode=None)
+        client._writer = SimpleNamespace(is_closing=lambda: False)
+        client._send = AsyncMock()
+        client.abort = AsyncMock()
+
+        for _ in range(3):
+            with self.assertRaises(voice_worker.VoiceWorkerUnavailable):
+                await client.request("ping", timeout=0.001)
+
+        client.abort.assert_awaited_once()
+
 
 class VoiceWorkerArchitectureTests(unittest.TestCase):
     def test_child_process_is_project_independent(self):
@@ -123,6 +154,15 @@ class VoiceWorkerArchitectureTests(unittest.TestCase):
         plugin_load = source.index("for module in all_modules:")
         voice_boot = source.index("await anon.boot()")
         self.assertLess(plugin_load, voice_boot)
+
+    def test_worker_accepts_cross_chat_requests_concurrently(self):
+        source = (
+            ROOT / "anony/core/voice_worker_process.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn("asyncio.create_task(", source)
+        self.assertIn("execute_request(command)", source)
+        self.assertIn('if kind == "cancel":', source)
+        self.assertIn("chat_locks.setdefault(chat_id", source)
 
 
 if __name__ == "__main__":

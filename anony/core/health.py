@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import logging
-import os
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from time import monotonic, time
@@ -20,21 +18,6 @@ class ComponentHealth:
     successes: int = 0
     changed_at: float = 0.0
     reminded_at: float = 0.0
-
-
-def _env_bool(name: str, default: bool) -> bool:
-    raw = os.getenv(name)
-    if raw is None or not raw.strip():
-        return default
-    return raw.strip().lower() in {"1", "true", "yes", "on", "enabled"}
-
-
-def _env_int(name: str, default: int, minimum: int = 0) -> int:
-    try:
-        value = int((os.getenv(name) or "").strip())
-    except ValueError:
-        return default
-    return max(value, minimum)
 
 
 class HealthMonitor:
@@ -55,8 +38,10 @@ class HealthMonitor:
         language,
         supervisor,
         logger,
-        watchdog_restart: bool = False,
-        watchdog_stall_seconds: int = 21600,
+        assistant_probe: bool = True,
+        assistant_probe_idle_seconds: int = 120,
+        assistant_probe_interval_seconds: int = 120,
+        assistant_probe_timeout_seconds: int = 20,
     ) -> None:
         self.app = app
         self.db = db
@@ -84,8 +69,16 @@ class HealthMonitor:
         self.assistant_probe_detail = "Not checked yet"
         self.assistant_probe_failures = 0
         self._assistant_probe_last_sent = 0
-        self.watchdog_restart = watchdog_restart
-        self.watchdog_stall_seconds = max(int(watchdog_stall_seconds), 300)
+        self.assistant_probe = bool(assistant_probe)
+        self.assistant_probe_idle_seconds = max(
+            int(assistant_probe_idle_seconds), 60
+        )
+        self.assistant_probe_interval_seconds = max(
+            int(assistant_probe_interval_seconds), 60
+        )
+        self.assistant_probe_timeout_seconds = max(
+            int(assistant_probe_timeout_seconds), 5
+        )
         self.previous_run: dict | None = None
         self.components = {
             name: ComponentHealth(name)
@@ -305,16 +298,17 @@ class HealthMonitor:
         return f"{len(active)} isolated worker(s) ready"
 
     async def _probe_application(self) -> str:
-        if not _env_bool("WATCHDOG_ASSISTANT_PROBE", True):
+        if not self.assistant_probe:
             return "Skip: disabled"
 
         now = int(time())
-        idle_seconds = _env_int("WATCHDOG_ASSISTANT_PROBE_IDLE_SECONDS", 300, 120)
-        interval = _env_int("WATCHDOG_ASSISTANT_PROBE_INTERVAL_SECONDS", 300, 60)
         idle_for = now - self.last_update_at
-        if idle_for < idle_seconds:
+        if idle_for < self.assistant_probe_idle_seconds:
             return f"Skip: recent activity {idle_for}s ago"
-        if now - self._assistant_probe_last_sent < interval:
+        if (
+            now - self._assistant_probe_last_sent
+            < self.assistant_probe_interval_seconds
+        ):
             return f"Skip: waiting {now - self._assistant_probe_last_sent}s since last probe"
 
         assistants = [
@@ -331,7 +325,7 @@ class HealthMonitor:
             raise RuntimeError("Bot username is unknown")
 
         nonce = uuid4().hex
-        timeout = _env_int("WATCHDOG_ASSISTANT_PROBE_TIMEOUT_SECONDS", 20, 5)
+        timeout = self.assistant_probe_timeout_seconds
         self._assistant_probe_last_sent = now
         await self._with_timeout(client.send_message(username, f"/__watchdog_probe {nonce}"))
 
@@ -577,28 +571,6 @@ class HealthMonitor:
             await self._check("assistants", self._probe_assistants)
             await self._check("voice", self._probe_voice)
             await self._check("application", self._probe_application)
-            await self._watchdog_stale_updates()
-
-    async def _watchdog_stale_updates(self) -> None:
-        if not self.watchdog_restart:
-            return
-        idle_for = int(time()) - self.last_update_at
-        if idle_for < self.watchdog_stall_seconds:
-            return
-        reason = (
-            f"watchdog: no Telegram updates processed for {idle_for}s "
-            f"(last={self.last_update_kind})"
-        )
-        self.logger.critical(
-            "Watchdog restart requested: %s. The external supervisor should restart the process.",
-            reason,
-        )
-        try:
-            await self.finish(reason)
-        except Exception:
-            self.logger.exception("Could not persist watchdog shutdown reason")
-        logging.shutdown()
-        os._exit(75)
 
     def snapshot(self) -> dict:
         supervisor = self.supervisor.snapshot()
@@ -641,7 +613,5 @@ class HealthMonitor:
             "assistant_probe_status": self.assistant_probe_status,
             "assistant_probe_detail": self.assistant_probe_detail,
             "assistant_probe_failures": self.assistant_probe_failures,
-            "watchdog_enabled": self.watchdog_restart,
-            "watchdog_stall_seconds": self.watchdog_stall_seconds,
             "previous_result": previous_result,
         }

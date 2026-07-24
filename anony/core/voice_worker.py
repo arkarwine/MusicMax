@@ -66,6 +66,7 @@ class VoiceWorkerClient:
         self._ready = False
         self._ever_ready = False
         self._expected_stop = False
+        self._consecutive_timeouts = 0
 
     @property
     def pid(self) -> int | None:
@@ -308,13 +309,32 @@ class VoiceWorkerClient:
                 "operation": operation,
                 **payload,
             })
-            return await asyncio.wait_for(future, timeout=timeout)
+            result = await asyncio.wait_for(future, timeout=timeout)
+            self._consecutive_timeouts = 0
+            return result
         except asyncio.TimeoutError as exc:
             self._pending.pop(request_id, None)
-            await self.abort(f"{operation} timed out after {timeout:.0f}s")
+            self._consecutive_timeouts += 1
+            # One slow Telegram operation must not take every active stream on
+            # this assistant down. Ask the worker to cancel only this request;
+            # terminate the process only after repeated unanswered commands.
+            with suppress(Exception):
+                await self._send({
+                    "kind": "cancel",
+                    "id": request_id,
+                })
+            if self._consecutive_timeouts >= 3:
+                await self.abort(
+                    f"{self._consecutive_timeouts} consecutive operations "
+                    f"timed out (last={operation}, {timeout:.0f}s)"
+                )
             raise VoiceWorkerUnavailable(
                 f"{operation} timed out after {timeout:.0f}s"
             ) from exc
+        except Exception:
+            # A remote exception is still a valid worker response.
+            self._consecutive_timeouts = 0
+            raise
         finally:
             self._pending.pop(request_id, None)
 

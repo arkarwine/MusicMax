@@ -125,7 +125,7 @@ async def _status(_, m: types.Message):
         f"{config.WATCHDOG_MODE} · "
         f"quiet {config.WATCHDOG_UPDATE_STALE_SECONDS}s · "
         f"proof {config.WATCHDOG_ASSISTANT_PROBE_STALE_SECONDS}s"
-        if config.EXTERNAL_WATCHDOG
+        if config.WATCHDOG_ENABLED
         else "off"
     )
     try:
@@ -161,7 +161,11 @@ async def _status(_, m: types.Message):
         handler_summary = "idle"
 
     assistant_probe_at = int(snapshot.get("assistant_probe_at") or 0)
-    assistant_probe_age = max(int(time.time()) - assistant_probe_at, 0) if assistant_probe_at else None
+    assistant_probe_age = (
+        max(int(time.time()) - assistant_probe_at, 0)
+        if assistant_probe_at
+        else None
+    )
     assistant_probe_status = str(snapshot.get("assistant_probe_status") or "unknown")
     assistant_probe_detail = str(snapshot.get("assistant_probe_detail") or "")
     if assistant_probe_status == "ok" and assistant_probe_age is not None:

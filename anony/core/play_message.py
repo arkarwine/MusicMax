@@ -40,12 +40,6 @@ class RenderedPlayMessage:
     media_index: int | None = None
 
 
-def select_play_media(override, artwork) -> tuple[object, ...]:
-    """Use generated artwork, with the configured play image as a placeholder."""
-    selected = artwork or override
-    return (selected,) if selected else ()
-
-
 def _safe_url(value: object) -> str | None:
     candidate = unescape(str(value or "")).strip()
     candidate = candidate.replace(r"\)", ")").replace(r"\\", "\\")

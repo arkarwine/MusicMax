@@ -5,21 +5,12 @@
 
 import asyncio
 import os
-from os import getenv
 import time
 
 from pyrogram import errors, types
 
 from anony import config
 from anony.helpers import Media, buttons, utils
-
-
-def _env_int(name: str, default: int, minimum: int = 1) -> int:
-    try:
-        value = int((getenv(name) or "").strip())
-    except ValueError:
-        return default
-    return max(value, minimum)
 
 
 class Telegram:
@@ -68,7 +59,11 @@ class Telegram:
         video = mime_type.startswith("video/") or bool(msg.video)
 
         if duration > config.DURATION_LIMIT:
-            await sent.edit_text(sent.lang["play_duration_limit"].format(config.DURATION_LIMIT // 60))
+            await sent.edit_text(
+                sent.lang["play_duration_limit"].format(
+                    config.DURATION_LIMIT // 60
+                )
+            )
             return await sent.stop_propagation()
 
         if file_size > 200 * 1024 * 1024:
@@ -119,7 +114,7 @@ class Telegram:
                 try:
                     downloaded = await asyncio.wait_for(
                         task,
-                        timeout=_env_int("TELEGRAM_DOWNLOAD_TIMEOUT_SECONDS", 300, 60),
+                        timeout=config.TELEGRAM_DOWNLOAD_TIMEOUT_SECONDS,
                     )
                 except asyncio.TimeoutError:
                     task.cancel()

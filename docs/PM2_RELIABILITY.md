@@ -57,20 +57,6 @@ sudo journalctl -u pm2-ubuntu --since "24 hours ago"
 The next successful bot start also checks SQLite process history. An unfinished
 previous run is logged as an unexpected exit with its last recorded heartbeat.
 
-## Optional stale-update watchdog
-
-Enable the internal watchdog only for production bots that have shown the "online
-but not responding" failure mode.
-
-```bash
-WATCHDOG_RESTART_ON_STALL=true
-WATCHDOG_STALL_SECONDS=21600
-```
-
-The value is seconds. The default example is six hours, with a minimum of five
-minutes. When triggered, the bot records a `watchdog:` shutdown reason in
-SQLite, flushes logs, exits non-zero, and lets PM2 restart the process.
-
 ## External watchdog
 
 Use the external watchdog for production. It is deliberately small: it reads the

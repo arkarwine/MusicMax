@@ -163,9 +163,6 @@ class Language:
             self._text_overrides,
         )
 
-    async def load_text_overrides(self, database) -> None:
-        self.apply_text_overrides(await database.get_text_overrides())
-
     async def get_lang(self, chat_id: int) -> dict:
         lang_code = await db.get_lang(chat_id)
         return self.languages.get(lang_code, self.languages["en"])
@@ -226,9 +223,17 @@ class Language:
                         try:
                             await fallen.delete()
                         except Exception:
-                            pass
+                            logger.debug(
+                                "Could not delete command message in chat %s",
+                                chat.id,
+                                exc_info=True,
+                            )
                     return result
-                except (errors.ChannelPrivate, errors.MessageIdInvalid, errors.MessageNotModified) as ex:
+                except (
+                    errors.ChannelPrivate,
+                    errors.MessageIdInvalid,
+                    errors.MessageNotModified,
+                ) as ex:
                     handler_failed = True
                     handler_detail = type(ex).__name__
                     return

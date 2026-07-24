@@ -225,39 +225,17 @@ class PlayMessageRendererTests(unittest.TestCase):
         self.assertNotIn("[Charlie", rendered.rich_html)
 
     def test_play_delivery_uses_line_safe_standard_caption(self):
-        calls_source = (
-            ROOT / "anony/core/calls.py"
+        delivery_source = (
+            ROOT / "anony/core/play_card.py"
         ).read_text(encoding="utf-8")
-        self.assertIn("rendered.fallback_html,", calls_source)
-        self.assertNotIn("app.rich_messages.edit(", calls_source)
+        self.assertIn("rendered.fallback_html,", delivery_source)
+        self.assertNotIn("app.rich_messages.edit(", delivery_source)
 
     def test_render_failure_uses_localized_default(self):
         rendered = self.render("{unknown}")
 
         self.assertTrue(rendered.used_default)
         self.assertIn("<h1>🎵 Now playing</h1>", rendered.rich_html)
-
-    def test_media_selection_covers_every_configuration(self):
-        self.assertEqual(
-            play_message.select_play_media("cover", "artwork"),
-            ("artwork",),
-        )
-        self.assertEqual(
-            play_message.select_play_media("cover", None),
-            ("cover",),
-        )
-        self.assertEqual(
-            play_message.select_play_media(None, "artwork"),
-            ("artwork",),
-        )
-        self.assertEqual(
-            play_message.select_play_media(None, None),
-            (),
-        )
-        self.assertEqual(
-            play_message.select_play_media("same", "same"),
-            ("same",),
-        )
 
     def test_oversized_caption_uses_localized_default(self):
         rendered = self.render("x" * 1025)

@@ -7,8 +7,25 @@ import asyncio
 
 from pyrogram import enums, errors, types
 
-from anony import anon, app, config, db, logger, queue, userbot, yt
+from anony import app, config, db, logger, queue, userbot, yt
 from anony.helpers import feedback, utils
+
+
+async def _session_required(m: types.Message) -> bool:
+    if getattr(m, "outgoing", False):
+        await feedback.error_edit(m, m.lang["play_session_required"])
+    else:
+        await feedback.error(m, m.lang["play_session_required"])
+    return False
+
+
+async def _discard_status(status) -> None:
+    if status is None:
+        return
+    try:
+        await status.delete()
+    except Exception:
+        logger.debug("Could not remove assistant status message", exc_info=True)
 
 
 async def _prime_assistant_peer(client, chat_id: int, username: str | None) -> bool:
@@ -130,7 +147,6 @@ async def _invite_assistant(client, m: types.Message, status) -> str:
 
     for _ in range(5):
         if await _prime_assistant_peer(client, chat_id, m.chat.username):
-            await status.delete()
             await revoke_invite()
             return "ready"
         await asyncio.sleep(1)
@@ -211,24 +227,38 @@ async def assistant_membership(
     return client, "unknown"
 
 
-async def ensure_assistant(m: types.Message) -> bool:
+async def ensure_assistant(
+    m: types.Message,
+    excluded_slots: set[int] | None = None,
+    *,
+    silent_unavailable: bool = False,
+) -> bool:
     chat_id = m.chat.id
-    available_slots = [
-        slot
-        for slot in sorted(userbot.accepting_slots)
-        if slot in anon.clients
-    ]
+    excluded_slots = excluded_slots or set()
+    available_slots = list(db.ready_assistant_slots(excluded_slots))
     if not available_slots:
-        if getattr(m, "outgoing", False):
-            await feedback.error_edit(m, m.lang["play_session_required"])
-        else:
-            await feedback.error(m, m.lang["play_session_required"])
-        return False
+        if silent_unavailable:
+            return False
+        return await _session_required(m)
 
-    selected = await db.get_client(chat_id)
+    try:
+        selected = await db.get_client(chat_id, excluded_slots)
+    except RuntimeError:
+        if silent_unavailable:
+            return False
+        return await _session_required(m)
     selected_slot = next(
-        slot for slot, client in userbot.clients.items() if client is selected
+        (
+            slot
+            for slot, client in userbot.clients.items()
+            if client is selected
+        ),
+        None,
     )
+    if selected_slot is None:
+        if silent_unavailable:
+            return False
+        return await _session_required(m)
     slots = [selected_slot] + [
         slot
         for slot in available_slots
@@ -238,15 +268,21 @@ async def ensure_assistant(m: types.Message) -> bool:
     results = []
 
     for slot in slots:
+        if slot not in db.ready_assistant_slots(excluded_slots):
+            results.append("session_unavailable")
+            continue
         client = userbot.clients[slot]
         client, membership = await assistant_membership(
             chat_id, m.chat.username, client
         )
 
         if membership == "ready":
-            await db.set_assistant(chat_id, slot)
-            if status:
-                await status.delete()
+            try:
+                await db.set_assistant(chat_id, slot)
+            except RuntimeError:
+                results.append("session_unavailable")
+                continue
+            await _discard_status(status)
             return True
 
         if membership == "unknown":
@@ -286,12 +322,19 @@ async def ensure_assistant(m: types.Message) -> bool:
             status = await m.reply_text(m.lang["play_invite"].format(client.name))
         result = await _invite_assistant(client, m, status)
         if result == "ready":
-            await db.set_assistant(chat_id, slot)
+            try:
+                await db.set_assistant(chat_id, slot)
+            except RuntimeError:
+                results.append("session_unavailable")
+                continue
+            await _discard_status(status)
             return True
         results.append(result)
         if result == "invite_admin_required":
             break
 
+    if silent_unavailable and status is None:
+        return False
     if status is None:
         status = await m.reply_text(m.lang["play_invite"].format(app.name))
     if results and all(result == "banned_unban_required" for result in results):
@@ -377,7 +420,11 @@ def checkUB(play):
             try:
                 await m.delete()
             except Exception:
-                pass
+                logger.debug(
+                    "Could not delete /play command in chat %s",
+                    chat_id,
+                    exc_info=True,
+                )
 
         return await play(_, m, force, m3u8, video, url)
 

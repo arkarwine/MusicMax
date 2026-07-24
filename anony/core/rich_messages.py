@@ -188,7 +188,6 @@ _SMALL_CAP_GLYPHS = frozenset(
 )
 
 
-PLAY_TITLE_DISPLAY_LIMIT = 27
 _THEME_UI = {
     "heading_font": "small_caps",
     "icons": True,
@@ -338,13 +337,6 @@ def themed_keyboard_layout(
         selected.append(missing)
     return selected
 
-
-
-def truncate_play_title(title: str) -> str:
-    title = str(title)
-    if len(title) <= PLAY_TITLE_DISPLAY_LIMIT:
-        return title
-    return title[: PLAY_TITLE_DISPLAY_LIMIT - 3].rstrip() + "..."
 
 
 def unicode_heading(value: str) -> str:
@@ -515,27 +507,6 @@ def _format_runtime_config_table(rich: str) -> str:
         + rich[divider_start:]
     )
 
-
-
-def _legacy_summary_table(rich: str) -> str:
-    quotes = list(_BLOCKQUOTE_RE.finditer(rich))
-    if not quotes:
-        return rich
-    section = rich[quotes[0].start():quotes[-1].end()]
-    if _BLOCKQUOTE_RE.sub("", section).strip():
-        return rich
-
-    rows = []
-    for quote in quotes:
-        lines = [line.strip() for line in quote.group("body").split("<br>")]
-        if len(lines) < 2 or any(not line for line in lines):
-            return rich
-        details = [re.sub(r"^[\u251c\u2514\u2502]\s*", "", line) for line in lines[1:]]
-        rows.append(
-            f"<tr><th>{lines[0]}</th><td>{'<br>'.join(details)}</td></tr>"
-        )
-    table = "<table striped>" + "".join(rows) + "</table>"
-    return rich[:quotes[0].start()] + table + rich[quotes[-1].end():]
 
 
 def _summary_metric_row(line: str, *, center_value: bool = False) -> str:
@@ -1378,20 +1349,3 @@ class RichMessageService:
                 ValueError, RuntimeError) as exc:
             self.logger.warning("Rich message edit failed; using HTML fallback: %s", exc)
             return None
-
-    async def replace_placeholder(self, placeholder, content, **kwargs):
-        sent = await self.send(
-            placeholder.chat.id,
-            content,
-            reply_parameters={
-                "message_id": placeholder.reply_to_message_id
-            } if placeholder.reply_to_message_id else None,
-            message_thread_id=getattr(placeholder, "message_thread_id", None),
-            **kwargs,
-        )
-        if sent is not None:
-            try:
-                await placeholder.delete()
-            except Exception:
-                self.logger.debug("Could not delete replaced placeholder", exc_info=True)
-        return sent

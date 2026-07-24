@@ -53,14 +53,6 @@ class HeadingPromotionTests(unittest.TestCase):
             rich_messages.unicode_heading("what would you like to do?"),
             "Wʜᴀᴛ Wᴏᴜʟᴅ Yᴏᴜ Lɪᴋᴇ Tᴏ Dᴏ?",
         )
-    def test_play_title_is_truncated_for_compact_display(self):
-        self.assertEqual(
-            rich_messages.truncate_play_title(
-                "Charlie Puth - Attention [Official Video]"
-            ),
-            "Charlie Puth - Attention...",
-        )
-
     def test_primary_play_heading_uses_unordered_description_list(self):
         title = "Charlie Puth - Attention..."
         source = (

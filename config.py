@@ -189,17 +189,42 @@ class Config:
         "start_buttons_layout": RuntimeSetting(
             "Start buttons", "interface",
             "Arrange or hide private start-menu buttons.",
-            "add, help, language, stats, trending, support, channel, owner; comma = same row, | = new row, off = hide",
+            "add, help, language, stats, trending, support, channel, owner; "
+            "comma = same row, | = new row, off = hide",
             "add|help,language,stats|support,channel|owner",
         ),
-        "start_add_text": RuntimeSetting("Add button", "interface", "Custom Add to Group label.", "up to 64 characters, or -", "Add to Group"),
-        "start_help_text": RuntimeSetting("Help button", "interface", "Custom Help label.", "up to 64 characters, or -", "Help"),
-        "start_language_text": RuntimeSetting("Language button", "interface", "Custom Language label.", "up to 64 characters, or -", "Language"),
-        "start_stats_text": RuntimeSetting("Stats button", "interface", "Custom Stats label.", "up to 64 characters, or -", "Stats"),
-        "start_trending_text": RuntimeSetting("Trending button", "interface", "Custom Trending label.", "up to 64 characters, or -", "Trending"),
-        "start_support_text": RuntimeSetting("Support button", "interface", "Custom Support label.", "up to 64 characters, or -", "Support"),
-        "start_channel_text": RuntimeSetting("Channel button", "interface", "Custom Channel label.", "up to 64 characters, or -", "Channel"),
-        "start_owner_text": RuntimeSetting("Owner button", "interface", "Custom Owner label.", "up to 64 characters, or -", "Owner"),
+        "start_add_text": RuntimeSetting(
+            "Add button", "interface", "Custom Add to Group label.",
+            "up to 64 characters, or -", "Add to Group",
+        ),
+        "start_help_text": RuntimeSetting(
+            "Help button", "interface", "Custom Help label.",
+            "up to 64 characters, or -", "Help",
+        ),
+        "start_language_text": RuntimeSetting(
+            "Language button", "interface", "Custom Language label.",
+            "up to 64 characters, or -", "Language",
+        ),
+        "start_stats_text": RuntimeSetting(
+            "Stats button", "interface", "Custom Stats label.",
+            "up to 64 characters, or -", "Stats",
+        ),
+        "start_trending_text": RuntimeSetting(
+            "Trending button", "interface", "Custom Trending label.",
+            "up to 64 characters, or -", "Trending",
+        ),
+        "start_support_text": RuntimeSetting(
+            "Support button", "interface", "Custom Support label.",
+            "up to 64 characters, or -", "Support",
+        ),
+        "start_channel_text": RuntimeSetting(
+            "Channel button", "interface", "Custom Channel label.",
+            "up to 64 characters, or -", "Channel",
+        ),
+        "start_owner_text": RuntimeSetting(
+            "Owner button", "interface", "Custom Owner label.",
+            "up to 64 characters, or -", "Owner",
+        ),
         "support_channel": RuntimeSetting(
             "Channel", "brand",
             "Public updates or channel destination.",
@@ -376,13 +401,6 @@ class Config:
         self.WATCHDOG_ENABLED = self._environment_bool(
             "WATCHDOG_ENABLED", self._environment_bool("EXTERNAL_WATCHDOG", False)
         ) and self.WATCHDOG_MODE != "off"
-        self.EXTERNAL_WATCHDOG = self.WATCHDOG_ENABLED
-        self.WATCHDOG_RESTART_ON_STALL = self._environment_bool(
-            "WATCHDOG_RESTART_ON_STALL", False
-        )
-        self.WATCHDOG_STALL_SECONDS = self._environment_int(
-            "WATCHDOG_STALL_SECONDS", 21600, minimum=300, maximum=86400
-        )
         _watchdog_presets = {
             "standard": dict(updates=180, assistant_stale=300, min_uptime=120, cooldown=300),
             "strict": dict(updates=120, assistant_stale=240, min_uptime=90, cooldown=240),
@@ -392,52 +410,47 @@ class Config:
         self.WATCHDOG_CHECK_INTERVAL = self._environment_int(
             "WATCHDOG_CHECK_INTERVAL", 30, minimum=10, maximum=3600
         )
-        # Backward-compatible advanced knobs. The external watchdog now uses only
-        # stale Telegram updates plus assistant reachability.
-        self.WATCHDOG_HEARTBEAT_STALE_SECONDS = self._environment_int(
-            "WATCHDOG_HEARTBEAT_STALE_SECONDS", 180, minimum=60, maximum=86400
-        )
         self.WATCHDOG_UPDATE_STALE_SECONDS = self._environment_int(
             "WATCHDOG_UPDATE_STALE_SECONDS", _watchdog["updates"], minimum=60, maximum=86400
-        )
-        self.WATCHDOG_HANDLER_STALE_SECONDS = self._environment_int(
-            "WATCHDOG_HANDLER_STALE_SECONDS", 240, minimum=60, maximum=86400
-        )
-        self.WATCHDOG_INTERNAL_PROBE_STALE_SECONDS = self._environment_int(
-            "WATCHDOG_INTERNAL_PROBE_STALE_SECONDS", 180, minimum=60, maximum=86400
-        )
-        self.WATCHDOG_INTERNAL_PROBE_FAILURES = self._environment_int(
-            "WATCHDOG_INTERNAL_PROBE_FAILURES", 3, minimum=1, maximum=100
-        )
-        self.WATCHDOG_BOT_API_PROBE = self._environment_bool(
-            "WATCHDOG_BOT_API_PROBE", True
-        )
-        self.WATCHDOG_BOT_API_FAILURES = self._environment_int(
-            "WATCHDOG_BOT_API_FAILURES", 3, minimum=1, maximum=100
         )
         self.WATCHDOG_ASSISTANT_PROBE = self._environment_bool(
             "WATCHDOG_ASSISTANT_PROBE", True
         )
         self.WATCHDOG_ASSISTANT_PROBE_IDLE_SECONDS = self._environment_int(
-            "WATCHDOG_ASSISTANT_PROBE_IDLE_SECONDS", 120, minimum=60, maximum=86400
+            "WATCHDOG_ASSISTANT_PROBE_IDLE_SECONDS",
+            120,
+            minimum=60,
+            maximum=86400,
         )
         self.WATCHDOG_ASSISTANT_PROBE_INTERVAL_SECONDS = self._environment_int(
-            "WATCHDOG_ASSISTANT_PROBE_INTERVAL_SECONDS", 120, minimum=60, maximum=86400
+            "WATCHDOG_ASSISTANT_PROBE_INTERVAL_SECONDS",
+            120,
+            minimum=60,
+            maximum=86400,
         )
         self.WATCHDOG_ASSISTANT_PROBE_TIMEOUT_SECONDS = self._environment_int(
-            "WATCHDOG_ASSISTANT_PROBE_TIMEOUT_SECONDS", 20, minimum=5, maximum=300
-        )
-        self.WATCHDOG_ASSISTANT_PROBE_FAILURES = self._environment_int(
-            "WATCHDOG_ASSISTANT_PROBE_FAILURES", 1, minimum=1, maximum=100
+            "WATCHDOG_ASSISTANT_PROBE_TIMEOUT_SECONDS",
+            20,
+            minimum=5,
+            maximum=300,
         )
         self.WATCHDOG_ASSISTANT_PROBE_STALE_SECONDS = self._environment_int(
-            "WATCHDOG_ASSISTANT_PROBE_STALE_SECONDS", _watchdog["assistant_stale"], minimum=120, maximum=86400
+            "WATCHDOG_ASSISTANT_PROBE_STALE_SECONDS",
+            _watchdog["assistant_stale"],
+            minimum=120,
+            maximum=86400,
         )
         self.WATCHDOG_MIN_UPTIME_SECONDS = self._environment_int(
-            "WATCHDOG_MIN_UPTIME_SECONDS", _watchdog["min_uptime"], minimum=0, maximum=86400
+            "WATCHDOG_MIN_UPTIME_SECONDS",
+            _watchdog["min_uptime"],
+            minimum=0,
+            maximum=86400,
         )
         self.WATCHDOG_RESTART_COOLDOWN_SECONDS = self._environment_int(
-            "WATCHDOG_RESTART_COOLDOWN_SECONDS", _watchdog["cooldown"], minimum=60, maximum=86400
+            "WATCHDOG_RESTART_COOLDOWN_SECONDS",
+            _watchdog["cooldown"],
+            minimum=60,
+            maximum=86400,
         )
         self.HANDLER_TIMEOUT_SECONDS = self._environment_int(
             "HANDLER_TIMEOUT_SECONDS", 300, minimum=60, maximum=86400

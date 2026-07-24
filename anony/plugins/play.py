@@ -57,12 +57,24 @@ async def _download_with_status(sent, text: str, video_id: str, video: bool):
 
 
 def playlist_to_queue(chat_id: int, tracks: list) -> str:
-    text = "<blockquote expandable>"
+    lines = ["<blockquote expandable>"]
     for track in tracks:
         pos = queue.add(chat_id, track)
-        text += f"<b>{pos}.</b> {escape(track.title or 'Unknown track')}\n"
-    text = text[:1948] + "</blockquote>"
-    return text
+        lines.append(
+            f"<b>{pos}.</b> {escape(track.title or 'Unknown track')}\n"
+        )
+    return "".join(lines)[:1948] + "</blockquote>"
+
+
+async def _announce_playlist(chat_id: int, tracks: list, language: dict) -> None:
+    if not tracks:
+        return
+    added = playlist_to_queue(chat_id, tracks)
+    await db.save_queue(chat_id, queue.get_queue(chat_id))
+    await app.send_message(
+        chat_id=chat_id,
+        text=language["playlist_queued"].format(len(tracks)) + added,
+    )
 
 @app.on_message(
     filters.command(["play", "playforce", "vplay", "vplayforce"])
@@ -158,6 +170,8 @@ async def play_hndlr(
     if m.chat.id not in db.active_calls:
         assistant_started = monotonic()
         if not await ensure_assistant(m):
+            with suppress(Exception):
+                await sent.delete()
             return
         assistant_seconds = monotonic() - assistant_started
 
@@ -165,19 +179,17 @@ async def play_hndlr(
         await utils.play_log(m, sent.link, file.title, file.duration)
 
     file.user = mention
+    active = await db.get_call(m.chat.id)
     if force:
         queue.force_add(m.chat.id, file)
-        await db.save_queue(m.chat.id, queue.get_queue(m.chat.id))
-        if not await db.get_call(m.chat.id):
-            await db.save_playback(m.chat.id, "waiting", file.time)
     else:
         position = queue.add(m.chat.id, file)
-        await db.save_queue(m.chat.id, queue.get_queue(m.chat.id))
-        if not await db.get_call(m.chat.id):
-            await db.save_playback(m.chat.id, "waiting", file.time)
+    await db.save_queue(m.chat.id, queue.get_queue(m.chat.id))
+    if not active:
+        await db.save_playback(m.chat.id, "waiting", file.time)
 
-        active = await db.get_call(m.chat.id)
-        if position != 0 or active:
+    if not force:
+        if position or active:
             text = m.lang["play_queued"].format(
                 position,
                 escape(file.url or "", quote=True),
@@ -195,13 +207,7 @@ async def play_hndlr(
                     else buttons.recovery(m.chat.id, m.lang["resume_queue"])
                 ),
             )
-            if tracks:
-                added = playlist_to_queue(m.chat.id, tracks)
-                await db.save_queue(m.chat.id, queue.get_queue(m.chat.id))
-                await app.send_message(
-                    chat_id=m.chat.id,
-                    text=m.lang["playlist_queued"].format(len(tracks)) + added,
-                )
+            await _announce_playlist(m.chat.id, tracks, m.lang)
             return
 
     artwork_task = (
@@ -259,11 +265,4 @@ async def play_hndlr(
         monotonic() - delivery_started,
         total_seconds,
     )
-    if not tracks:
-        return
-    added = playlist_to_queue(m.chat.id, tracks)
-    await db.save_queue(m.chat.id, queue.get_queue(m.chat.id))
-    await app.send_message(
-        chat_id=m.chat.id,
-        text=m.lang["playlist_queued"].format(len(tracks)) + added,
-    )
+    await _announce_playlist(m.chat.id, tracks, m.lang)

@@ -136,24 +136,6 @@ class Bot(pyrogram.Client):
         reply_id = kwargs.get("reply_to_message_id")
         return {"message_id": reply_id} if reply_id else None
 
-    @staticmethod
-    def _rich_media_spec(
-        rich_text: str,
-        source,
-        kind: str,
-        placement: str,
-    ) -> RichMedia:
-        override = config.play_image_url()
-        if (
-            kind == "photo"
-            and override
-            and rich_text.startswith("<h1>🎵 ")
-        ):
-            return RichMedia(
-                [override, source], kind, "after_first_block", "slideshow"
-            )
-        return RichMedia(source, kind, placement)
-
     async def _rich_text_call(self, args, kwargs, *, edit=False):
         text_index = 2 if edit else 1
         original_text = self._call_value(args, kwargs, text_index, "text")
@@ -261,16 +243,16 @@ class Bot(pyrogram.Client):
             reply_markup=kwargs.get("reply_markup"),
         )
 
-    async def _legacy_send_message(self, *args, **kwargs):
+    async def _send_plain_message(self, *args, **kwargs):
         return await super().send_message(*args, **kwargs)
 
-    async def _legacy_edit_message_text(self, *args, **kwargs):
+    async def _edit_plain_message(self, *args, **kwargs):
         return await super().edit_message_text(*args, **kwargs)
 
-    async def _legacy_send_photo(self, *args, **kwargs):
+    async def _send_plain_photo(self, *args, **kwargs):
         return await super().send_photo(*args, **kwargs)
 
-    async def _legacy_edit_message_media(self, *args, **kwargs):
+    async def _edit_plain_media(self, *args, **kwargs):
         return await super().edit_message_media(*args, **kwargs)
 
     async def send_message(self, *args, **kwargs):

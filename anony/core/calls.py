@@ -4,31 +4,34 @@
 
 
 import asyncio
-from os import getenv
 
-from pyrogram import enums
-from pyrogram.errors import (BadRequest, ChatSendMediaForbidden,
-                             ChatSendPhotosForbidden, MessageIdInvalid)
-from pyrogram.types import InputMediaPhoto, Message
+from pyrogram.types import Message
 
 from anony import (app, config, db, lang, logger, queue, supervisor,
                    thumb, userbot, yt)
+from anony.core.play_card import (
+    refresh_play_card_artwork,
+    show_play_card,
+)
 from anony.core.voice_worker import (
     VoiceWorkerClient,
     VoiceWorkerError,
+    VoiceWorkerUnavailable,
 )
-from anony.helpers import Media, Track, buttons
-from anony.core.play_message import (
-    render_play_message,
-)
+from anony.helpers import Media, Track
 
 
-def _env_int(name: str, default: int, minimum: int = 1) -> int:
-    try:
-        value = int((getenv(name) or "").strip())
-    except ValueError:
-        return default
-    return max(value, minimum)
+_RECOVERABLE_VOICE_ERRORS = frozenset({
+    "VoiceWorkerUnavailable",
+    "ConnectionNotFound",
+    "NotInCallError",
+    "TelegramServerError",
+    "ConnectionError",
+    "TimeoutError",
+})
+_STALE_CALL_ERRORS = frozenset({"ConnectionNotFound", "NotInCallError"})
+
+
 class TgCall:
     def __init__(self):
         self.clients: dict[int, VoiceWorkerClient] = {}
@@ -142,6 +145,90 @@ class TgCall:
         # explicitly left. Healthy starts no longer take this recovery path.
         await asyncio.sleep(0.5)
 
+    async def _start_voice_stream(
+        self,
+        chat_id: int,
+        media: Media | Track,
+        seek_time: int,
+    ) -> int:
+        slot = db.assistant.get(chat_id)
+        if slot not in db.ready_assistant_slots():
+            raise VoiceWorkerUnavailable(
+                f"Assigned assistant {slot} is not ready"
+            )
+        client = self.clients[slot]
+        await client.play(
+            chat_id=chat_id,
+            media_path=media.file_path,
+            video=media.video,
+            audio_quality=config.AUDIO_QUALITY,
+            video_quality=config.VIDEO_QUALITY,
+            video_fps=config.VIDEO_FPS,
+            ffmpeg_parameters=(
+                f"-ss {seek_time}" if seek_time > 1 else None
+            ),
+            peer=await self._peer_payload(chat_id),
+            timeout=config.PLAYBACK_CONNECT_TIMEOUT_SECONDS,
+        )
+        return slot
+
+    async def _connect_with_failover(
+        self,
+        chat_id: int,
+        message: Message,
+        media: Media | Track,
+        language: dict,
+        seek_time: int,
+    ) -> None:
+        attempted_slots: set[int] = set()
+        reset_slots: set[int] = set()
+
+        while True:
+            slot = db.assistant.get(chat_id)
+            try:
+                await self._start_voice_stream(chat_id, media, seek_time)
+                return
+            except VoiceWorkerError as exc:
+                should_reset = (
+                    slot is not None
+                    and slot not in reset_slots
+                    and not await db.get_call(chat_id)
+                    and exc.remote_type in _STALE_CALL_ERRORS
+                )
+                if should_reset:
+                    reset_slots.add(slot)
+                    logger.info(
+                        "Clearing a stale assistant call in chat %s.",
+                        chat_id,
+                    )
+                    await self.reset_assistant_call(chat_id)
+                    continue
+                if exc.remote_type not in _RECOVERABLE_VOICE_ERRORS:
+                    raise
+                if slot is not None:
+                    attempted_slots.add(slot)
+
+                # Import here to keep the call controller and play guards from
+                # forming an initialization cycle.
+                from anony.helpers._play import ensure_assistant
+
+                message.lang = language
+                switched = await ensure_assistant(
+                    message,
+                    attempted_slots,
+                    silent_unavailable=True,
+                )
+                if not switched:
+                    raise
+                logger.warning(
+                    "Playback in chat %s failed over from assistant %s "
+                    "to assistant %s after %s.",
+                    chat_id,
+                    slot,
+                    db.assistant.get(chat_id),
+                    exc.remote_type,
+                )
+
     async def exit(self) -> None:
         """Leave active calls before assistant sessions are disconnected."""
         for chat_id in list(db.active_calls):
@@ -158,184 +245,6 @@ class TgCall:
                 return_exceptions=True,
             )
         logger.info("Assistant voice workers stopped.")
-
-    async def _legacy_play_card(
-        self,
-        chat_id: int,
-        message: Message,
-        media: Media | Track,
-        text: str,
-        keyboard,
-        override,
-        artwork,
-    ) -> None:
-        candidates = []
-        for candidate in (artwork, override):
-            if candidate and candidate not in candidates:
-                candidates.append(candidate)
-        candidates.append(None)
-
-        async def deliver(*, edit: bool):
-            last_error = None
-            for candidate in candidates:
-                try:
-                    if edit and candidate:
-                        return await app._legacy_edit_message_media(
-                            chat_id,
-                            message.id,
-                            InputMediaPhoto(
-                                media=candidate,
-                                caption=text,
-                                parse_mode=enums.ParseMode.HTML,
-                            ),
-                            reply_markup=keyboard,
-                        )
-                    if edit:
-                        return await app._legacy_edit_message_text(
-                            chat_id,
-                            message.id,
-                            text,
-                            parse_mode=enums.ParseMode.HTML,
-                            reply_markup=keyboard,
-                        )
-                    if candidate:
-                        return await app._legacy_send_photo(
-                            chat_id=chat_id,
-                            photo=candidate,
-                            caption=text,
-                            parse_mode=enums.ParseMode.HTML,
-                            reply_markup=keyboard,
-                        )
-                    return await app._legacy_send_message(
-                        chat_id=chat_id,
-                        text=text,
-                        parse_mode=enums.ParseMode.HTML,
-                        reply_markup=keyboard,
-                    )
-                except MessageIdInvalid:
-                    raise
-                except (
-                    BadRequest,
-                    ChatSendMediaForbidden,
-                    ChatSendPhotosForbidden,
-                ) as exc:
-                    last_error = exc
-            raise RuntimeError("Could not deliver the play card") from last_error
-
-        try:
-            sent = await deliver(edit=True)
-        except MessageIdInvalid:
-            sent = await deliver(edit=False)
-        media.message_id = sent.id
-
-    async def _show_play_card(
-        self,
-        chat_id: int,
-        message: Message,
-        media: Media | Track,
-        _lang: dict,
-        lang_code: str,
-        _thumb,
-    ) -> None:
-        default_template = _lang["play_message_template"]
-        template = (
-            config.play_message_template(lang_code) or default_template
-        )
-        rendered = render_play_message(
-            template,
-            default_template,
-            title=media.title or _lang["unknown_track"],
-            url=media.url,
-            duration=media.duration or "--:--",
-            requester=media.user or _lang["someone"],
-        )
-        if rendered.used_default:
-            logger.warning(
-                "Custom %s /play template failed at render time; "
-                "using the localized default.",
-                lang_code,
-            )
-
-        keyboard = buttons.controls(chat_id, playing=True)
-        # A real generated cover wins. PLAY_IMAGE is the next fallback, and
-        # DEFAULT_THUMB is used only when neither is available.
-        artwork = (
-            _thumb
-            if config.THUMB_GEN
-            and _thumb
-            and _thumb != config.DEFAULT_THUMB
-            else None
-        )
-        override = None
-        # PLAY_IMAGE is a placeholder, not a second slide. Avoid resolving or
-        # uploading it after generated artwork is ready.
-        if artwork is None:
-            override_url = config.play_image_url()
-            if override_url:
-                override = await thumb.play_image(override_url)
-                if override is None:
-                    logger.warning(
-                        "Could not cache PLAY_IMAGE; using its remote URL."
-                    )
-                    override = override_url
-            if override is None and _thumb:
-                override = _thumb
-        # Telegram rich paragraph blocks collapse whitespace on some clients.
-        # Standard captions preserve the template's real newline characters
-        # and avoid a slow rich-to-standard retry.
-        await self._legacy_play_card(
-            chat_id,
-            message,
-            media,
-            rendered.fallback_html,
-            keyboard,
-            override,
-            artwork,
-        )
-
-    async def _refresh_play_card_artwork(
-        self,
-        chat_id: int,
-        message_id: int,
-        media: Media | Track,
-        _lang: dict,
-        lang_code: str,
-        artwork_task: asyncio.Task,
-    ) -> None:
-        try:
-            artwork = await artwork_task
-            if not artwork:
-                return
-            current = queue.get_current(chat_id)
-            if current is None or getattr(current, "id", None) != getattr(
-                media, "id", None
-            ):
-                return
-            if not await db.get_call(chat_id):
-                return
-            card_id = getattr(media, "message_id", 0) or message_id
-            if not card_id:
-                return
-            message = await app.get_messages(chat_id, card_id)
-            if not message:
-                return
-            await self._show_play_card(
-                chat_id,
-                message,
-                media,
-                _lang,
-                lang_code,
-                artwork,
-            )
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            logger.debug(
-                "Could not refresh play card artwork in chat %s",
-                chat_id,
-                exc_info=True,
-            )
-
 
     async def play_media(
         self,
@@ -356,7 +265,6 @@ class TgCall:
         ):
             await message.edit_text(_lang["play_session_locked"])
             return False
-        client = await db.get_assistant(chat_id)
         show_card = not seek_time or new_session
         _thumb = None
         if show_card and config.THUMB_GEN:
@@ -377,25 +285,6 @@ class TgCall:
 
         artwork_handed_off = False
 
-        async def connect() -> None:
-            await client.play(
-                chat_id=chat_id,
-                media_path=media.file_path,
-                video=media.video,
-                audio_quality=config.AUDIO_QUALITY,
-                video_quality=config.VIDEO_QUALITY,
-                video_fps=config.VIDEO_FPS,
-                ffmpeg_parameters=(
-                    f"-ss {seek_time}" if seek_time > 1 else None
-                ),
-                peer=await self._peer_payload(chat_id),
-                timeout=_env_int(
-                    "PLAYBACK_CONNECT_TIMEOUT_SECONDS",
-                    45,
-                    10,
-                ),
-            )
-
         async def keep_saved_queue(text: str) -> bool:
             """Leave restart recovery retryable after a transient failure."""
             await db.remove_call(chat_id)
@@ -405,24 +294,13 @@ class TgCall:
             return False
 
         try:
-            try:
-                await connect()
-            except VoiceWorkerError as exc:
-                if (
-                    not await db.get_call(chat_id)
-                    and exc.remote_type in {
-                        "ConnectionNotFound",
-                        "NotInCallError",
-                    }
-                ):
-                    logger.info(
-                        "Clearing a stale assistant call in chat %s.",
-                        chat_id,
-                    )
-                    await self.reset_assistant_call(chat_id)
-                    await connect()
-                else:
-                    raise
+            await self._connect_with_failover(
+                chat_id,
+                message,
+                media,
+                _lang,
+                seek_time,
+            )
             if not seek_time or new_session:
                 media.time = max(seek_time, 1)
                 await db.add_call(chat_id)
@@ -456,7 +334,7 @@ class TgCall:
                             )
                             _thumb = None
                 try:
-                    await self._show_play_card(
+                    await show_play_card(
                         chat_id,
                         message,
                         media,
@@ -468,7 +346,7 @@ class TgCall:
                         artwork_handed_off = True
                         supervisor.spawn_once(
                             f"play-card-artwork:{chat_id}",
-                            self._refresh_play_card_artwork(
+                            refresh_play_card_artwork(
                                 chat_id,
                                 message.id,
                                 media,
@@ -602,7 +480,11 @@ class TgCall:
                 )
                 media.message_id = 0
         except Exception:
-            pass
+            logger.debug(
+                "Could not remove the previous play card in chat %s",
+                chat_id,
+                exc_info=True,
+            )
 
         _lang = await lang.get_lang(chat_id)
         msg = await app.send_message(chat_id=chat_id, text=_lang["play_next"])

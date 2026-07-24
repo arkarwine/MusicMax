@@ -196,7 +196,10 @@ class SQLiteDB:
                 CREATE TABLE IF NOT EXISTS broadcast_jobs (
                     job_id INTEGER PRIMARY KEY AUTOINCREMENT,
                     status TEXT NOT NULL DEFAULT 'active'
-                        CHECK (status IN ('active', 'running', 'done', 'paused', 'cancelled', 'failed')),
+                        CHECK (status IN (
+                            'active', 'running', 'done', 'paused',
+                            'cancelled', 'failed'
+                        )),
                     source_chat_id INTEGER NOT NULL,
                     source_message_id INTEGER NOT NULL,
                     source_media_group_id TEXT,
@@ -498,13 +501,7 @@ class SQLiteDB:
             await self.conn.commit()
 
     async def set_assistant(self, chat_id: int, slot: int | None = None) -> int:
-        from anony import anon
-
-        slots = tuple(
-            slot
-            for slot in sorted(userbot.accepting_slots)
-            if slot in anon.clients
-        )
+        slots = self.ready_assistant_slots()
         if not slots:
             raise RuntimeError("No assistant sessions are active")
         if slot is not None and slot not in slots:
@@ -530,6 +527,22 @@ class SQLiteDB:
         self.assistant[chat_id] = num
         return num
 
+    def ready_assistant_slots(
+        self,
+        excluded: set[int] | None = None,
+    ) -> tuple[int, ...]:
+        """Return assistants whose Telegram and voice clients are both ready."""
+        from anony import anon
+
+        excluded = excluded or set()
+        return tuple(
+            slot
+            for slot in sorted(userbot.accepting_slots)
+            if slot not in excluded
+            if slot in anon.clients
+            if getattr(anon.clients[slot], "is_alive", True)
+        )
+
     async def get_assistant(self, chat_id: int):
         from anony import anon
 
@@ -540,8 +553,10 @@ class SQLiteDB:
             )
             row = await cursor.fetchone()
             num = row[0] if row else None
+        worker = anon.clients.get(num)
         usable = (
-            num in anon.clients
+            worker is not None
+            and getattr(worker, "is_alive", True)
             and (
                 userbot.is_accepting(num)
                 or chat_id in self.active_calls
@@ -552,12 +567,27 @@ class SQLiteDB:
         self.assistant[chat_id] = num
         return anon.clients[num]
 
-    async def get_client(self, chat_id: int):
+    async def get_client(
+        self,
+        chat_id: int,
+        excluded: set[int] | None = None,
+    ):
+        from anony import anon
+
+        excluded = excluded or set()
         if chat_id not in self.assistant:
             await self.get_assistant(chat_id)
         num = self.assistant[chat_id]
-        if not userbot.is_accepting(num):
-            num = await self.set_assistant(chat_id)
+        if (
+            num in excluded
+            or not userbot.is_accepting(num)
+            or num not in anon.clients
+            or not getattr(anon.clients[num], "is_alive", True)
+        ):
+            candidates = self.ready_assistant_slots(excluded)
+            if not candidates:
+                raise RuntimeError("No assistant sessions are active")
+            num = await self.set_assistant(chat_id, candidates[0])
         return userbot.clients[num]
 
     async def ensure_assistant_session(
@@ -927,14 +957,6 @@ class SQLiteDB:
             await self._increment_analytics(groups_added=1)
             await self.conn.commit()
 
-    async def rm_chat(self, chat_id: int) -> None:
-        if await self.is_chat(chat_id):
-            self.chats.remove(chat_id)
-            self.default_video.pop(chat_id, None)
-            self.feedback_cleanup.pop(chat_id, None)
-            await self.conn.execute("DELETE FROM chats WHERE chat_id = ?", (chat_id,))
-            await self.conn.commit()
-
     async def get_chats(self) -> list[int]:
         cursor = await self.conn.execute("SELECT chat_id FROM chats")
         self.chats[:] = [row[0] for row in await cursor.fetchall()]
@@ -1179,10 +1201,6 @@ class SQLiteDB:
             "DELETE FROM text_overrides WHERE lang = ? AND key = ?",
             (lang_code, key),
         )
-        await self.conn.commit()
-
-    async def reset_all_text_overrides(self) -> None:
-        await self.conn.execute("DELETE FROM text_overrides")
         await self.conn.commit()
 
     async def set_runtime_config(self, key: str, value: str) -> None:
@@ -1513,12 +1531,6 @@ class SQLiteDB:
             self.users.append(user_id)
             await self.conn.execute("INSERT OR IGNORE INTO users (user_id) VALUES (?)", (user_id,))
             await self._increment_analytics(users_added=1)
-            await self.conn.commit()
-
-    async def rm_user(self, user_id: int) -> None:
-        if await self.is_user(user_id):
-            self.users.remove(user_id)
-            await self.conn.execute("DELETE FROM users WHERE user_id = ?", (user_id,))
             await self.conn.commit()
 
     async def get_users(self) -> list[int]:
