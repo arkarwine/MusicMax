@@ -41,6 +41,8 @@ class YouTube:
         self._search_timeout = 7
         self._search_ttl = 600
         self._search_cache_limit = 256
+        self._search_tasks = {}
+        self._search_lock = asyncio.Lock()
         self._download_tasks = {}
         self._download_lock = asyncio.Lock()
         self._download_slots = asyncio.Semaphore(4)
@@ -93,21 +95,20 @@ class YouTube:
     def invalid(self, url: str) -> bool:
         return bool(re.match(self.iregex, url))
 
-    async def search(
-        self, query: str, m_id: int, video: bool = False
-    ) -> Track | None:
-        normalized = " ".join(str(query).split())
-        if not normalized:
-            return None
-        key = (normalized.casefold(), bool(video))
-        now = monotonic()
-        cached = self._search_cache.get(key)
-        if cached and cached[0] > now:
-            self._search_cache.move_to_end(key)
-            return replace(cached[1], message_id=m_id, video=video)
-        if cached:
-            self._search_cache.pop(key, None)
+    def _finish_search(
+        self,
+        key: tuple[str, bool],
+        task: asyncio.Task,
+    ) -> None:
+        if self._search_tasks.get(key) is task:
+            self._search_tasks.pop(key, None)
 
+    async def _search_once(
+        self,
+        normalized: str,
+        key: tuple[str, bool],
+        video: bool,
+    ) -> Track | None:
         started = monotonic()
         try:
             search = VideosSearch(normalized, limit=1, with_live=False)
@@ -142,11 +143,48 @@ class YouTube:
             view_count=data.get("viewCount", {}).get("short"),
             video=video,
         )
-        self._search_cache[key] = (now + self._search_ttl, track)
+        self._search_cache[key] = (
+            monotonic() + self._search_ttl,
+            track,
+        )
         self._search_cache.move_to_end(key)
         while len(self._search_cache) > self._search_cache_limit:
             self._search_cache.popitem(last=False)
-        return replace(track, message_id=m_id)
+        return track
+
+    async def search(
+        self, query: str, m_id: int, video: bool = False
+    ) -> Track | None:
+        normalized = " ".join(str(query).split())
+        if not normalized:
+            return None
+        key = (normalized.casefold(), bool(video))
+        now = monotonic()
+        cached = self._search_cache.get(key)
+        if cached and cached[0] > now:
+            self._search_cache.move_to_end(key)
+            return replace(cached[1], message_id=m_id, video=video)
+        if cached:
+            self._search_cache.pop(key, None)
+
+        async with self._search_lock:
+            task = self._search_tasks.get(key)
+            if task is None:
+                task = asyncio.create_task(
+                    self._search_once(normalized, key, video),
+                    name=f"youtube-search:{key[0][:40]}",
+                )
+                self._search_tasks[key] = task
+                task.add_done_callback(
+                    lambda done, search_key=key: self._finish_search(
+                        search_key, done
+                    )
+                )
+        track = await asyncio.shield(task)
+        return (
+            replace(track, message_id=m_id, video=video)
+            if track is not None else None
+        )
 
     async def playlist(self, limit: int, user: str, url: str, video: bool) -> list[Track | None]:
         tracks = []

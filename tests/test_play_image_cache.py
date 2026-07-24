@@ -6,6 +6,7 @@ import tempfile
 import types
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 
 from PIL import Image
 
@@ -71,6 +72,46 @@ class PlayImageCacheTests(unittest.IsolatedAsyncioTestCase):
                 with Image.open(first) as cached:
                     self.assertEqual(cached.format, "JPEG")
                     self.assertEqual(cached.mode, "RGB")
+            finally:
+                os.chdir(previous_cwd)
+
+    async def test_generated_artwork_is_deduplicated_compact_jpeg(self):
+        thumbnail = thumbnail_module.Thumbnail()
+        downloads = []
+
+        async def save_thumb(output_path, url):
+            downloads.append(url)
+            Image.new("RGB", (640, 360), (30, 60, 90)).save(
+                output_path,
+                "JPEG",
+            )
+            await asyncio.sleep(0)
+            return output_path
+
+        thumbnail.save_thumb = save_thumb
+        song = SimpleNamespace(
+            id="abcdefghijk",
+            thumbnail="https://example.com/track.jpg",
+            channel_name="Artist",
+            view_count="1M",
+            title="Track",
+            duration="3:20",
+        )
+        previous_cwd = os.getcwd()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            os.chdir(temp_dir)
+            try:
+                first, second = await asyncio.gather(
+                    thumbnail.generate(song),
+                    thumbnail.generate(song),
+                )
+                self.assertEqual(first, second)
+                self.assertEqual(downloads, [song.thumbnail])
+                self.assertTrue(first.endswith(".jpg"))
+                with Image.open(first) as artwork:
+                    self.assertEqual(artwork.format, "JPEG")
+                    self.assertEqual(artwork.mode, "RGB")
+                    self.assertEqual(artwork.size, (1280, 720))
             finally:
                 os.chdir(previous_cwd)
 

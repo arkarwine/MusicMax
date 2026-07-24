@@ -41,11 +41,9 @@ class RenderedPlayMessage:
 
 
 def select_play_media(override, artwork) -> tuple[object, ...]:
-    selected = []
-    for source in (override, artwork):
-        if source is not None and source not in selected:
-            selected.append(source)
-    return tuple(selected)
+    """Use generated artwork, with the configured play image as a placeholder."""
+    selected = artwork or override
+    return (selected,) if selected else ()
 
 
 def _safe_url(value: object) -> str | None:
@@ -441,13 +439,18 @@ def _markdown_blocks(
                 if not item:
                     break
                 items.append({
-                    "blocks": [{
-                        "type": "paragraph",
-                        "text": _inline_rich(item.group(1), fragments),
-                    }],
+                    "type": "paragraph",
+                    "text": _compact_rich_text([
+                        "• ",
+                        _inline_rich(item.group(1), fragments),
+                    ]),
                 })
                 index += 1
-            blocks.append({"type": "list", "items": items})
+            # Telegram rich-message list blocks have rendered adjacent items
+            # without line breaks on some clients. Independent paragraphs keep
+            # every play-card field on its own line while preserving the
+            # visible bullet style.
+            blocks.extend(items)
             continue
 
         ordered = _ORDERED_RE.match(line)
@@ -458,15 +461,14 @@ def _markdown_blocks(
                 if not item:
                     break
                 items.append({
-                    "blocks": [{
-                        "type": "paragraph",
-                        "text": _inline_rich(item.group(2), fragments),
-                    }],
-                    "value": int(item.group(1)),
-                    "type": "1",
+                    "type": "paragraph",
+                    "text": _compact_rich_text([
+                        f"{item.group(1)}. ",
+                        _inline_rich(item.group(2), fragments),
+                    ]),
                 })
                 index += 1
-            blocks.append({"type": "list", "items": items})
+            blocks.extend(items)
             continue
 
         quote = _BLOCKQUOTE_RE.match(line)

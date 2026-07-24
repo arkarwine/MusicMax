@@ -105,6 +105,20 @@ class YouTubePerformanceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(second.message_id, 20)
         self.assertIsNot(first, second)
 
+    async def test_concurrent_searches_share_one_request(self):
+        FakeSearch.calls = 0
+        youtube = self.module.YouTube()
+
+        first, second = await asyncio.gather(
+            youtube.search("same track", 10),
+            youtube.search("SAME TRACK", 20),
+        )
+
+        self.assertEqual(FakeSearch.calls, 1)
+        self.assertEqual(first.message_id, 10)
+        self.assertEqual(second.message_id, 20)
+        self.assertFalse(youtube._search_tasks)
+
     async def test_duplicate_downloads_share_one_task(self):
         youtube = self.module.YouTube()
 

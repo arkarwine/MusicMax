@@ -47,6 +47,17 @@ class PlayMessageRendererTests(unittest.TestCase):
         )
         self.assertIn("<ul>", rendered.rich_html)
         self.assertEqual(rendered.rich_html.count("<li>"), 3)
+        self.assertEqual(
+            [block["type"] for block in rendered.rich_blocks],
+            ["heading", "paragraph", "paragraph", "paragraph"],
+        )
+        self.assertTrue(
+            all(
+                str(block["text"]).startswith("• ")
+                or isinstance(block["text"], list)
+                for block in rendered.rich_blocks[1:]
+            )
+        )
         self.assertIn(
             '<a href="https://example.com/watch?v=1&amp;list=2">'
             "Charlie Puth - Attention...</a>",
@@ -195,7 +206,7 @@ class PlayMessageRendererTests(unittest.TestCase):
     def test_media_selection_covers_every_configuration(self):
         self.assertEqual(
             play_message.select_play_media("cover", "artwork"),
-            ("cover", "artwork"),
+            ("artwork",),
         )
         self.assertEqual(
             play_message.select_play_media("cover", None),

@@ -1,3 +1,4 @@
+import asyncio
 import importlib.util
 import logging
 import sys
@@ -673,6 +674,26 @@ class RichMessageServiceTests(unittest.IsolatedAsyncioTestCase):
         service._request = AsyncMock(return_value=None)
 
         result = await service.send(1, "<h3>Request failed</h3>")
+
+        self.assertIsNone(result)
+        self.assertTrue(service.capable)
+
+    async def test_edit_timeout_returns_legacy_fallback_signal(self):
+        service = rich_messages.RichMessageService(
+            AsyncMock(), "token", logging.getLogger(__name__)
+        )
+
+        async def slow_request(*_args):
+            await asyncio.sleep(1)
+
+        service._request = slow_request
+
+        result = await service.edit(
+            1,
+            2,
+            "<h1>Now playing</h1>",
+            timeout=0.01,
+        )
 
         self.assertIsNone(result)
         self.assertTrue(service.capable)

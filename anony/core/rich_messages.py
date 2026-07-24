@@ -1343,12 +1343,16 @@ class RichMessageService:
         self, chat_id, message_id: int, content, *,
         media: RichMedia | None = None, reply_markup=None,
         fallback_text: str | None = None,
+        timeout: float | None = None,
     ):
         if not self.enabled or not self.capable:
             return None
-        try:
+
+        async def deliver():
             with ExitStack() as stack:
-                rich_message, files = self._rich_message(content, media, stack)
+                rich_message, files = self._rich_message(
+                    content, media, stack
+                )
                 payload = {
                     "chat_id": chat_id,
                     "message_id": message_id,
@@ -1356,8 +1360,20 @@ class RichMessageService:
                 }
                 if reply_markup is not None:
                     payload["reply_markup"] = bot_api_dict(reply_markup)
-                result = await self._request("editMessageText", payload, files)
-            return None if result is None else await self._bound_message(chat_id, result)
+                result = await self._request(
+                    "editMessageText", payload, files
+                )
+                return (
+                    None
+                    if result is None
+                    else await self._bound_message(chat_id, result)
+                )
+
+        try:
+            operation = deliver()
+            if timeout is not None:
+                return await asyncio.wait_for(operation, timeout=timeout)
+            return await operation
         except (aiohttp.ClientError, asyncio.TimeoutError, OSError, TypeError,
                 ValueError, RuntimeError) as exc:
             self.logger.warning("Rich message edit failed; using HTML fallback: %s", exc)

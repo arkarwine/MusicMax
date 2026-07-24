@@ -142,7 +142,9 @@ class TgCall:
     async def reset_assistant_call(self, chat_id: int) -> None:
         """Clear a call connection left behind by an earlier bot process."""
         await self._leave_assistant_call(chat_id)
-        await asyncio.sleep(1)
+        # Telegram only needs a short scheduling turn after a stale call is
+        # explicitly left. Healthy starts no longer take this recovery path.
+        await asyncio.sleep(0.5)
 
     async def exit(self) -> None:
         """Leave active calls before assistant sessions are disconnected."""
@@ -166,13 +168,6 @@ class TgCall:
         override, artwork, placement: str | int = "before"
     ) -> RichMedia | None:
         sources = select_play_media(override, artwork)
-        if len(sources) == 2:
-            return RichMedia(
-                list(sources),
-                "photo",
-                placement,
-                "slideshow",
-            )
         return (
             RichMedia(sources[0], "photo", placement)
             if sources else None
@@ -189,9 +184,10 @@ class TgCall:
         artwork,
     ) -> None:
         candidates = []
-        for candidate in (override, artwork, None):
-            if candidate not in candidates:
+        for candidate in (artwork, override):
+            if candidate and candidate not in candidates:
                 candidates.append(candidate)
+        candidates.append(None)
 
         async def deliver(*, edit: bool):
             last_error = None
@@ -275,16 +271,29 @@ class TgCall:
             )
 
         keyboard = buttons.controls(chat_id, playing=True)
-        artwork = _thumb if config.THUMB_GEN else None
-        override_url = config.play_image_url()
+        # A real generated cover wins. PLAY_IMAGE is the next fallback, and
+        # DEFAULT_THUMB is used only when neither is available.
+        artwork = (
+            _thumb
+            if config.THUMB_GEN
+            and _thumb
+            and _thumb != config.DEFAULT_THUMB
+            else None
+        )
         override = None
-        if override_url:
-            override = await thumb.play_image(override_url)
-            if override is None:
-                logger.warning(
-                    "Could not cache PLAY_IMAGE; using its remote URL."
-                )
-                override = override_url
+        # PLAY_IMAGE is a placeholder, not a second slide. Avoid resolving or
+        # uploading it after generated artwork is ready.
+        if artwork is None:
+            override_url = config.play_image_url()
+            if override_url:
+                override = await thumb.play_image(override_url)
+                if override is None:
+                    logger.warning(
+                        "Could not cache PLAY_IMAGE; using its remote URL."
+                    )
+                    override = override_url
+            if override is None and _thumb:
+                override = _thumb
         rich_media = self._play_rich_media(
             override,
             artwork,
@@ -298,6 +307,7 @@ class TgCall:
             media=rich_media,
             fallback_text=rendered.fallback_html,
             reply_markup=keyboard,
+            timeout=1.5,
         )
         if sent is not None:
             media.message_id = sent.id
@@ -394,9 +404,9 @@ class TgCall:
             await self.play_next(chat_id)
             return False
 
-        try:
-            if not await db.get_call(chat_id):
-                await self.reset_assistant_call(chat_id)
+        artwork_handed_off = False
+
+        async def connect() -> None:
             await client.play(
                 chat_id=chat_id,
                 media_path=media.file_path,
@@ -413,6 +423,26 @@ class TgCall:
                     10,
                 ),
             )
+
+        try:
+            try:
+                await connect()
+            except VoiceWorkerError as exc:
+                if (
+                    not await db.get_call(chat_id)
+                    and exc.remote_type in {
+                        "ConnectionNotFound",
+                        "NotInCallError",
+                    }
+                ):
+                    logger.info(
+                        "Clearing a stale assistant call in chat %s.",
+                        chat_id,
+                    )
+                    await self.reset_assistant_call(chat_id)
+                    await connect()
+                else:
+                    raise
             if not seek_time or new_session:
                 media.time = max(seek_time, 1)
                 await db.add_call(chat_id)
@@ -429,9 +459,22 @@ class TgCall:
                             )
                             _thumb = None
                     else:
-                        refresh_artwork = True
-                        if _thumb is None:
-                            _thumb = config.DEFAULT_THUMB
+                        try:
+                            _thumb = await asyncio.wait_for(
+                                asyncio.shield(artwork_task),
+                                timeout=0.8,
+                            )
+                        except asyncio.TimeoutError:
+                            refresh_artwork = True
+                            if _thumb is None:
+                                _thumb = config.DEFAULT_THUMB
+                        except Exception:
+                            logger.debug(
+                                "Generated artwork is unavailable for chat %s",
+                                chat_id,
+                                exc_info=True,
+                            )
+                            _thumb = None
                 try:
                     await self._show_play_card(
                         chat_id,
@@ -442,6 +485,7 @@ class TgCall:
                         _thumb,
                     )
                     if refresh_artwork:
+                        artwork_handed_off = True
                         supervisor.spawn_once(
                             f"play-card-artwork:{chat_id}",
                             self._refresh_play_card_artwork(
@@ -519,7 +563,11 @@ class TgCall:
             await message.edit_text(_lang["error_tg_server"])
             return False
         finally:
-            if artwork_task is not None and not artwork_task.done():
+            if (
+                not artwork_handed_off
+                and artwork_task is not None
+                and not artwork_task.done()
+            ):
                 artwork_task.cancel()
 
 

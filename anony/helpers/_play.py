@@ -13,6 +13,18 @@ from anony.helpers import feedback, utils
 
 async def _prime_assistant_peer(client, chat_id: int, username: str | None) -> bool:
     """Ensure the assistant session knows the chat before PyTgCalls uses its ID."""
+    try:
+        await client.resolve_peer(chat_id)
+        return True
+    except errors.PeerIdInvalid:
+        pass
+    except Exception:
+        logger.debug(
+            "Assistant peer cache lookup failed for %s",
+            chat_id,
+            exc_info=True,
+        )
+
     identifiers = [f"@{username}", chat_id] if username else [chat_id]
     for identifier in identifiers:
         try:
@@ -147,6 +159,19 @@ async def assistant_membership(
             member, "is_member", False
         ):
             return client, "banned"
+        if member.status in {
+            enums.ChatMemberStatus.OWNER,
+            enums.ChatMemberStatus.ADMINISTRATOR,
+            enums.ChatMemberStatus.MEMBER,
+        } or (
+            member.status == enums.ChatMemberStatus.RESTRICTED
+            and getattr(member, "is_member", False)
+        ):
+            return (
+                (client, "ready")
+                if await _prime_assistant_peer(client, chat_id, username)
+                else (client, "unknown")
+            )
     except (errors.UserNotParticipant, errors.PeerIdInvalid):
         pass
     except Exception:
