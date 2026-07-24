@@ -3,6 +3,7 @@
 # This file is part of AnonXMusic
 
 
+import asyncio
 from dataclasses import fields
 from pathlib import Path
 
@@ -57,6 +58,12 @@ class PlaybackRecovery:
         return restored
 
     async def run_startup(self) -> None:
+        if not anon.clients and userbot.accepting_slots:
+            logger.info("Waiting for an assistant voice worker before recovery.")
+            for _ in range(45):
+                await asyncio.sleep(1)
+                if anon.clients:
+                    break
         if not anon.clients:
             if any(
                 session["state"] in {"playing", "paused"}
@@ -82,6 +89,7 @@ class PlaybackRecovery:
         if await db.get_call(chat_id):
             return True
 
+        saved_state = await db.get_playback_state(chat_id)
         media = queue.get_current(chat_id)
         if not media:
             return False
@@ -112,6 +120,13 @@ class PlaybackRecovery:
                 await status.edit_text(_lang["recovery_file_missing"])
                 return False
 
+        # A graceful stop leaves the call, but a crash cannot. Telegram can
+        # therefore still show the assistant in the video chat while this new
+        # voice process has no matching NTgCalls connection. Recovery always
+        # starts from a clean assistant call; ordinary /play keeps its fast
+        # path and only resets when Telegram reports a stale connection.
+        await anon.reset_assistant_call(chat_id)
+
         position = max(media.time, 0)
         media.message_id = status.id
         started = await anon.play_media(
@@ -120,8 +135,11 @@ class PlaybackRecovery:
             media,
             seek_time=position,
             new_session=True,
+            recovery=True,
         )
         if started:
+            if saved_state == "paused":
+                await anon.pause(chat_id)
             logger.info("Restarted saved playback for chat %s.", chat_id)
         else:
             logger.warning("Saved playback did not start for chat %s.", chat_id)

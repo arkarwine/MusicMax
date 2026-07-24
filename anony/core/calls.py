@@ -345,6 +345,7 @@ class TgCall:
         seek_time: int = 0,
         new_session: bool = False,
         artwork_task: asyncio.Task | None = None,
+        recovery: bool = False,
     ) -> bool:
         lang_code = await db.get_lang(chat_id)
         _lang = lang.languages.get(lang_code, lang.languages["en"])
@@ -394,6 +395,14 @@ class TgCall:
                     10,
                 ),
             )
+
+        async def keep_saved_queue(text: str) -> bool:
+            """Leave restart recovery retryable after a transient failure."""
+            await db.remove_call(chat_id)
+            await db.save_queue(chat_id, queue.get_queue(chat_id))
+            await db.save_playback(chat_id, "waiting", media.time)
+            await message.edit_text(text)
+            return False
 
         try:
             try:
@@ -500,6 +509,9 @@ class TgCall:
             return True
         except VoiceWorkerError as exc:
             if exc.remote_type == "FileNotFoundError":
+                if recovery:
+                    media.file_path = ""
+                    return await keep_saved_queue(_lang["recovery_file_missing"])
                 await message.edit_text(
                     _lang["error_no_file"].format(config.SUPPORT_CHAT)
                 )
@@ -507,12 +519,11 @@ class TgCall:
                 return False
             if exc.remote_type == "NoActiveGroupCall":
                 # Keep the saved queue so /resume can run the same play path.
-                await db.remove_call(chat_id)
-                await db.save_queue(chat_id, queue.get_queue(chat_id))
-                await db.save_playback(chat_id, "waiting", media.time)
-                await message.edit_text(_lang["error_no_call"])
-                return False
+                return await keep_saved_queue(_lang["error_no_call"])
             if exc.remote_type == "NoAudioSourceFound":
+                if recovery:
+                    media.file_path = ""
+                    return await keep_saved_queue(_lang["recovery_file_missing"])
                 await message.edit_text(_lang["error_no_audio"])
                 await self.play_next(chat_id)
                 return False
@@ -525,11 +536,15 @@ class TgCall:
                 chat_id,
                 exc,
             )
+            if recovery:
+                return await keep_saved_queue(_lang["recovery_waiting"])
             await self.stop(chat_id)
             await message.edit_text(_lang["error_tg_server"])
             return False
         except Exception:
             logger.exception("Playback failed in chat %s", chat_id)
+            if recovery:
+                return await keep_saved_queue(_lang["recovery_waiting"])
             await self.stop(chat_id)
             await message.edit_text(_lang["error_tg_server"])
             return False
