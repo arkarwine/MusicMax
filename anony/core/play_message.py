@@ -243,6 +243,28 @@ def _inline_rich(text: str, fragments: dict[str, object]) -> object:
     return _compact_rich_text(rendered)
 
 
+def _rich_with_breaks(value: object, count: int) -> object:
+    if count <= 0 or value == _IMAGE_MARKER:
+        return value
+    items = list(value) if isinstance(value, list) else [value]
+    return _compact_rich_text([*items, "\n" * count])
+
+
+def _consume_rich_gap(
+    lines: list[str],
+    index: int,
+) -> tuple[int, int]:
+    blank_lines = 0
+    while index < len(lines) and not lines[index].strip():
+        blank_lines += 1
+        index += 1
+    if index >= len(lines):
+        return index, 0
+    # One newline separates adjacent source lines. Every empty source line
+    # contributes one more, preserving intentional blank lines.
+    return index, blank_lines + 1
+
+
 def _is_block_start(line: str) -> bool:
     return bool(
         not line.strip()
@@ -418,12 +440,16 @@ def _markdown_blocks(
 
         heading = _HEADING_RE.match(line)
         if heading:
+            index += 1
+            index, gap = _consume_rich_gap(lines, index)
             blocks.append({
                 "type": "heading",
-                "text": _inline_rich(heading.group(2), fragments),
+                "text": _rich_with_breaks(
+                    _inline_rich(heading.group(2), fragments),
+                    gap,
+                ),
                 "size": len(heading.group(1)),
             })
-            index += 1
             continue
 
         if _HORIZONTAL_RE.match(line):
@@ -446,6 +472,14 @@ def _markdown_blocks(
                     ]),
                 })
                 index += 1
+            index, trailing_gap = _consume_rich_gap(lines, index)
+            for item_index, item in enumerate(items):
+                gap = (
+                    trailing_gap
+                    if item_index == len(items) - 1
+                    else 1
+                )
+                item["text"] = _rich_with_breaks(item["text"], gap)
             # Telegram rich-message list blocks have rendered adjacent items
             # without line breaks on some clients. Independent paragraphs keep
             # every play-card field on its own line while preserving the
@@ -468,6 +502,14 @@ def _markdown_blocks(
                     ]),
                 })
                 index += 1
+            index, trailing_gap = _consume_rich_gap(lines, index)
+            for item_index, item in enumerate(items):
+                gap = (
+                    trailing_gap
+                    if item_index == len(items) - 1
+                    else 1
+                )
+                item["text"] = _rich_with_breaks(item["text"], gap)
             blocks.extend(items)
             continue
 
@@ -483,6 +525,14 @@ def _markdown_blocks(
                     "text": _inline_rich(item.group(1), fragments),
                 })
                 index += 1
+            index, trailing_gap = _consume_rich_gap(lines, index)
+            for item_index, item in enumerate(quote_blocks):
+                gap = (
+                    trailing_gap
+                    if item_index == len(quote_blocks) - 1
+                    else 1
+                )
+                item["text"] = _rich_with_breaks(item["text"], gap)
             blocks.append({
                 "type": "blockquote",
                 "blocks": quote_blocks,
@@ -495,13 +545,20 @@ def _markdown_blocks(
         ):
             paragraph.append(lines[index])
             index += 1
-        blocks.extend(
-            {
+        index, trailing_gap = _consume_rich_gap(lines, index)
+        for item_index, item in enumerate(paragraph):
+            gap = (
+                trailing_gap
+                if item_index == len(paragraph) - 1
+                else 1
+            )
+            blocks.append({
                 "type": "paragraph",
-                "text": _inline_rich(item, fragments),
-            }
-            for item in paragraph
-        )
+                "text": _rich_with_breaks(
+                    _inline_rich(item, fragments),
+                    gap,
+                ),
+            })
     return blocks
 
 

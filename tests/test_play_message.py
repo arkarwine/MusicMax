@@ -163,17 +163,51 @@ class PlayMessageRendererTests(unittest.TestCase):
             ["paragraph"] * 4,
         )
         self.assertEqual(
-            rendered.rich_blocks[0]["text"],
+            rendered.rich_blocks[0]["text"][0],
             {
                 "type": "bold",
                 "text": "| ѕᴛᴀʀᴛᴇᴅ ѕᴛʀᴇᴀᴍɪɴɢ",
             },
+        )
+        self.assertTrue(
+            play_message._plain_rich_text(
+                rendered.rich_blocks[0]["text"]
+            ).endswith("\n\n")
         )
         title_text = rendered.rich_blocks[1]["text"]
         self.assertEqual(title_text[0]["type"], "bold")
         self.assertEqual(title_text[2]["type"], "url")
         self.assertEqual(
             title_text[2]["url"], "https://example.com/watch?v=1&list=2"
+        )
+        self.assertTrue(
+            play_message._plain_rich_text(title_text).endswith("\n\n")
+        )
+        self.assertTrue(
+            play_message._plain_rich_text(
+                rendered.rich_blocks[2]["text"]
+            ).endswith("\n")
+        )
+
+    def test_custom_template_blank_lines_survive_rich_delivery(self):
+        template = (
+            "{image}\n\n"
+            "**▏ ꜱᴛᴀʀᴛᴇᴅ ꜱᴛʀᴇᴀᴍɪɴɢ**\n\n"
+            "** ᴛɪᴛʟᴇ**: {title_link}\n\n"
+            " **ᴅᴜʀᴀᴛɪᴏɴ**: {duration}  ᴍɪɴ\n\n"
+            "**➔ ʀᴇQᴜᴇꜱᴛᴇᴅ ʙʏ**: {requester}"
+        )
+
+        rendered = self.render(template)
+
+        self.assertEqual(rendered.media_index, 0)
+        self.assertEqual(len(rendered.rich_blocks), 4)
+        self.assertEqual(
+            [
+                play_message._plain_rich_text(block["text"])[-2:]
+                for block in rendered.rich_blocks[:-1]
+            ],
+            ["\n\n", "\n\n", "\n\n"],
         )
 
     def test_placeholders_work_inside_markdown_links(self):
