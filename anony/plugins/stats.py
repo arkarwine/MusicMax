@@ -32,7 +32,7 @@ async def _stats_data() -> dict:
     groups = len(await db.get_chats())
     activity_7d = await db.get_stream_activity(24 * 7)
     activity_30d = await db.get_stream_activity(24 * 30)
-    assistants = len(set(userbot.clients) & set(anon.clients))
+    assistants = len(userbot.accepting_slots & set(anon.clients))
     bot_ready = bool(getattr(app, "is_connected", False))
     database_ready = db.connection is not None
     month = await db.get_analytics(30)

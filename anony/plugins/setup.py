@@ -176,7 +176,7 @@ async def _status(_, m: types.Message):
         assistant_proof = f"{assistant_proof} · {assistant_probe_detail[:50]}"
 
     database_ready = db.connection is not None
-    assistants = len(userbot.clients)
+    assistants = len(userbot.accepting_slots)
     bot_ready = bool(getattr(app, "is_connected", False))
     if bot_ready and database_ready and assistants:
         state_key = "status_operational"

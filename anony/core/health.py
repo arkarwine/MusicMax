@@ -247,11 +247,12 @@ class HealthMonitor:
     async def _probe_assistants(self) -> str:
         sessions = await self._with_timeout(self.db.get_assistant_sessions())
         expected = {row["slot"] for row in sessions if row["enabled"]}
-        active = set(self.userbot.clients)
+        active = set(self.userbot.accepting_slots)
         missing = expected - active
         disconnected = [
             slot
             for slot, client in self.userbot.clients.items()
+            if slot in active
             if not getattr(client, "is_connected", False)
         ]
         if missing or disconnected:
@@ -445,6 +446,8 @@ class HealthMonitor:
                         acted = True
             elif component == "voice":
                 for slot, client in self.userbot.clients.items():
+                    if not self.userbot.is_accepting(slot):
+                        continue
                     worker = self.calls.clients.get(slot)
                     if worker is None or not getattr(worker, "is_alive", True):
                         await self._with_timeout(self.calls.add_client(slot, client))

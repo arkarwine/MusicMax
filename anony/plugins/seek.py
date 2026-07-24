@@ -49,7 +49,8 @@ async def _seek(_, m: types.Message):
         if start_from + 10 > media.duration_sec:
             start_from = media.duration_sec - 5
 
-    await anon.play_media(m.chat.id, sent, media, start_from)
+    if not await anon.play_media(m.chat.id, sent, media, start_from):
+        return
     media.time = start_from
     await db.checkpoint_playback(m.chat.id, start_from)
     await sent.edit_text(

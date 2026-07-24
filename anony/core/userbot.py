@@ -13,6 +13,15 @@ class Userbot:
 
     def __init__(self) -> None:
         self.clients: dict[int, Client] = {}
+        self.locked: set[int] = set()
+
+    @property
+    def accepting_slots(self) -> set[int]:
+        """Connected sessions that may accept new playback."""
+        return set(self.clients).difference(self.locked)
+
+    def is_accepting(self, slot: int | None) -> bool:
+        return slot is not None and slot in self.clients and slot not in self.locked
 
     async def _start_client(
         self,
@@ -79,6 +88,7 @@ class Userbot:
             username=client.username or "",
             display_name=client.name or "",
         )
+        self.locked.discard(slot)
         logger.info("Assistant session %s started as @%s", slot, client.username)
         return client
 
@@ -149,6 +159,16 @@ class Userbot:
         session = await db.get_assistant_session(slot)
         if not session:
             raise KeyError(slot)
+        current = self.clients.get(slot)
+        if current is not None:
+            from anony import anon
+
+            if slot not in anon.clients:
+                await anon.add_client(slot, current)
+            await db.update_assistant_session(slot, enabled=True)
+            self.locked.discard(slot)
+            logger.info("Assistant session %s unlocked", slot)
+            return current
         return await self._start_client(
             slot,
             session["session_string"],
@@ -171,6 +191,7 @@ class Userbot:
         client = self.clients.pop(slot, None)
         if client:
             await client.stop()
+        self.locked.discard(slot)
 
     def _apply_slot_mapping(self, mapping: dict[int, int]) -> None:
         if not mapping:
@@ -181,6 +202,11 @@ class Userbot:
             mapping.get(slot, slot): client
             for slot, client in self.clients.items()
         }
+        self.locked = {
+            mapping.get(slot, slot)
+            for slot in self.locked
+            if mapping.get(slot, slot) in self.clients
+        }
         remap_workers = getattr(anon, "remap_slots", None)
         if remap_workers is not None:
             remap_workers(mapping)
@@ -190,25 +216,66 @@ class Userbot:
                 for slot, client in anon.clients.items()
             }
 
-    async def disable_session(self, slot: int, delete: bool = False) -> None:
+    async def disable_session(self, slot: int, delete: bool = False) -> bool:
+        """Disable immediately, draining existing calls when necessary.
+
+        Returns True when current calls are still finishing.
+        """
         from anony import db
 
         session = await db.get_assistant_session(slot)
         if not session:
             raise KeyError(slot)
         active_chats = db.active_chats_for_assistant(slot)
-        if active_chats:
+        if delete and active_chats:
             raise RuntimeError(
-                "Session is currently playing in: "
-                + ", ".join(map(str, active_chats))
+                "Disable this session first. Its current calls must finish "
+                "before it can be removed."
             )
-        await self._stop_session(slot)
+
         if delete:
+            await self._stop_session(slot)
             mapping = await db.delete_assistant_session(slot)
             self._apply_slot_mapping(mapping)
-        else:
-            await db.release_assistant_slot(slot)
+            return False
+
+        # Lock before the database write yields so no concurrent /play request
+        # can select this session during the transition.
+        self.locked.add(slot)
+        try:
             await db.update_assistant_session(slot, enabled=False)
+        except Exception:
+            self.locked.discard(slot)
+            raise
+
+        if active_chats:
+            logger.info(
+                "Assistant session %s locked; draining %s active call(s)",
+                slot,
+                len(active_chats),
+            )
+            return True
+
+        await self._stop_session(slot)
+        await db.release_assistant_slot(slot)
+        logger.info("Assistant session %s disabled", slot)
+        return False
+
+    async def finish_draining(self, slot: int) -> bool:
+        """Disconnect a locked session after its final call has ended."""
+        from anony import db
+
+        session = await db.get_assistant_session(slot)
+        if (
+            not session
+            or session["enabled"]
+            or db.active_chats_for_assistant(slot)
+        ):
+            return False
+        await self._stop_session(slot)
+        await db.release_assistant_slot(slot)
+        logger.info("Assistant session %s finished draining and disconnected", slot)
+        return True
 
     async def restart_session(self, slot: int) -> Client:
         from anony import db

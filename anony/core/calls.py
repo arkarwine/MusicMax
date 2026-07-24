@@ -83,12 +83,15 @@ class TgCall:
         return result
 
     async def stop(self, chat_id: int, clear_persistence: bool = True) -> None:
+        slot = db.assistant.get(chat_id)
         queue.clear(chat_id)
         await db.remove_call(chat_id)
         await db.set_loop(chat_id, 0)
         if clear_persistence:
             await db.clear_playback(chat_id)
         await self._leave_assistant_call(chat_id)
+        if slot is not None:
+            await userbot.finish_draining(slot)
 
     async def _leave_assistant_call(self, chat_id: int) -> None:
         if not self.clients:
@@ -363,9 +366,16 @@ class TgCall:
         new_session: bool = False,
         artwork_task: asyncio.Task | None = None,
     ) -> bool:
-        client = await db.get_assistant(chat_id)
         lang_code = await db.get_lang(chat_id)
         _lang = lang.languages.get(lang_code, lang.languages["en"])
+        assigned = db.assistant.get(chat_id)
+        if (
+            assigned is not None
+            and not userbot.is_accepting(assigned)
+        ):
+            await message.edit_text(_lang["play_session_locked"])
+            return False
+        client = await db.get_assistant(chat_id)
         show_card = not seek_time or new_session
         _thumb = None
         if show_card and config.THUMB_GEN:
@@ -516,6 +526,9 @@ class TgCall:
     async def replay(self, chat_id: int) -> None:
         if not await db.get_call(chat_id):
             return
+        assigned = db.assistant.get(chat_id)
+        if assigned is not None and not userbot.is_accepting(assigned):
+            return await self.stop(chat_id)
 
         media = queue.get_current(chat_id)
         if not media:
@@ -527,6 +540,15 @@ class TgCall:
 
 
     async def play_next(self, chat_id: int) -> None:
+        assigned = db.assistant.get(chat_id)
+        if assigned is not None and not userbot.is_accepting(assigned):
+            logger.info(
+                "Playback drain completed for assistant %s in chat %s",
+                assigned,
+                chat_id,
+            )
+            return await self.stop(chat_id)
+
         if loop := await db.get_loop(chat_id):
             if loop > 0:
                 await db.set_loop(chat_id, loop - 1)
@@ -649,6 +671,7 @@ class TgCall:
         while slot in userbot.clients and not supervisor.closing:
             session = await db.get_assistant_session(slot)
             if not session or not session["enabled"]:
+                await userbot.finish_draining(slot)
                 return
             delay = (1, 5, 30, 60)[min(attempts, 3)]
             await asyncio.sleep(delay)

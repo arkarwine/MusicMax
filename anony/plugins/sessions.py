@@ -70,10 +70,17 @@ def _dashboard_markup(sessions: list[dict], page: int) -> types.InlineKeyboardMa
     visible = sessions[page * PAGE_SIZE : (page + 1) * PAGE_SIZE]
     rows = []
     for session in visible:
-        active = session["slot"] in userbot.clients
+        slot = session["slot"]
+        accepting = session["enabled"] and userbot.is_accepting(slot)
+        draining = (
+            not session["enabled"]
+            and slot in userbot.clients
+            and bool(db.active_chats_for_assistant(slot))
+        )
+        marker = "●" if accepting else ("◐" if draining else "○")
         rows.append([
             buttons.ikb(
-                text=f"{'●' if active else '○'}  {session['slot']} · "
+                text=f"{marker}  {session['slot']} · "
                 f"{session['username'] or session['display_name'] or 'Unknown'}",
                 callback_data=callbacks.session("view", session["slot"], page),
                 style=enums.ButtonStyle.DEFAULT,
@@ -98,9 +105,21 @@ def _dashboard_markup(sessions: list[dict], page: int) -> types.InlineKeyboardMa
 
 async def _dashboard(page: int = 0) -> tuple[str, types.InlineKeyboardMarkup]:
     sessions = await db.get_assistant_sessions()
-    active = len(userbot.clients)
+    active = sum(
+        session["enabled"] and userbot.is_accepting(session["slot"])
+        for session in sessions
+    )
+    draining = sum(
+        not session["enabled"]
+        and session["slot"] in userbot.clients
+        and bool(db.active_chats_for_assistant(session["slot"]))
+        for session in sessions
+    )
+    state = f"{active} active"
+    if draining:
+        state += f" · {draining} finishing"
     text = (
-        f"🤖 <b>Assistants</b> · {active} active / {len(sessions)} total\n\n"
+        f"🤖 <b>Assistants</b> · {state} / {len(sessions)} total\n\n"
         "Choose an account."
     )
     return text, _dashboard_markup(sessions, page)
@@ -127,9 +146,18 @@ async def open_sessions(message: types.Message, page: int = 0) -> None:
 
 def _detail(session: dict, page: int = 0) -> tuple[str, types.InlineKeyboardMarkup]:
     slot = session["slot"]
-    active = slot in userbot.clients
+    connected = slot in userbot.clients
+    accepting = session["enabled"] and userbot.is_accepting(slot)
     calls = len(db.active_chats_for_assistant(slot))
-    state = "Active" if active else "Disabled"
+    draining = not session["enabled"] and connected and calls > 0
+    if accepting:
+        state = "Active"
+    elif draining:
+        state = "Locked · current calls finishing"
+    elif session["enabled"]:
+        state = "Unavailable"
+    else:
+        state = "Disabled"
     source = " · startup" if session["source"] == "environment" else ""
     text = (
         f"<b>Assistant session {slot}</b>\n"
@@ -138,7 +166,7 @@ def _detail(session: dict, page: int = 0) -> tuple[str, types.InlineKeyboardMark
         f"<code>{session['user_id'] or 'Unknown'}</code> · {calls} active calls"
     )
     rows = []
-    if active:
+    if accepting:
         rows.append([
             buttons.ikb(
                 text="🔄 Restart",
@@ -153,12 +181,17 @@ def _detail(session: dict, page: int = 0) -> tuple[str, types.InlineKeyboardMark
     else:
         rows.append([
             buttons.ikb(
-                text="▶️ Enable",
+                text="▶️ Unlock" if draining else "▶️ Enable",
                 callback_data=callbacks.session("enable", slot, page),
                 style=enums.ButtonStyle.DEFAULT,
             )
         ])
-    if session["source"] != "environment":
+    if draining:
+        rows.append([buttons.ikb(
+            text="↻ Refresh",
+            callback_data=callbacks.session("view", slot, page),
+        )])
+    if session["source"] != "environment" and calls == 0:
         rows.append([buttons.ikb(
             text="🗑 Remove",
             callback_data=callbacks.session("remove", slot, page),

@@ -189,7 +189,9 @@ async def assistant_membership(
 async def ensure_assistant(m: types.Message) -> bool:
     chat_id = m.chat.id
     available_slots = [
-        slot for slot in userbot.clients if slot in anon.clients
+        slot
+        for slot in sorted(userbot.accepting_slots)
+        if slot in anon.clients
     ]
     if not available_slots:
         if getattr(m, "outgoing", False):
@@ -297,6 +299,14 @@ def checkUB(play):
         if m.chat.type != enums.ChatType.SUPERGROUP:
             await m.reply_text(m.lang["play_chat_invalid"])
             return await app.leave_chat(chat_id)
+
+        assigned = db.assistant.get(chat_id)
+        if (
+            chat_id in db.active_calls
+            and assigned is not None
+            and not userbot.is_accepting(assigned)
+        ):
+            return await feedback.warning(m, m.lang["play_session_locked"])
 
         arguments = m.command[1:]
         query_arguments = [

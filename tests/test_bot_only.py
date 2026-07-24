@@ -87,7 +87,9 @@ class BotOnlyUserbotTests(unittest.IsolatedAsyncioTestCase):
         client = AsyncMock()
         voice_client = AsyncMock()
         db = SimpleNamespace(
-            get_assistant_session=AsyncMock(return_value={"slot": 1}),
+            get_assistant_session=AsyncMock(
+                return_value={"slot": 1, "enabled": True}
+            ),
             active_chats_for_assistant=MagicMock(return_value=[]),
             release_assistant_slot=AsyncMock(),
             update_assistant_session=AsyncMock(),
@@ -106,6 +108,86 @@ class BotOnlyUserbotTests(unittest.IsolatedAsyncioTestCase):
         client.stop.assert_awaited_once()
         db.release_assistant_slot.assert_awaited_once_with(1)
         db.update_assistant_session.assert_awaited_once_with(1, enabled=False)
+
+    async def test_busy_session_locks_without_interrupting_current_call(self):
+        client = AsyncMock()
+        voice_client = AsyncMock()
+        db = SimpleNamespace(
+            get_assistant_session=AsyncMock(
+                return_value={"slot": 1, "enabled": True}
+            ),
+            active_chats_for_assistant=MagicMock(return_value=[-1001]),
+            release_assistant_slot=AsyncMock(),
+            update_assistant_session=AsyncMock(),
+        )
+        fake_anony.db = db
+        fake_anony.anon = SimpleNamespace(clients={1: voice_client})
+
+        manager = userbot_module.Userbot()
+        manager.clients[1] = client
+        with patch.dict(sys.modules, {"anony": fake_anony}):
+            draining = await manager.disable_session(1)
+
+        self.assertTrue(draining)
+        self.assertFalse(manager.is_accepting(1))
+        self.assertIn(1, manager.clients)
+        self.assertIn(1, fake_anony.anon.clients)
+        voice_client.stop.assert_not_awaited()
+        client.stop.assert_not_awaited()
+        db.release_assistant_slot.assert_not_awaited()
+        db.update_assistant_session.assert_awaited_once_with(1, enabled=False)
+
+    async def test_locked_session_disconnects_after_last_call(self):
+        client = AsyncMock()
+        voice_client = AsyncMock()
+        db = SimpleNamespace(
+            get_assistant_session=AsyncMock(
+                return_value={"slot": 1, "enabled": False}
+            ),
+            active_chats_for_assistant=MagicMock(return_value=[]),
+            release_assistant_slot=AsyncMock(),
+        )
+        fake_anony.db = db
+        fake_anony.anon = SimpleNamespace(clients={1: voice_client})
+
+        manager = userbot_module.Userbot()
+        manager.clients[1] = client
+        manager.locked.add(1)
+        with patch.dict(sys.modules, {"anony": fake_anony}):
+            finished = await manager.finish_draining(1)
+
+        self.assertTrue(finished)
+        self.assertEqual(manager.clients, {})
+        self.assertEqual(fake_anony.anon.clients, {})
+        voice_client.stop.assert_awaited_once()
+        client.stop.assert_awaited_once()
+        db.release_assistant_slot.assert_awaited_once_with(1)
+
+    async def test_enable_unlocks_a_draining_session_in_place(self):
+        client = AsyncMock()
+        voice_client = AsyncMock()
+        db = SimpleNamespace(
+            get_assistant_session=AsyncMock(
+                return_value={"slot": 1, "enabled": False}
+            ),
+            update_assistant_session=AsyncMock(),
+        )
+        fake_anony.db = db
+        fake_anony.anon = SimpleNamespace(
+            clients={1: voice_client},
+            add_client=AsyncMock(),
+        )
+
+        manager = userbot_module.Userbot()
+        manager.clients[1] = client
+        manager.locked.add(1)
+        with patch.dict(sys.modules, {"anony": fake_anony}):
+            result = await manager.enable_session(1)
+
+        self.assertIs(result, client)
+        self.assertTrue(manager.is_accepting(1))
+        fake_anony.anon.add_client.assert_not_awaited()
+        db.update_assistant_session.assert_awaited_once_with(1, enabled=True)
 
 
 if __name__ == "__main__":

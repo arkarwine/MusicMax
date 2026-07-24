@@ -39,6 +39,7 @@
     "admin_required": "⚠️ Let me invite users, then try again.",
     "play_unban_required": "⚠️ All music assistants are banned or restricted in this group. Unban them manually, or give me Ban Users permission so I can restore them, then try again.",
     "play_session_required": "<b>Assistant required</b>\n\nMusic playback needs an active assistant session. Add or enable one with <code>/sessions</code>, then try again.",
+    "play_session_locked": "⏳ <b>Finishing the current track</b>\n\nNew requests are paused here until it ends.",
     "admin_cache_wait": "You can only refresh the admin cache once every 10 minutes.",
     "admin_cache_reloading": "⏳ Refreshing the admin list…",
     "admin_cache_reloaded": "✅ Admin list refreshed.",

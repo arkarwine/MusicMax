@@ -501,7 +501,9 @@ class SQLiteDB:
         from anony import anon
 
         slots = tuple(
-            slot for slot in userbot.clients if slot in anon.clients
+            slot
+            for slot in sorted(userbot.accepting_slots)
+            if slot in anon.clients
         )
         if not slots:
             raise RuntimeError("No assistant sessions are active")
@@ -538,7 +540,14 @@ class SQLiteDB:
             )
             row = await cursor.fetchone()
             num = row[0] if row else None
-        if not num or num not in anon.clients:
+        usable = (
+            num in anon.clients
+            and (
+                userbot.is_accepting(num)
+                or chat_id in self.active_calls
+            )
+        )
+        if not usable:
             num = await self.set_assistant(chat_id)
         self.assistant[chat_id] = num
         return anon.clients[num]
@@ -547,7 +556,7 @@ class SQLiteDB:
         if chat_id not in self.assistant:
             await self.get_assistant(chat_id)
         num = self.assistant[chat_id]
-        if num not in userbot.clients:
+        if not userbot.is_accepting(num):
             num = await self.set_assistant(chat_id)
         return userbot.clients[num]
 

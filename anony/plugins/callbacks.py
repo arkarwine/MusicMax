@@ -7,7 +7,7 @@ from html import escape
 
 from pyrogram import enums, errors, filters, types
 
-from anony import anon, app, db, lang, queue, tg, yt
+from anony import anon, app, db, lang, queue, tg, userbot, yt
 from anony.helpers import (
     buttons,
     can_configure_group,
@@ -55,6 +55,14 @@ async def _controls(_, query: types.CallbackQuery):
 
     if action == "status":
         return await query.answer()
+
+    assigned = db.assistant.get(chat_id)
+    locked = assigned is not None and not userbot.is_accepting(assigned)
+    if locked and action in {"skip", "force", "replay"}:
+        return await query.answer(
+            query.lang["play_session_locked"],
+            show_alert=True,
+        )
 
     if action == "loop":
         enabled = await db.get_loop(chat_id) == -1

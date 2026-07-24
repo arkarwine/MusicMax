@@ -8,7 +8,19 @@ from html import escape
 
 from pyrogram import filters, types
 
-from anony import anon, app, config, db, lang, queue, supervisor, tg, thumb, yt
+from anony import (
+    anon,
+    app,
+    config,
+    db,
+    lang,
+    queue,
+    supervisor,
+    tg,
+    thumb,
+    userbot,
+    yt,
+)
 from anony.helpers import Track, buttons, feedback, utils
 from anony.helpers._play import checkUB, ensure_assistant
 
@@ -94,6 +106,14 @@ async def play_hndlr(
             sent,
             m.lang["play_duration_limit"].format(config.DURATION_LIMIT // 60),
         )
+
+    assigned = db.assistant.get(m.chat.id)
+    if (
+        m.chat.id in db.active_calls
+        and assigned is not None
+        and not userbot.is_accepting(assigned)
+    ):
+        return await feedback.warning_edit(sent, m.lang["play_session_locked"])
 
     if m.chat.id not in db.active_calls:
         if not await ensure_assistant(m):
